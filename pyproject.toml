@@ -5,6 +5,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "alembic>=1.13",
     "asyncpg>=0.29",
+    "httpx>=0.27",
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
     "pyyaml>=6.0",
@@ -17,6 +18,7 @@ dev = [
     "pre-commit>=3.7",
     "pytest>=8.2",
     "pytest-asyncio>=0.24",
+    "respx>=0.21",
     "ruff>=0.6",
     "testcontainers[postgres]>=4.7",
     "types-pyyaml>=6.0",
@@ -36,6 +38,8 @@ extend-exclude = ["docs"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF", "ASYNC", "PT"]
+# Комментарии и тексты по-русски (PRINCIPLES.md): кириллица не опечатка.
+ignore = ["RUF001", "RUF002", "RUF003"]
 
 [tool.mypy]
 strict = true
@@ -54,4 +58,4 @@ asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff.lint.isort]
 known-third-party = ["alembic"]
-known-first-party = ["digest"]
+known-first-party = ["digest", "factories", "conftest"]

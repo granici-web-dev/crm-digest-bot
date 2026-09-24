@@ -3,13 +3,13 @@ import asyncio
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
-from conftest import alembic_config
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 from sqlalchemy.engine.url import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 from testcontainers.community.postgres import PostgresContainer
 
+from conftest import alembic_config
 from digest.db.schema import metadata
 
 
