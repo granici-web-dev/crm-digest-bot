@@ -22,6 +22,7 @@
 - raw jsonb без контактов клиента (список raw_strip в status-mapping.yaml), textarea-поля хранятся.
 - Консультанты: config/managers.yaml, сверен со списком пользователей mefi 24.09.2026.
 - Метрики по консультантам считают только active: true; лид с assigned_to.id вне managers.yaml даёт алерт (реализовать в сессии 4).
+- Лиды с assigned_to.id консультанта с test_account: true исключаются из всех метрик на уровне базовых множеств (LEADS). Реализовать в сессии 4.
 - Отчёты читают только снапшот с snapshot_date = today и status = success, иначе пометка «данные mefi недоступны».
 - Data revenire часто равна дню создания: правило для d3 решается в shape сессии 5.
 - m19 в MVP только Excel, PDF на этапе 2.

@@ -6,7 +6,7 @@
 
 | Обозначение | Определение |
 |---|---|
-| `LEADS` | все лиды, кроме `PARTNERSHIP` |
+| `LEADS` | все лиды, кроме `PARTNERSHIP` и кроме тестовых аккаунтов (`config/managers.yaml`, `test_account: true`) |
 | `IRR_LEADS` | лиды категории `LOST · IRELEVANT` (статусы IRELEVANT, SPAM) |
 | `USEFUL` | `LEADS − IRR_LEADS` |
 | `CLIENTI` | лиды со `status.name = Clienți` или `converted_at != null` |

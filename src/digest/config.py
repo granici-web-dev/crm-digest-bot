@@ -199,6 +199,7 @@ class Manager(StrictConfigModel):
     name: str
     showroom: str | None
     active: bool
+    test_account: bool = False
 
 
 class ManagerRoster(StrictConfigModel):

@@ -5,8 +5,8 @@
 managers:
   # Директор по производству.
   - { id: 2,  name: "Palega Andrei",     showroom: null,        active: false }
-  # Уволен, старые лиды остаются на нём.
-  - { id: 4,  name: "Potinga Dima",      showroom: null,        active: false }
+  # Тестовый аккаунт: его лиды исключаются из всех метрик.
+  - { id: 4,  name: "Potinga Dima",      showroom: null,        active: false, test_account: true }
   # Директор по продажам, не продаёт.
   - { id: 6,  name: "Iordache Razvan",   showroom: null,        active: false }
   # Маркетинг, не продавец: в метриках по консультантам не участвует.
