@@ -38,11 +38,30 @@ custom_fields:
     name: "Ofertat"
     ofertat_yes: "✅DA"                    # точное значение из mefi, эмодзи без пробела
     ofertat_no: "❌NU"                     # иное значение → алерт, лид не считается ofertat
-  data_revenire: "Data revenire"
-  revenire_notes: ["Revenire 1 (Data+Info)", "Revenirea 2 (Data+info)", "Revenirea 3 (Data+info)"]
-  informatii: "Informatii"
-  mesaj: "Mesaj"                           # field_id 51, textarea, появилось после 28.05.2026
-  utm: ["UTM_Source", "UTM_Campanie", "UTM_Content", "UTM_Medium"]
+  data_revenire: { field_id: 5, name: "Data revenire" }   # date_picker, "YYYY-MM-DD" или null
+  revenire_notes:
+    - { field_id: 8,  name: "Revenire 1 (Data+Info)" }
+    - { field_id: 9,  name: "Revenirea 2 (Data+info)" }
+    - { field_id: 10, name: "Revenirea 3 (Data+info)" }
+  informatii: { field_id: 7, name: "Informatii" }
+  mesaj: { field_id: 51, name: "Mesaj" }  # textarea, появилось после 28.05.2026
+  utm:
+    - { field_id: 38, name: "UTM_Source" }
+    - { field_id: 39, name: "UTM_Campanie" }
+    - { field_id: 40, name: "UTM_Content" }
+    - { field_id: 41, name: "UTM_Medium" }
+
+# Контакты клиента удаляются из raw до записи в lead_snapshots (путь через точку).
+# Textarea-поля и location.city остаются: textarea нужны источнику H, city не контакт.
+raw_strip:
+  - name
+  - phone
+  - email
+  - identity
+  - business
+  - company
+  - location.address_line
+  - location.coordinates
 
 sources:
   showroom_visit: ["Showroom"]             # считается отдельно от входящих лидов

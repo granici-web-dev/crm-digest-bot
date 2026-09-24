@@ -1,0 +1,19 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+      - id: ruff-format
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy strict
+        entry: uv run mypy
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: todo-needs-issue
+        name: TODO только с номером issue, TODO(#12)
+        entry: 'TODO(?!\(#\d+\))'
+        language: pygrep
+        types_or: [python, yaml]

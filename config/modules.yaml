@@ -1,6 +1,15 @@
-# Реестр модулей отчётов. enabled — дефолт при первом запуске; дальше — таблица settings в Postgres через /settings.
-# sources: A=leads:read, B=mefi session (Oferte/Contracte/Facturi), C=calls:read, D=Ads API, E=GA4, F=Excel 2024-25, G=себестоимость, H=LLM из заметок
-# Модуль нельзя включить, пока не подключены все его sources.
+# Реестр модулей отчётов. enabled — дефолт при первом запуске; дальше — таблица module_settings в Postgres через /settings.
+# Модуль нельзя включить, пока не подключены все его sources: проверяется при загрузке конфига.
+
+sources:
+  A: { title: "mefi leads:read",                           connected: true }
+  B: { title: "mefi сессия: Oferte, Contracte, Facturi",   connected: false }
+  C: { title: "mefi calls:read",                           connected: false }
+  D: { title: "Ads API: Meta, Google, TikTok",             connected: false }
+  E: { title: "GA4",                                       connected: false }
+  F: { title: "Excel 2024–2025",                           connected: false }
+  G: { title: "себестоимость",                             connected: false }
+  H: { title: "LLM из заметок",                            connected: false }
 
 daily:            # 19:30, окно 19:00 вчера → 19:00 сегодня
   d1: { name: seller_format_report,   sources: [A], enabled: true }

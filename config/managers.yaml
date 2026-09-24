@@ -1,0 +1,17 @@
+# Консультанты mefi, ключ — assigned_to.id. Имя как в mefi, не нормализовать (у id 13 два пробела).
+# Заглушка из docs/mefi-api-reference/enums.md с поправками по docs/mefi-api-notes.md (24.09.2026).
+# Уточнить у клиента: шоурум каждого консультанта и кто сейчас работает (active).
+
+managers:
+  - { id: 2,  name: "Palega Andrei",     showroom: null, active: true }
+  - { id: 4,  name: "Potinga Dima",      showroom: null, active: true }
+  - { id: 6,  name: "Iordache Razvan",   showroom: null, active: true }
+  # Маркетинг, не продавец: в метриках по консультантам не участвует.
+  - { id: 7,  name: "Marketing Sofa",    showroom: null, active: false }
+  - { id: 8,  name: "Roibu Valeria",     showroom: null, active: true }
+  - { id: 9,  name: "Moaca Andreea",     showroom: null, active: true }
+  - { id: 10, name: "Godja Adina Maria", showroom: null, active: true }
+  - { id: 11, name: "Marc Andra",        showroom: null, active: true }
+  - { id: 12, name: "Dragoi Mihaela",    showroom: null, active: true }
+  - { id: 13, name: "Raileanu  Leon",    showroom: null, active: true }
+  - { id: 14, name: "Elena Ureche",      showroom: null, active: true }
