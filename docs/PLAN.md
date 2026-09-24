@@ -5,7 +5,8 @@
 ## Где мы (24.09.2026)
 
 - Сделано: стандарты (PRINCIPLES, STACK, TESTING), ADR-001 accepted, .env.example, settings.json, разведка mefi API (docs/mefi-api-notes.md), фикстура tests/fixtures/mefi/search_3_leads.json, конфиги исправлены по живым данным.
-- Сейчас: сессия 3, фундамент. Shape подтверждён: docs/shapes/2026-09-24-foundation.md. Следующий шаг: /rigorous craft двумя коммитами, затем /rigorous critique.
+- Сейчас: сессия 3, фундамент. Craft по docs/shapes/2026-09-24-foundation.md сделан двумя коммитами: 267f27f (схема, миграция, конфиги) и 44f81c1 (клиент mefi, снапшот). 28 тестов зелёные, ruff и mypy strict чистые. Следующий шаг: /rigorous critique фундамента.
+- К critique: `is_duplicate` в `MefiLead` обязателен (без него лид уходит в skipped), хотя shape называл обязательными только id и created_at. Локально тесты идут с `TESTCONTAINERS_RYUK_DISABLED=true`: docker pull образа ryuk зависает.
 - Дальше по docs/first-sessions.md: сессия 4 metrics/ (блокер: нет SB KPi.xlsx), сессия 5 планировщик и доставка, сессия 6 /settings, сессия 7 harden и деплой.
 
 ## Принятые решения (не обсуждать заново)
