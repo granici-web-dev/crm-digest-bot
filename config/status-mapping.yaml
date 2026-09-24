@@ -2,14 +2,17 @@
 # Неизвестный статус → UNMAPPED (считается отдельно, алерт в служебный бот).
 # Сравнение по точному совпадению после trim; регистр и диакритику не нормализовать.
 # lifecycle из mefi для категории не используется: все лиды со статусом там "active"
-# (проверено 24.09.2026, docs/mefi-api-notes.md). status = null → UNMAPPED.
+# (проверено 24.09.2026, docs/mefi-api-notes.md).
+# status = null → UNMAPPED: штатное состояние формы mefi, статус "Necompletat"; в UNMAPPED,
+# алерт формулировать как "лид без статуса".
 
 categories:
   WON:
     statuses: ["Clienți"]
     also_when: converted_at_not_null       # дублирующий признак; расхождение → алерт
   ACTIVE:
-    statuses: ["IN PROCES", "Ofertat", "SHOWROOM"]
+    # "BIFE 2026": лиды с выставки BIFE-SIM 2026; метка через статус, при смене статуса теряется.
+    statuses: ["IN PROCES", "Ofertat", "SHOWROOM", "BIFE 2026"]
     stale_after_days: 14                   # алерт «без движения» по status_changed_at
   ACTIVE_FOLLOWUP:
     statuses: ["Revenire 1", "Revenire 2", "Revenire 3"]
@@ -24,7 +27,7 @@ categories:
       BUGET:             { statuses: ["BUGET"] }
       CONCURENT:         { statuses: ["CONCURENTA"] }
       TIMP:              { statuses: ["TIMP"], note: "отказ из-за срока производства 1–2 мес." }
-      # Статуса SPAM в mefi нет (24.09.2026); оставлен по брифу на случай появления.
+      # SPAM есть в списке статусов mefi, в API-выборке 24.09.2026 не встречался.
       IRELEVANT:         { statuses: ["IRELEVANT", "SPAM"], excluded_from_useful: true }
   PARTNERSHIP:
     statuses: ["DESIGNER", "INFLUENCER"]
