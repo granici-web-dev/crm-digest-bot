@@ -17,3 +17,4 @@ repos:
         entry: 'TODO(?!\(#\d+\))'
         language: pygrep
         types_or: [python, yaml]
+        exclude: ^\.pre-commit-config\.yaml$

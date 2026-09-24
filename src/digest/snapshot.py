@@ -7,6 +7,7 @@ from datetime import date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import httpx
 from pydantic import JsonValue, ValidationError
 from sqlalchemy import func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
@@ -29,7 +30,7 @@ class SkippedLead:
 
 @dataclass(frozen=True)
 class CustomFieldProblem:
-    field_id: int
+    field_id: int | None
     expected_name: str
     problem: str
     actual: str | None
@@ -53,6 +54,19 @@ def validation_reason(error: ValidationError) -> str:
         f"{'.'.join(str(part) for part in detail['loc'])}: {detail['type']}"
         for detail in error.errors(include_input=False, include_url=False)
     )
+
+
+def describe_error(error: BaseException) -> str:
+    # str() у ValidationError и ошибок SQLAlchemy содержит тело ответа или строки raw,
+    # поэтому наружу только тип и поля, в которых нет данных клиентов.
+    error_type = type(error).__name__
+    if isinstance(error, ValidationError):
+        return f"{error_type}: {validation_reason(error)}"
+    if isinstance(error, httpx.HTTPStatusError):
+        return f"{error_type}: HTTP {error.response.status_code}"
+    if isinstance(error, MefiRateLimitExceeded):
+        return f"{error_type}: {error}"
+    return error_type
 
 
 def parse_leads(raw_leads: list[dict[str, Any]]) -> tuple[list[ParsedLead], list[SkippedLead]]:
@@ -175,6 +189,10 @@ def lead_to_snapshot_row(
         for problem in (showroom_problem, ofertat_problem, data_revenire_problem)
         if problem is not None
     ]
+    problems.extend(
+        CustomFieldProblem(None, key, "unknown_raw_key", None)
+        for key in sorted(parsed_lead.raw.keys() - status_mapping.raw_known_keys)
+    )
     return row, problems
 
 
@@ -333,10 +351,10 @@ async def run_daily_snapshot(
                         if isinstance(error, MefiRateLimitExceeded)
                         else None
                     ),
-                    error=f"{type(error).__name__}: {error}",
+                    error=describe_error(error),
                 )
             )
-        logger.exception("snapshot failed", extra={"run_id": run_id})
+        logger.error("snapshot failed", extra={"run_id": run_id, "error": describe_error(error)})
         raise
 
     logger.info(

@@ -51,7 +51,7 @@ custom_fields:
     - { field_id: 40, name: "UTM_Content" }
     - { field_id: 41, name: "UTM_Medium" }
 
-# Контакты клиента удаляются из raw до записи в lead_snapshots (путь через точку).
+# Контакты и свободный текст клиента удаляются из raw до записи в lead_snapshots (путь через точку).
 # Textarea-поля и location.city остаются: textarea нужны источнику H, city не контакт.
 raw_strip:
   - name
@@ -60,8 +60,44 @@ raw_strip:
   - identity
   - business
   - company
+  - website
+  - title
+  - description
   - location.address_line
   - location.coordinates
+
+# Ключи верхнего уровня лида из /leads/search, замер 24.09.2026 (27 ключей), плюс company
+# из GET /leads/{id}. Незнакомый ключ → проблема unknown_raw_key и алерт: новое контактное
+# поле mefi не должно попасть в raw незаметно.
+raw_known_keys:
+  - assigned_to
+  - business
+  - client_type
+  - company
+  - converted_at
+  - created_at
+  - created_by
+  - custom_fields
+  - description
+  - email
+  - estimated_value
+  - gclid
+  - groups
+  - id
+  - identity
+  - is_duplicate
+  - is_public
+  - last_contact_at
+  - lifecycle
+  - location
+  - name
+  - phone
+  - priority
+  - source
+  - status
+  - status_changed_at
+  - title
+  - website
 
 sources:
   showroom_visit: ["Showroom"]             # считается отдельно от входящих лидов

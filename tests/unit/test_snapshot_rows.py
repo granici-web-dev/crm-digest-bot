@@ -104,11 +104,15 @@ def test_recorded_leads_map_to_expected_rows(app_config: AppConfig) -> None:
 
 
 def test_raw_strip_removes_contact_fields_keeps_textareas(app_config: AppConfig) -> None:
-    lead = make_lead(company={"name": "SRL Test"})
+    lead = make_lead(
+        website="https://client1.example.com",
+        title="Director",
+        description="Sunati dupa ora 18",
+    )
 
     stripped = strip_contacts(lead, app_config.status_mapping.raw_strip)
 
-    for contact_key in ("name", "phone", "email", "identity", "business", "company"):
+    for contact_key in ("name", "phone", "email", "identity", "website", "title", "description"):
         assert contact_key not in stripped
     assert "address_line" not in stripped["location"]
     assert "coordinates" not in stripped["location"]
@@ -120,3 +124,29 @@ def test_raw_strip_removes_contact_fields_keeps_textareas(app_config: AppConfig)
         "value": "REDACTED",
     }
     assert lead["phone"] == "+40700000099"
+
+
+def test_raw_strip_removes_company_contacts(app_config: AppConfig) -> None:
+    lead = make_lead(
+        client_type="company",
+        name="SRL CLIENT_TEST",
+        company={"name": "SRL CLIENT_TEST", "fiscal_code": "RO00000001"},
+        business={"name": "SRL CLIENT_TEST", "phone": "+40700000002"},
+    )
+
+    stripped = strip_contacts(lead, app_config.status_mapping.raw_strip)
+
+    for contact_key in ("name", "company", "business"):
+        assert contact_key not in stripped
+    assert stripped["client_type"] == "company"
+
+
+def test_unknown_top_level_key_is_recorded_without_value(app_config: AppConfig) -> None:
+    parsed, _ = parse_leads([make_lead(whatsapp_number="+40700000003")])
+
+    row, problems = lead_to_snapshot_row(
+        parsed[0], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping
+    )
+
+    assert problems == [CustomFieldProblem(None, "whatsapp_number", "unknown_raw_key", None)]
+    assert row["lead_id"] == 1001

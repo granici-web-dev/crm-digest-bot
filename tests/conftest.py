@@ -5,11 +5,12 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.pool import NullPool
 from testcontainers.community.postgres import PostgresContainer
 
 from digest.config import AppConfig, load_app_config
+from digest.db.engine import create_database_engine
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 TABLES_TRUNCATED_BETWEEN_TESTS = (
@@ -49,7 +50,7 @@ def database_url(postgres_container: PostgresContainer) -> str:
 
 @pytest.fixture
 async def engine(database_url: str) -> AsyncIterator[AsyncEngine]:
-    engine = create_async_engine(database_url, poolclass=NullPool)
+    engine = create_database_engine(database_url, poolclass=NullPool)
     async with engine.begin() as connection:
         await connection.execute(
             text(f"TRUNCATE {', '.join(TABLES_TRUNCATED_BETWEEN_TESTS)} RESTART IDENTITY")

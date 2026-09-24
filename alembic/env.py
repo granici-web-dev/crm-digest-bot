@@ -3,8 +3,8 @@ from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import create_async_engine
 
+from digest.db.engine import create_database_engine
 from digest.db.schema import metadata
 from digest.settings import Settings
 
@@ -17,7 +17,7 @@ def database_url() -> str:
     url_from_caller = config.get_main_option("sqlalchemy.url")
     if url_from_caller:
         return url_from_caller
-    return Settings().database_url  # type: ignore[call-arg]
+    return Settings().database_url.get_secret_value()  # type: ignore[call-arg]
 
 
 def run_migrations(connection: Connection) -> None:
@@ -27,7 +27,7 @@ def run_migrations(connection: Connection) -> None:
 
 
 async def run_migrations_online() -> None:
-    engine = create_async_engine(database_url())
+    engine = create_database_engine(database_url())
     async with engine.connect() as connection:
         await connection.run_sync(run_migrations)
     await engine.dispose()

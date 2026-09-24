@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 import pytest
 import respx
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -248,3 +248,23 @@ async def test_snapshot_date_is_bucharest_date(
     )
 
     assert (await run_row(engine, run_id)).snapshot_date == date(2026, 9, 25)
+
+
+async def test_failed_run_error_and_log_carry_no_client_data(
+    engine: AsyncEngine,
+    mefi_client: MefiClient,
+    mefi_mock: respx.MockRouter,
+    app_config: AppConfig,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    page = make_search_page([make_lead(id=1)])
+    page["data"] = "CLIENT_TEST +40700000077 client@example.test"
+    mefi_mock.post(SEARCH_URL).respond(json=page)
+
+    with pytest.raises(ValidationError):
+        await snapshot(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
+
+    async with engine.connect() as connection:
+        run = (await connection.execute(select(snapshot_runs))).one()
+    assert run.error == "ValidationError: data: list_type"
+    assert "+40700000077" not in caplog.text

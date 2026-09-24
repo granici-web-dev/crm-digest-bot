@@ -99,6 +99,7 @@ class StatusMapping(StrictConfigModel):
     showrooms: list[str]
     time: TimeSettings
     raw_strip: list[str]
+    raw_known_keys: frozenset[str]
 
     _category_by_status: dict[str, LeadCategory] = PrivateAttr()
 
