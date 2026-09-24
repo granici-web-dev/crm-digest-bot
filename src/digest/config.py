@@ -92,6 +92,17 @@ class TimeSettings(StrictConfigModel):
     working_hours: WorkingHours
 
 
+class CompletenessThresholds(StrictConfigModel):
+    max_missing_leads: int
+    max_missing_share: float
+    max_skipped_leads: int
+    max_skipped_share: float
+
+
+class SnapshotSettings(StrictConfigModel):
+    completeness: CompletenessThresholds
+
+
 class StatusMapping(StrictConfigModel):
     categories: Categories
     custom_fields: CustomFields
@@ -100,6 +111,7 @@ class StatusMapping(StrictConfigModel):
     time: TimeSettings
     raw_strip: list[str]
     raw_known_keys: frozenset[str]
+    snapshot: SnapshotSettings
 
     _category_by_status: dict[str, LeadCategory] = PrivateAttr()
 

@@ -29,6 +29,11 @@ class MefiRateLimitExceeded(Exception):
         self.rate_limited_count = rate_limited_count
 
 
+class MefiSearchUnsuccessful(Exception):
+    def __init__(self, page_number: int) -> None:
+        super().__init__(f"mefi вернул success: false на странице {page_number}")
+
+
 class RequestPacer:
     def __init__(
         self,
@@ -155,4 +160,7 @@ class MefiClient:
                 },
             )
             response.raise_for_status()
-            return MefiSearchPage.model_validate_json(response.content), rate_limited_count
+            page = MefiSearchPage.model_validate_json(response.content)
+            if not page.success:
+                raise MefiSearchUnsuccessful(page_number)
+            return page, rate_limited_count

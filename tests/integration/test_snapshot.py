@@ -11,8 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.config import AppConfig
 from digest.db.schema import lead_snapshots, snapshot_runs
-from digest.mefi.client import MefiClient, RequestPacer, create_mefi_http_client
-from digest.snapshot import run_daily_snapshot
+from digest.mefi.client import (
+    MefiClient,
+    MefiSearchUnsuccessful,
+    RequestPacer,
+    create_mefi_http_client,
+)
+from digest.snapshot import SnapshotIncomplete, run_daily_snapshot
 from factories import make_lead, make_search_page, recorded_search_leads
 
 BASE_URL = "https://mefi.test/api/v1"
@@ -69,7 +74,7 @@ async def snapshot_lead_ids(engine: AsyncEngine, snapshot_date: date) -> list[in
         )
 
 
-async def test_snapshot_writes_rows_and_success_run(
+async def test_snapshot_below_thresholds_is_success_with_alert_data(
     engine: AsyncEngine,
     mefi_client: MefiClient,
     mefi_mock: respx.MockRouter,
@@ -77,16 +82,16 @@ async def test_snapshot_writes_rows_and_success_run(
 ) -> None:
     broken = make_lead(id=4000)
     del broken["created_at"]
-    mefi_returns(
-        mefi_mock,
-        [*recorded_search_leads(), make_lead(id=4001, status=None), broken],
-    )
+    without_duplicate_flag = make_lead(id=4001, status=None)
+    del without_duplicate_flag["is_duplicate"]
+    mefi_returns(mefi_mock, [*recorded_search_leads(), without_duplicate_flag, broken])
 
     run_id = await snapshot(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
 
     run = await run_row(engine, run_id)
     assert (run.status, run.attempt, run.snapshot_date) == ("success", 1, date(2026, 9, 24))
     assert (run.api_total, run.leads_written, run.unmapped_count, run.skipped_count) == (5, 4, 1, 1)
+    assert run.is_duplicate_missing == 1
     assert run.skipped_leads == [{"lead_id": 4000, "reason": "created_at: missing"}]
     assert run.new_unmapped_lead_ids == [4001]
     assert run.missing_since_previous is None
@@ -268,3 +273,61 @@ async def test_failed_run_error_and_log_carry_no_client_data(
         run = (await connection.execute(select(snapshot_runs))).one()
     assert run.error == "ValidationError: data: list_type"
     assert "+40700000077" not in caplog.text
+
+
+async def failed_run(engine: AsyncEngine) -> Any:
+    async with engine.connect() as connection:
+        return (await connection.execute(select(snapshot_runs))).one()
+
+
+async def test_mass_skip_fails_run_and_writes_no_rows(
+    engine: AsyncEngine,
+    mefi_client: MefiClient,
+    mefi_mock: respx.MockRouter,
+    app_config: AppConfig,
+) -> None:
+    broken_leads = [make_lead(id=lead_id, created_at=None) for lead_id in range(100, 111)]
+    mefi_returns(mefi_mock, [make_lead(id=1), *broken_leads])
+
+    with pytest.raises(SnapshotIncomplete):
+        await snapshot(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
+
+    run = await failed_run(engine)
+    assert (run.status, run.error) == (
+        "failed",
+        "SnapshotIncomplete: пропущено 11 битых лидов из 12",
+    )
+    assert await snapshot_lead_ids(engine, date(2026, 9, 24)) == []
+
+
+async def test_short_pagination_fails_run(
+    engine: AsyncEngine,
+    mefi_client: MefiClient,
+    mefi_mock: respx.MockRouter,
+    app_config: AppConfig,
+) -> None:
+    leads = [make_lead(id=lead_id) for lead_id in range(1, 4)]
+    mefi_mock.post(SEARCH_URL).respond(json=make_search_page(leads, total=20))
+
+    with pytest.raises(SnapshotIncomplete):
+        await snapshot(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
+
+    assert (await failed_run(engine)).error == "SnapshotIncomplete: получено 3 лидов из 20"
+
+
+async def test_unsuccessful_page_fails_run(
+    engine: AsyncEngine,
+    mefi_client: MefiClient,
+    mefi_mock: respx.MockRouter,
+    app_config: AppConfig,
+) -> None:
+    page = make_search_page([])
+    page["success"] = False
+    mefi_mock.post(SEARCH_URL).respond(json=page)
+
+    with pytest.raises(MefiSearchUnsuccessful):
+        await snapshot(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
+
+    assert (await failed_run(engine)).error == (
+        "MefiSearchUnsuccessful: mefi вернул success: false на странице 1"
+    )

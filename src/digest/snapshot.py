@@ -12,9 +12,21 @@ from pydantic import JsonValue, ValidationError
 from sqlalchemy import func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from digest.config import UNMAPPED, CustomFieldRef, LeadCategory, OfertatField, StatusMapping
+from digest.config import (
+    UNMAPPED,
+    CompletenessThresholds,
+    CustomFieldRef,
+    LeadCategory,
+    OfertatField,
+    StatusMapping,
+)
 from digest.db.schema import lead_snapshots, snapshot_runs
-from digest.mefi.client import MefiClient, MefiLeadsDump, MefiRateLimitExceeded
+from digest.mefi.client import (
+    MefiClient,
+    MefiLeadsDump,
+    MefiRateLimitExceeded,
+    MefiSearchUnsuccessful,
+)
 from digest.mefi.models import MefiCustomField, MefiLead
 
 logger = logging.getLogger(__name__)
@@ -34,6 +46,26 @@ class CustomFieldProblem:
     expected_name: str
     problem: str
     actual: str | None
+
+
+@dataclass(frozen=True)
+class SnapshotCounters:
+    api_total: int
+    leads_written: int
+    unmapped_count: int
+    skipped_count: int
+    is_duplicate_missing: int
+    skipped_leads: list[dict[str, Any]]
+    rate_limited_count: int
+    previous_snapshot_date: date | None
+    missing_since_previous: int | None
+    new_unmapped_lead_ids: list[int]
+    won_converted_mismatch_ids: list[int]
+    custom_field_mismatches: list[dict[str, Any]]
+
+
+class SnapshotIncomplete(Exception):
+    pass
 
 
 @dataclass(frozen=True)
@@ -64,7 +96,7 @@ def describe_error(error: BaseException) -> str:
         return f"{error_type}: {validation_reason(error)}"
     if isinstance(error, httpx.HTTPStatusError):
         return f"{error_type}: HTTP {error.response.status_code}"
-    if isinstance(error, MefiRateLimitExceeded):
+    if isinstance(error, MefiRateLimitExceeded | MefiSearchUnsuccessful | SnapshotIncomplete):
         return f"{error_type}: {error}"
     return error_type
 
@@ -190,6 +222,10 @@ def lead_to_snapshot_row(
         if problem is not None
     ]
     problems.extend(
+        CustomFieldProblem(field.field_id, field.name, "invalid_shape", None)
+        for field in lead.invalid_shape_fields
+    )
+    problems.extend(
         CustomFieldProblem(None, key, "unknown_raw_key", None)
         for key in sorted(parsed_lead.raw.keys() - status_mapping.raw_known_keys)
     )
@@ -239,7 +275,7 @@ async def write_snapshot(
     tenant_id: str,
     snapshot_date: date,
     status_mapping: StatusMapping,
-) -> dict[str, Any]:
+) -> SnapshotCounters:
     parsed_leads, skipped_leads = parse_leads(dump.leads)
     rows: list[dict[str, Any]] = []
     problems_by_lead: list[tuple[int, CustomFieldProblem]] = []
@@ -262,25 +298,42 @@ async def write_snapshot(
     if rows:
         await connection.execute(insert(lead_snapshots), rows)
 
-    return {
-        "api_total": dump.api_total,
-        "leads_written": len(rows),
-        "unmapped_count": len(unmapped_lead_ids),
-        "skipped_count": len(skipped_leads),
-        "skipped_leads": [asdict(skipped) for skipped in skipped_leads],
-        "rate_limited_count": dump.rate_limited_count,
-        "previous_snapshot_date": previous_date,
-        "missing_since_previous": (
+    return SnapshotCounters(
+        api_total=dump.api_total,
+        leads_written=len(rows),
+        unmapped_count=len(unmapped_lead_ids),
+        skipped_count=len(skipped_leads),
+        is_duplicate_missing=sum(1 for row in rows if row["is_duplicate"] is None),
+        skipped_leads=[asdict(skipped) for skipped in skipped_leads],
+        rate_limited_count=dump.rate_limited_count,
+        previous_snapshot_date=previous_date,
+        missing_since_previous=(
             len(previous_categories.keys() - current_lead_ids) if previous_date else None
         ),
-        "new_unmapped_lead_ids": sorted(unmapped_lead_ids - previously_unmapped_ids),
-        "won_converted_mismatch_ids": sorted(
+        new_unmapped_lead_ids=sorted(unmapped_lead_ids - previously_unmapped_ids),
+        won_converted_mismatch_ids=sorted(
             row["lead_id"]
             for row in rows
             if won_disagrees_with_converted_at(row["category"], row["converted_at"])
         ),
-        "custom_field_mismatches": summarize_custom_field_problems(problems_by_lead),
-    }
+        custom_field_mismatches=summarize_custom_field_problems(problems_by_lead),
+    )
+
+
+def completeness_failure(
+    counters: SnapshotCounters, thresholds: CompletenessThresholds
+) -> str | None:
+    api_total = counters.api_total
+    received = counters.leads_written + counters.skipped_count
+    if api_total > 0 and counters.leads_written == 0:
+        return f"записано 0 лидов из {api_total}"
+    missing_allowed = max(thresholds.max_missing_leads, thresholds.max_missing_share * api_total)
+    if api_total - received > missing_allowed:
+        return f"получено {received} лидов из {api_total}"
+    skipped_allowed = max(thresholds.max_skipped_leads, thresholds.max_skipped_share * api_total)
+    if counters.skipped_count > skipped_allowed:
+        return f"пропущено {counters.skipped_count} битых лидов из {api_total}"
+    return None
 
 
 async def run_daily_snapshot(
@@ -327,6 +380,9 @@ async def run_daily_snapshot(
             counters = await write_snapshot(
                 connection, dump, tenant_id, snapshot_date, status_mapping
             )
+            failure = completeness_failure(counters, status_mapping.snapshot.completeness)
+            if failure is not None:
+                raise SnapshotIncomplete(failure)
             await connection.execute(
                 update(snapshot_runs)
                 .where(this_run)
@@ -334,7 +390,7 @@ async def run_daily_snapshot(
                     status="success",
                     finished_at=func.clock_timestamp(),
                     duration_ms=round((time.monotonic() - started_at) * 1000),
-                    **counters,
+                    **asdict(counters),
                 )
             )
     except Exception as error:
@@ -362,10 +418,10 @@ async def run_daily_snapshot(
         extra={
             "run_id": run_id,
             "snapshot_date": snapshot_date.isoformat(),
-            **{
-                key: counters[key]
-                for key in ("api_total", "leads_written", "unmapped_count", "skipped_count")
-            },
+            "api_total": counters.api_total,
+            "leads_written": counters.leads_written,
+            "unmapped_count": counters.unmapped_count,
+            "skipped_count": counters.skipped_count,
         },
     )
     return run_id

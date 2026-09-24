@@ -1,9 +1,3 @@
-"""foundation: tenants, lead snapshots, snapshot runs, settings, schedules, report runs
-
-Revision ID: 0001
-Revises:
-"""
-
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
@@ -35,7 +29,7 @@ def upgrade() -> None:
         sa.Column("showroom", sa.Text(), nullable=True),
         sa.Column("ofertat", sa.Boolean(), nullable=True),
         sa.Column("data_revenire", sa.Date(), nullable=True),
-        sa.Column("is_duplicate", sa.Boolean(), nullable=False),
+        sa.Column("is_duplicate", sa.Boolean(), nullable=True),
         sa.Column("assigned_to_id", sa.Integer(), nullable=True),
         sa.Column("assigned_to_name", sa.Text(), nullable=True),
         sa.Column("created_at", postgresql.TIMESTAMP(timezone=True), nullable=False),
@@ -72,6 +66,7 @@ def upgrade() -> None:
         sa.Column("leads_written", sa.Integer(), nullable=True),
         sa.Column("unmapped_count", sa.Integer(), nullable=True),
         sa.Column("skipped_count", sa.Integer(), nullable=True),
+        sa.Column("is_duplicate_missing", sa.Integer(), nullable=True),
         sa.Column("missing_since_previous", sa.Integer(), nullable=True),
         sa.Column("rate_limited_count", sa.Integer(), nullable=True),
         sa.Column("skipped_leads", postgresql.JSONB(), nullable=True),

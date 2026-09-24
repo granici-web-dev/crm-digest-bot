@@ -111,6 +111,15 @@ sources:
 
 showrooms: ["București", "Brașov", "Cluj"]
 
+# success значит «снапшот полный»: отчёты читают только success. Выше порога прогон failed,
+# отчёт уходит с пометкой «данные mefi недоступны»; ниже порога расхождение идёт в алерт.
+snapshot:
+  completeness:
+    max_missing_leads: 5          # получено меньше api_total больше чем на max(5, 0.5 %)
+    max_missing_share: 0.005
+    max_skipped_leads: 10         # битых лидов больше чем max(10, 1 %) от api_total
+    max_skipped_share: 0.01
+
 time:
   timezone: "Europe/Bucharest"
   daily_window_end: "19:00"

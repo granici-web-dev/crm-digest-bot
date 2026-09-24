@@ -3,7 +3,9 @@ from datetime import date
 from digest.config import AppConfig, LeadCategory
 from digest.snapshot import (
     CustomFieldProblem,
+    SnapshotCounters,
     categorize,
+    completeness_failure,
     lead_to_snapshot_row,
     parse_leads,
     strip_contacts,
@@ -150,3 +152,119 @@ def test_unknown_top_level_key_is_recorded_without_value(app_config: AppConfig) 
 
     assert problems == [CustomFieldProblem(None, "whatsapp_number", "unknown_raw_key", None)]
     assert row["lead_id"] == 1001
+
+
+def test_lead_without_is_duplicate_is_kept_with_null(app_config: AppConfig) -> None:
+    lead = make_lead()
+    del lead["is_duplicate"]
+
+    parsed, skipped = parse_leads([lead])
+    row, problems = lead_to_snapshot_row(
+        parsed[0], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping
+    )
+
+    assert skipped == []
+    assert row["is_duplicate"] is None
+    assert problems == []
+
+
+def test_invalid_status_is_unmapped_and_recorded(app_config: AppConfig) -> None:
+    parsed, skipped = parse_leads([make_lead(status={"id": "16", "name": None})])
+
+    row, problems = lead_to_snapshot_row(
+        parsed[0], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping
+    )
+
+    assert skipped == []
+    assert (row["category"], row["status_name"]) == ("UNMAPPED", None)
+    assert problems == [CustomFieldProblem(None, "status", "invalid_shape", None)]
+
+
+def test_invalid_secondary_fields_become_null_and_are_recorded(app_config: AppConfig) -> None:
+    custom_fields = make_custom_fields(ofertat="✅DA")
+    del custom_fields[2]["name"]
+    parsed, skipped = parse_leads(
+        [
+            make_lead(
+                is_duplicate="no",
+                source={"id": "6", "name": "Site"},
+                assigned_to={"id": 8, "name": None},
+                last_contact_at="2026-09-23T08:00:00",
+                custom_fields=custom_fields,
+            )
+        ]
+    )
+
+    row, problems = lead_to_snapshot_row(
+        parsed[0], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping
+    )
+
+    assert skipped == []
+    assert [row[key] for key in ("is_duplicate", "source_name", "assigned_to_id")] == [None] * 3
+    assert (row["last_contact_at"], row["ofertat"], row["showroom"]) == (None, None, "București")
+    assert problems == [
+        CustomFieldProblem(20, "Ofertat", "missing", None),
+        CustomFieldProblem(None, "is_duplicate", "invalid_shape", None),
+        CustomFieldProblem(None, "source", "invalid_shape", None),
+        CustomFieldProblem(None, "assigned_to", "invalid_shape", None),
+        CustomFieldProblem(None, "last_contact_at", "invalid_shape", None),
+        CustomFieldProblem(20, "custom_fields", "invalid_shape", None),
+    ]
+
+
+def test_null_custom_fields_is_not_a_shape_problem() -> None:
+    parsed, skipped = parse_leads([make_lead(custom_fields=None)])
+
+    assert skipped == []
+    assert parsed[0].lead.custom_fields == []
+    assert parsed[0].lead.invalid_shape_fields == []
+
+
+def counters(api_total: int, leads_written: int, skipped_count: int) -> SnapshotCounters:
+    return SnapshotCounters(
+        api_total=api_total,
+        leads_written=leads_written,
+        unmapped_count=0,
+        skipped_count=skipped_count,
+        is_duplicate_missing=0,
+        skipped_leads=[],
+        rate_limited_count=0,
+        previous_snapshot_date=None,
+        missing_since_previous=None,
+        new_unmapped_lead_ids=[],
+        won_converted_mismatch_ids=[],
+        custom_field_mismatches=[],
+    )
+
+
+def test_zero_written_leads_is_incomplete(app_config: AppConfig) -> None:
+    thresholds = app_config.status_mapping.snapshot.completeness
+
+    assert completeness_failure(counters(3, 0, 3), thresholds) == "записано 0 лидов из 3"
+    assert completeness_failure(counters(0, 0, 0), thresholds) is None
+
+
+def test_received_short_of_api_total_beyond_threshold_is_incomplete(
+    app_config: AppConfig,
+) -> None:
+    thresholds = app_config.status_mapping.snapshot.completeness
+
+    assert completeness_failure(counters(20, 15, 0), thresholds) is None
+    assert completeness_failure(counters(20, 14, 0), thresholds) == "получено 14 лидов из 20"
+    assert completeness_failure(counters(3000, 2985, 0), thresholds) is None
+    assert completeness_failure(counters(3000, 2984, 0), thresholds) == (
+        "получено 2984 лидов из 3000"
+    )
+
+
+def test_skipped_leads_beyond_threshold_is_incomplete(app_config: AppConfig) -> None:
+    thresholds = app_config.status_mapping.snapshot.completeness
+
+    assert completeness_failure(counters(100, 90, 10), thresholds) is None
+    assert completeness_failure(counters(100, 89, 11), thresholds) == (
+        "пропущено 11 битых лидов из 100"
+    )
+    assert completeness_failure(counters(3000, 2970, 30), thresholds) is None
+    assert completeness_failure(counters(3000, 2969, 31), thresholds) == (
+        "пропущено 31 битых лидов из 3000"
+    )
