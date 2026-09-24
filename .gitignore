@@ -1,0 +1,49 @@
+# Секреты
+.env
+.env.*
+!.env.example
+
+# Исходные выгрузки с данными клиентов (SB KPi.xlsx и т.п.): в репо только обезличенный эталон
+docs/reference/
+
+# Бэкапы и дампы Postgres
+*.dump
+*.sql.gz
+backups/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# uv / виртуальные окружения
+.venv/
+venv/
+
+# Инструменты
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Артефакты прогонов: графики, Excel, логи
+out/
+*.log
+
+# Playwright (этап 2)
+playwright-report/
+test-results/
+.playwright/
+
+# Claude Code: локальные настройки личные, settings.json общий
+.claude/settings.local.json
+
+# IDE и ОС
+.idea/
+.vscode/
+*.swp
+.DS_Store
