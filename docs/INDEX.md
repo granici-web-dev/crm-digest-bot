@@ -11,6 +11,7 @@
 | `docs/kpi-definitions.md` | Формулы KPI и SPI, пороги, веса | `metrics/`, вопросы про формулы |
 | `docs/mefi-api-notes.md` | Проверенные факты mefi API, лимиты, реальные id | Клиент mefi, снапшот |
 | `docs/mefi-api-reference/` | Документация mefi из соседнего проекта | Только если в notes нет ответа, по одному файлу |
+| `docs/mefi-session-notes.md` | Источник B: endpoints таблиц mefi, разбор ячеек, связи сущностей, риск входа | Этап 2, синк Oferte/Contracte/Facturi |
 | `config/status-mapping.yaml` | Статусы → категории, кастомные поля, источники | Категоризация |
 | `config/modules.yaml` | Реестр модулей отчётов и источников | Модули, `/settings`, планировщик |
 | `config/managers.yaml` | Консультанты: id, имя, шоурум, active | Метрики по менеджерам |
