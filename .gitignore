@@ -42,6 +42,11 @@ test-results/
 # Claude Code: локальные настройки личные, settings.json общий
 .claude/settings.local.json
 
+# Установленные локально скиллы (npx skills add)
+.agents/
+.claude/skills/
+skills-lock.json
+
 # IDE и ОС
 .idea/
 .vscode/
