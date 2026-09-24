@@ -1,0 +1,49 @@
+# Маппинг status.name из mefi → категория. Читается кодом при старте.
+# Неизвестный статус → UNMAPPED (считается отдельно, алерт в служебный бот).
+# Сравнение по точному совпадению после trim; регистр и диакритику не нормализовать.
+
+categories:
+  WON:
+    statuses: ["Clienți"]
+    also_when: converted_at_not_null       # дублирующий признак; расхождение → алерт
+  ACTIVE:
+    statuses: ["IN PROCES", "Ofertat", "SHOWROOM"]
+    stale_after_days: 14                   # алерт «без движения» по status_changed_at
+  ACTIVE_FOLLOWUP:
+    statuses: ["Revenire 1", "Revenire 2", "Revenire 3"]
+    counts_as: ACTIVE
+  LOST:
+    reasons:
+      STAND_BY:          { statuses: ["Stand BY"], followup_field: "Data revenire" }
+      NU_RASPUNS:        { statuses: ["NU A RASPUNS"] }
+      A_REFUZAT:         { statuses: ["A REFUZAT"] }
+      PRODUS_NEPOTRIVIT: { statuses: ["PRODUS NEPOTRIVIT"] }
+      BUGET:             { statuses: ["BUGET"] }
+      CONCURENT:         { statuses: ["CONCURENTA"] }
+      TIMP:              { statuses: ["TIMP"], note: "отказ из-за срока производства 1–2 мес." }
+      IRELEVANT:         { statuses: ["IRELEVANT", "SPAM"], excluded_from_useful: true }
+  PARTNERSHIP:
+    statuses: ["DESIGNER", "INFLUENCER"]
+    excluded_from_leads: true
+
+custom_fields:
+  showroom: "Showroom"                     # București | Brașov | Cluj
+  ofertat: "Ofertat"                       # DA | NU (булево, без даты)
+  data_revenire: "Data revenire"
+  revenire_notes: ["Revenire 1 (Data+Info)", "Revenirea 2 (Data+info)", "Revenirea 3 (Data+info)"]
+  informatii: "Informatii"
+  utm: ["UTM_Source", "UTM_Campanie", "UTM_Content", "UTM_Medium"]
+
+sources:
+  showroom_visit: ["Showroom"]             # считается отдельно от входящих лидов
+  web: ["Site", "Mail", "Meta ADS"]        # строка «Leads Mail/FB/IG» в формате продавцов
+  phone: ["Telefon"]
+  whatsapp: ["WhatsApp"]
+  partner: ["Colaborare"]
+
+showrooms: ["București", "Brașov", "Cluj"]
+
+time:
+  timezone: "Europe/Bucharest"
+  daily_window_end: "19:00"
+  working_hours: { start: "10:00", end: "19:00" }   # правило переноса для недельного счёта

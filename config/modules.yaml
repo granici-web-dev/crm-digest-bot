@@ -1,0 +1,63 @@
+# Реестр модулей отчётов. enabled — дефолт при первом запуске; дальше — таблица settings в Postgres через /settings.
+# sources: A=leads:read, B=mefi session (Oferte/Contracte/Facturi), C=calls:read, D=Ads API, E=GA4, F=Excel 2024-25, G=себестоимость, H=LLM из заметок
+# Модуль нельзя включить, пока не подключены все его sources.
+
+daily:            # 19:30, окно 19:00 вчера → 19:00 сегодня
+  d1: { name: seller_format_report,   sources: [A], enabled: true }
+  d2: { name: untouched_leads,        sources: [A], enabled: true,  params: { threshold_hours: 4 } }
+  d3: { name: overdue_revenire,       sources: [A], enabled: true }
+  d4: { name: stale_offers,           sources: [A], enabled: true,  params: { days: 14 } }
+  d5: { name: anomalies,              sources: [A], enabled: true }
+  d6: { name: same_weekday_compare,   sources: [A], enabled: true }
+  d7: { name: scr_rolling_30,         sources: [A], enabled: false }
+  d8: { name: instant_alerts,         sources: [A], enabled: false, params: { site_zero_by: "15:00" } }
+
+weekly:           # понедельник 09:00, пн–вс
+  w1:  { name: leads_day_showroom_source, sources: [A], enabled: true }
+  w2:  { name: showroom_visits,           sources: [A], enabled: true }
+  w3:  { name: weekly_funnel,             sources: [A], enabled: true }
+  w4:  { name: loss_reasons,              sources: [A], enabled: true }
+  w5:  { name: speed_to_lead,             sources: [A], enabled: false }
+  w6:  { name: irr_by_campaign,           sources: [A], enabled: false }
+  w7:  { name: missed_calls_no_lead,      sources: [C], enabled: false }
+  w8:  { name: week_over_week,            sources: [A], enabled: true }
+  w9:  { name: cost_per_lead_by_channel,  sources: [A, D], enabled: false }
+  w10: { name: spend_without_leads,       sources: [D], enabled: false }
+  w11: { name: sessions_to_leads,         sources: [A, E], enabled: false }
+  w12: { name: excel_attachment,          sources: [A], enabled: true }
+
+monthly:          # 1-е число 09:00
+  m1:  { name: month_summary_image,   sources: [B],    enabled: false }
+  m2:  { name: funnel_by_showroom_image, sources: [A], enabled: true }
+  m3:  { name: trend_6m_image,        sources: [A],    enabled: true }
+  m4:  { name: scr_with_targets,      sources: [A],    enabled: true }
+  m5:  { name: manager_cockpit,       sources: [A],    enabled: true }
+  m6:  { name: spi_ranking,           sources: [A],    enabled: true }
+  m7:  { name: scr_by_source_campaign, sources: [A],   enabled: false }
+  m8:  { name: loss_reasons_trend,    sources: [A],    enabled: true }
+  m9:  { name: cohort_conversion,     sources: [A],    enabled: false }
+  m10: { name: contracts_avg_value,   sources: [B],    enabled: false }
+  m11: { name: repeat_clients,        sources: [A],    enabled: false }
+  m12: { name: cpo_cac_by_channel,    sources: [A, D], enabled: false }
+  m13: { name: ad_return,             sources: [B, D], enabled: false }
+  m14: { name: cash_margin,           sources: [B, G], enabled: false }
+  m15: { name: reoffers_cancellations, sources: [B],   enabled: false }
+  m16: { name: top_products,          sources: [B, G], enabled: false }
+  m17: { name: competitors_from_notes, sources: [H],   enabled: false }
+  m18: { name: models_in_demand,      sources: [H],    enabled: false }
+  m19: { name: excel_pdf_attachment,  sources: [A],    enabled: true }
+
+yearly:           # 5 января 09:00
+  y1: { name: seasonality,            sources: [A],    enabled: false }
+  y2: { name: year_over_year,         sources: [A, F], enabled: false }
+  y3: { name: showroom_manager_of_year, sources: [A],  enabled: false }
+  y4: { name: loss_reasons_by_quarter, sources: [A],   enabled: false }
+  y5: { name: sources_growth,         sources: [A],    enabled: false }
+  y6: { name: ad_budget_year,         sources: [D],    enabled: false }
+  y7: { name: contracts_cash_margin_year, sources: [B, G], enabled: false }
+  y8: { name: competitors_models_year, sources: [H],   enabled: false }
+
+chat:             # режим вопросов; включается целиком
+  enabled: false
+  tools: [get_metric, get_funnel, compare_periods, get_loss_reasons, list_overdue_followups, get_cohort, manager_kpi, untouched_leads]
+  trigger: [mention, reply]
