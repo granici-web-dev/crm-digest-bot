@@ -20,7 +20,8 @@
 - Исчезнувшие лиды: счётчик missing_since_previous в snapshot_runs (без пропущенных сегодня), флага в схеме нет.
 - success = снапшот полный: пороги полноты в секции snapshot status-mapping.yaml. is_duplicate nullable, NULL = неизвестно; метрики с исключением дублей падают на NULL в окне.
 - raw jsonb без контактов клиента (список raw_strip в status-mapping.yaml), textarea-поля хранятся.
-- Консультанты: config/managers.yaml, список от клиента ещё не получен.
+- Консультанты: config/managers.yaml, сверен со списком пользователей mefi 24.09.2026.
+- Метрики по консультантам считают только active: true; лид с assigned_to.id вне managers.yaml даёт алерт (реализовать в сессии 4).
 - Отчёты читают только снапшот с snapshot_date = today и status = success, иначе пометка «данные mefi недоступны».
 - Data revenire часто равна дню создания: правило для d3 решается в shape сессии 5.
 - m19 в MVP только Excel, PDF на этапе 2.
@@ -28,7 +29,6 @@
 ## Ждём извне
 
 - SB KPi.xlsx в docs/reference/ (блокер сессии 4).
-- Список консультантов id → шоурум, active от директора Sofabelle.
 
 ## Правило контекста
 

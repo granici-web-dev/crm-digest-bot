@@ -1,17 +1,22 @@
 # Консультанты mefi, ключ — assigned_to.id. Имя как в mefi, не нормализовать (у id 13 два пробела).
-# Заглушка из docs/mefi-api-reference/enums.md с поправками по docs/mefi-api-notes.md (24.09.2026).
-# Уточнить у клиента: шоурум каждого консультанта и кто сейчас работает (active).
+# Сверено со списком пользователей mefi 24.09.2026. Шесть консультантов = отдел Vanzari.
+# В mefi есть пользователь Ciornii Maxim (владелец), его id в API не встречался; добавить, когда появится в assigned_to.
 
 managers:
-  - { id: 2,  name: "Palega Andrei",     showroom: null, active: true }
-  - { id: 4,  name: "Potinga Dima",      showroom: null, active: true }
-  - { id: 6,  name: "Iordache Razvan",   showroom: null, active: true }
+  # Директор по производству.
+  - { id: 2,  name: "Palega Andrei",     showroom: null,        active: false }
+  # Уволен, старые лиды остаются на нём.
+  - { id: 4,  name: "Potinga Dima",      showroom: null,        active: false }
+  # Директор по продажам, не продаёт.
+  - { id: 6,  name: "Iordache Razvan",   showroom: null,        active: false }
   # Маркетинг, не продавец: в метриках по консультантам не участвует.
-  - { id: 7,  name: "Marketing Sofa",    showroom: null, active: false }
-  - { id: 8,  name: "Roibu Valeria",     showroom: null, active: true }
-  - { id: 9,  name: "Moaca Andreea",     showroom: null, active: true }
-  - { id: 10, name: "Godja Adina Maria", showroom: null, active: true }
-  - { id: 11, name: "Marc Andra",        showroom: null, active: true }
-  - { id: 12, name: "Dragoi Mihaela",    showroom: null, active: true }
-  - { id: 13, name: "Raileanu  Leon",    showroom: null, active: true }
-  - { id: 14, name: "Elena Ureche",      showroom: null, active: true }
+  - { id: 7,  name: "Marketing Sofa",    showroom: null,        active: false }
+  # Продаёт и управляет Brașov.
+  - { id: 8,  name: "Roibu Valeria",     showroom: "Brașov",    active: true }
+  - { id: 9,  name: "Moaca Andreea",     showroom: "Brașov",    active: true }
+  - { id: 10, name: "Godja Adina Maria", showroom: "Cluj",      active: true }
+  - { id: 11, name: "Marc Andra",        showroom: "Cluj",      active: true }
+  - { id: 12, name: "Dragoi Mihaela",    showroom: "București", active: true }
+  - { id: 13, name: "Raileanu  Leon",    showroom: "București", active: true }
+  # Не консультант.
+  - { id: 14, name: "Elena Ureche",      showroom: null,        active: false }
