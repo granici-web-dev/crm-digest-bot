@@ -65,7 +65,9 @@ class SnapshotCounters:
 
 
 class SnapshotIncomplete(Exception):
-    pass
+    def __init__(self, reason: str, counters: SnapshotCounters) -> None:
+        super().__init__(reason)
+        self.counters = counters
 
 
 @dataclass(frozen=True)
@@ -99,6 +101,14 @@ def describe_error(error: BaseException) -> str:
     if isinstance(error, MefiRateLimitExceeded | MefiSearchUnsuccessful | SnapshotIncomplete):
         return f"{error_type}: {error}"
     return error_type
+
+
+def counters_known_at_failure(error: BaseException) -> dict[str, Any]:
+    if isinstance(error, SnapshotIncomplete):
+        return asdict(error.counters)
+    if isinstance(error, MefiRateLimitExceeded):
+        return {"rate_limited_count": error.rate_limited_count}
+    return {}
 
 
 def parse_leads(raw_leads: list[dict[str, Any]]) -> tuple[list[ParsedLead], list[SkippedLead]]:
@@ -294,6 +304,8 @@ async def write_snapshot(
         if category == UNMAPPED.category
     }
     current_lead_ids = {row["lead_id"] for row in rows}
+    # Лид, пропущенный сегодня из-за битой формы, не исчез из mefi: он уже в skipped_leads.
+    skipped_lead_ids = {skipped.lead_id for skipped in skipped_leads}
 
     if rows:
         await connection.execute(insert(lead_snapshots), rows)
@@ -308,7 +320,9 @@ async def write_snapshot(
         rate_limited_count=dump.rate_limited_count,
         previous_snapshot_date=previous_date,
         missing_since_previous=(
-            len(previous_categories.keys() - current_lead_ids) if previous_date else None
+            len(previous_categories.keys() - current_lead_ids - skipped_lead_ids)
+            if previous_date
+            else None
         ),
         new_unmapped_lead_ids=sorted(unmapped_lead_ids - previously_unmapped_ids),
         won_converted_mismatch_ids=sorted(
@@ -348,6 +362,15 @@ async def run_daily_snapshot(
         snapshot_runs.c.snapshot_date == snapshot_date
     )
     async with engine.begin() as connection:
+        # Без блокировки две попытки за одну дату (повтор в 19:10 поверх медленной 19:00,
+        # ручной запуск) получат одинаковый attempt и будут гасить running-строки друг друга.
+        await connection.execute(
+            select(
+                func.pg_advisory_xact_lock(
+                    func.hashtextextended(f"snapshot_run:{tenant_id}:{snapshot_date}", 0)
+                )
+            )
+        )
         success_run_id = await connection.scalar(
             select(snapshot_runs.c.id).where(this_date_runs, snapshot_runs.c.status == "success")
         )
@@ -357,6 +380,12 @@ async def run_daily_snapshot(
                 extra={"snapshot_date": snapshot_date.isoformat(), "run_id": success_run_id},
             )
             return int(success_run_id)
+        # running от убитого процесса иначе висел бы вечно.
+        await connection.execute(
+            update(snapshot_runs)
+            .where(this_date_runs, snapshot_runs.c.status == "running")
+            .values(status="failed", finished_at=func.clock_timestamp(), error="superseded")
+        )
         previous_attempts = await connection.scalar(
             select(func.count()).select_from(snapshot_runs).where(this_date_runs)
         )
@@ -382,18 +411,20 @@ async def run_daily_snapshot(
             )
             failure = completeness_failure(counters, status_mapping.snapshot.completeness)
             if failure is not None:
-                raise SnapshotIncomplete(failure)
+                raise SnapshotIncomplete(failure, counters)
             await connection.execute(
                 update(snapshot_runs)
                 .where(this_run)
                 .values(
                     status="success",
                     finished_at=func.clock_timestamp(),
+                    error=None,
                     duration_ms=round((time.monotonic() - started_at) * 1000),
                     **asdict(counters),
                 )
             )
-    except Exception as error:
+    # BaseException: отмена задачи (CancelledError) тоже должна закрыть running-строку.
+    except BaseException as error:
         async with engine.begin() as connection:
             await connection.execute(
                 update(snapshot_runs)
@@ -402,12 +433,8 @@ async def run_daily_snapshot(
                     status="failed",
                     finished_at=func.clock_timestamp(),
                     duration_ms=round((time.monotonic() - started_at) * 1000),
-                    rate_limited_count=(
-                        error.rate_limited_count
-                        if isinstance(error, MefiRateLimitExceeded)
-                        else None
-                    ),
                     error=describe_error(error),
+                    **counters_known_at_failure(error),
                 )
             )
         logger.error("snapshot failed", extra={"run_id": run_id, "error": describe_error(error)})

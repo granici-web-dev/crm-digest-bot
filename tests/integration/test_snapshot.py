@@ -1,12 +1,14 @@
+import asyncio
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, date, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
 import respx
 from pydantic import SecretStr, ValidationError
-from sqlalchemy import select
+from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.config import AppConfig
@@ -22,8 +24,9 @@ from factories import make_lead, make_search_page, recorded_search_leads
 
 BASE_URL = "https://mefi.test/api/v1"
 SEARCH_URL = f"{BASE_URL}/leads/search"
-SEPTEMBER_23_EVENING = datetime(2026, 9, 23, 16, 0, tzinfo=UTC)
-SEPTEMBER_24_EVENING = datetime(2026, 9, 24, 16, 0, tzinfo=UTC)
+BUCHAREST = ZoneInfo("Europe/Bucharest")
+SEPTEMBER_23_EVENING = datetime(2026, 9, 23, 19, 0, tzinfo=BUCHAREST)
+SEPTEMBER_24_EVENING = datetime(2026, 9, 24, 19, 0, tzinfo=BUCHAREST)
 
 
 async def no_wait(seconds: float) -> None:
@@ -39,7 +42,7 @@ def mefi_mock() -> Iterator[respx.MockRouter]:
 @pytest.fixture
 async def mefi_client() -> AsyncIterator[MefiClient]:
     async with create_mefi_http_client(BASE_URL, SecretStr("test-key")) as http_client:
-        yield MefiClient(http_client, pacer=RequestPacer(1.2, sleep=no_wait), sleep=no_wait)
+        yield MefiClient(http_client, pacer=RequestPacer(1.2, sleep=no_wait))
 
 
 def mefi_returns(mefi_mock: respx.MockRouter, leads: list[dict[str, Any]]) -> respx.Route:
@@ -240,19 +243,31 @@ async def test_won_status_without_converted_at_is_recorded(
     assert (await run_row(engine, run_id)).won_converted_mismatch_ids == [1, 3]
 
 
+@pytest.mark.parametrize(
+    ("now", "expected_snapshot_date"),
+    [
+        (datetime(2026, 9, 24, 23, 59, tzinfo=BUCHAREST), date(2026, 9, 24)),
+        (datetime(2026, 9, 25, 0, 0, tzinfo=BUCHAREST), date(2026, 9, 25)),
+        (datetime(2026, 9, 24, 21, 30, tzinfo=UTC), date(2026, 9, 25)),
+        # Последнее воскресенье октября: смещение Бухареста меняется с +3 на +2.
+        (datetime(2026, 10, 24, 21, 0, tzinfo=UTC), date(2026, 10, 25)),
+        (datetime(2026, 10, 25, 21, 0, tzinfo=UTC), date(2026, 10, 25)),
+        (datetime(2026, 10, 25, 22, 0, tzinfo=UTC), date(2026, 10, 26)),
+    ],
+)
 async def test_snapshot_date_is_bucharest_date(
     engine: AsyncEngine,
     mefi_client: MefiClient,
     mefi_mock: respx.MockRouter,
     app_config: AppConfig,
+    now: datetime,
+    expected_snapshot_date: date,
 ) -> None:
     mefi_returns(mefi_mock, [make_lead(id=1)])
 
-    run_id = await snapshot(
-        engine, mefi_client, app_config, datetime(2026, 9, 24, 23, 30, tzinfo=UTC)
-    )
+    run_id = await snapshot(engine, mefi_client, app_config, now)
 
-    assert (await run_row(engine, run_id)).snapshot_date == date(2026, 9, 25)
+    assert (await run_row(engine, run_id)).snapshot_date == expected_snapshot_date
 
 
 async def test_failed_run_error_and_log_carry_no_client_data(
@@ -297,6 +312,8 @@ async def test_mass_skip_fails_run_and_writes_no_rows(
         "failed",
         "SnapshotIncomplete: пропущено 11 битых лидов из 12",
     )
+    assert (run.api_total, run.leads_written, run.skipped_count) == (12, 1, 11)
+    assert run.skipped_leads[0] == {"lead_id": 100, "reason": "created_at: datetime_type"}
     assert await snapshot_lead_ids(engine, date(2026, 9, 24)) == []
 
 
@@ -331,3 +348,74 @@ async def test_unsuccessful_page_fails_run(
     assert (await failed_run(engine)).error == (
         "MefiSearchUnsuccessful: mefi вернул success: false на странице 1"
     )
+
+
+def cancel_request(request: httpx.Request) -> httpx.Response:
+    raise asyncio.CancelledError
+
+
+async def test_cancelled_snapshot_marks_run_failed(
+    engine: AsyncEngine,
+    mefi_client: MefiClient,
+    mefi_mock: respx.MockRouter,
+    app_config: AppConfig,
+) -> None:
+    mefi_mock.post(SEARCH_URL).mock(side_effect=cancel_request)
+
+    with pytest.raises(asyncio.CancelledError):
+        await snapshot(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
+
+    run = await failed_run(engine)
+    assert (run.status, run.error) == ("failed", "CancelledError")
+
+
+async def test_stale_running_run_is_superseded_by_next_attempt(
+    engine: AsyncEngine,
+    mefi_client: MefiClient,
+    mefi_mock: respx.MockRouter,
+    app_config: AppConfig,
+) -> None:
+    async with engine.begin() as connection:
+        await connection.execute(
+            insert(snapshot_runs).values(
+                tenant_id="sofabelle", snapshot_date=date(2026, 9, 24), attempt=1, status="running"
+            )
+        )
+    mefi_returns(mefi_mock, [make_lead(id=1)])
+
+    run_id = await snapshot(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
+
+    async with engine.connect() as connection:
+        runs = (
+            await connection.execute(
+                select(
+                    snapshot_runs.c.attempt, snapshot_runs.c.status, snapshot_runs.c.error
+                ).order_by(snapshot_runs.c.attempt)
+            )
+        ).all()
+    assert [tuple(run) for run in runs] == [(1, "failed", "superseded"), (2, "success", None)]
+    assert (await run_row(engine, run_id)).attempt == 2
+
+
+async def test_lead_skipped_today_is_not_counted_as_missing(
+    engine: AsyncEngine,
+    mefi_client: MefiClient,
+    mefi_mock: respx.MockRouter,
+    app_config: AppConfig,
+) -> None:
+    mefi_mock.post(SEARCH_URL).mock(
+        side_effect=[
+            httpx.Response(
+                200, json=make_search_page([make_lead(id=1), make_lead(id=2), make_lead(id=3)])
+            ),
+            httpx.Response(
+                200, json=make_search_page([make_lead(id=1), make_lead(id=2, created_at=None)])
+            ),
+        ]
+    )
+
+    await snapshot(engine, mefi_client, app_config, SEPTEMBER_23_EVENING)
+    run_id = await snapshot(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
+
+    run = await run_row(engine, run_id)
+    assert (run.skipped_count, run.missing_since_previous) == (1, 1)

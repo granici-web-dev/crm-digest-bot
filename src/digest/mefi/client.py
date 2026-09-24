@@ -18,7 +18,12 @@ Clock = Callable[[], float]
 # Реальный лимит mefi ~1 req/s по IP, а не 600/мин из X-RateLimit-*
 # (docs/mefi-api-notes.md, «Лимиты и правило паузы»).
 MEFI_MIN_REQUEST_INTERVAL_SECONDS = 1.2
+# Без Retry-After ждём целое окно burst: IP-лимит mefi 10 запросов за 10 с (там же).
 RETRY_AFTER_FALLBACK_SECONDS = 10.0
+# Retry-After от сервера не должен повесить ежедневный снапшот на час.
+RETRY_AFTER_CAP_SECONDS = 120.0
+# Одиночный 429 прогон не валит (docs/mefi-api-notes.md), но пять подряд при паузе
+# 1.2 с и ожидании Retry-After значат бан IP; дальше пусть решает повтор в 19:10.
 MAX_CONSECUTIVE_RATE_LIMITS = 5
 LEADS_PER_PAGE = 100
 
@@ -45,15 +50,17 @@ class RequestPacer:
         self._sleep = sleep
         self._clock = clock
         self._lock = asyncio.Lock()
-        self._last_request_at: float | None = None
+        self._next_request_at = float("-inf")
 
     async def wait_turn(self) -> None:
         async with self._lock:
-            if self._last_request_at is not None:
-                delay = self._last_request_at + self._min_interval_seconds - self._clock()
-                if delay > 0:
-                    await self._sleep(delay)
-            self._last_request_at = self._clock()
+            delay = self._next_request_at - self._clock()
+            if delay > 0:
+                await self._sleep(delay)
+            self._next_request_at = self._clock() + self._min_interval_seconds
+
+    def hold(self, seconds: float) -> None:
+        self._next_request_at = max(self._next_request_at, self._clock() + seconds)
 
 
 # Один на процесс: IP-лимит mefi общий для всех задач, темп нельзя держать по клиенту.
@@ -71,7 +78,7 @@ def retry_after_seconds(response: httpx.Response) -> float:
     header_value = response.headers.get("Retry-After")
     if header_value is None or not header_value.isdigit():
         return RETRY_AFTER_FALLBACK_SECONDS
-    return float(header_value)
+    return min(float(header_value), RETRY_AFTER_CAP_SECONDS)
 
 
 def create_mefi_http_client(base_url: str, api_key: SecretStr) -> httpx.AsyncClient:
@@ -87,11 +94,9 @@ class MefiClient:
         self,
         http_client: httpx.AsyncClient,
         pacer: RequestPacer = process_request_pacer,
-        sleep: Sleep = asyncio.sleep,
     ) -> None:
         self._http_client = http_client
         self._pacer = pacer
-        self._sleep = sleep
 
     async def search_all_leads(self) -> MefiLeadsDump:
         leads_by_id: dict[int, dict[str, Any]] = {}
@@ -120,7 +125,8 @@ class MefiClient:
     ) -> tuple[MefiSearchPage, int]:
         # Пустой body отдаёт только lifecycle active (CLAUDE.md, ловушки mefi).
         # created_at asc: новые лиды во время выгрузки уходят в конец и не сдвигают страницы;
-        # сортировки по id в mefi нет.
+        # сортировки по id в mefi нет. Удаление лида во время выгрузки всё же сдвигает страницы
+        # назад и теряет один лид; такой пропуск ловит проверка полноты снапшота.
         request_body = {
             "filters": {"lifecycle": ["active", "lost", "junk"]},
             "sort": "created_at",
@@ -148,7 +154,8 @@ class MefiClient:
                 )
                 if consecutive_rate_limits >= MAX_CONSECUTIVE_RATE_LIMITS:
                     raise MefiRateLimitExceeded(rate_limited_count)
-                await self._sleep(retry_after_seconds(response))
+                # Бан по IP держит весь процесс, поэтому ожидание идёт через общий пейсер.
+                self._pacer.hold(retry_after_seconds(response))
                 continue
             logger.info(
                 "mefi search page",
