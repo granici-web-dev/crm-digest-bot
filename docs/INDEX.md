@@ -14,10 +14,12 @@
 | `docs/mefi-session-notes.md` | Источник B: endpoints таблиц mefi, разбор ячеек, связи сущностей, риск входа | Этап 2, синк Oferte/Contracte/Facturi |
 | `config/status-mapping.yaml` | Статусы → категории, кастомные поля, источники | Категоризация |
 | `config/modules.yaml` | Реестр модулей отчётов и источников | Модули, `/settings`, планировщик |
+| `config/kpi.yaml` | Пороги KPI, уровни SPI, дни для ACR | `metrics/`, пороги |
 | `config/managers.yaml` | Консультанты: id, имя, шоурум, active | Метрики по менеджерам |
 | `docs/shapes/` | Подтверждённые планы фич | Craft и critique своей фичи |
 | `docs/decisions/` | ADR | Решения, которые меняют формулы или стек |
 | `docs/first-sessions.md` | Порядок сессий и промпты | Планирование следующей сессии |
 | `docs/research.md` | Обзор рынка, почему пишем сами | При соблазне взять готовое |
 | `tests/fixtures/mefi/` | Обезличенные ответы mefi | Тесты клиента |
-| `tests/fixtures/etalon-2026-05.json` | Эталонный месяц (появится в сессии 4) | Тесты `metrics/` |
+| `tests/fixtures/etalon-2026-05.json` | Эталон из SB KPi.xlsx: лиды без контактов, пороги, ожидаемые KPI по консультантам | Тесты `metrics/` |
+| `scripts/build_etalon.py` | Сборка эталона из `docs/reference/SB KPi.xlsx` с проверкой на контакты клиента | Пересборка эталона |

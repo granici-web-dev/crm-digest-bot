@@ -1,0 +1,37 @@
+# Пороги KPI и SPI. Источник: SB KPi.xlsx v2.0, лист 02_Setari_Targete (ADR-002).
+# Ключи совпадают с thresholds в tests/fixtures/etalon-2026-05.json.
+# Изменение порога = ADR + обновление эталона (docs/kpi-definitions.md).
+
+thresholds:
+  scr_elite: 0.10
+  scr_bine: 0.07
+  scr_minim: 0.05
+  cdr_perfect: 0.95
+  cdr_minim: 0.90
+  # Нет в 02_Setari_Targete: зашит в формулу 03_KPI_Agenti!W (IF(P>=0.8,10,5)).
+  # Вынесен сюда, чтобы порог не жил в коде; значение повторяет Excel.
+  cdr_contact_floor: 0.80
+  plr_perfect: 0.20
+  plr_maxim: 0.25
+  plr_problema: 0.35
+  sc_perfect: 0.20
+  sc_bine: 0.15
+  sc_minim: 0.10
+  pfr_perfect: 0.10
+  pfr_bine: 0.15
+  pfr_maxim: 0.20
+  acr_perfect: 0.20
+  acr_maxim: 0.30
+  irr_acceptabil: 0.20
+  irr_atentie: 0.30
+
+# Оферта «висит», если с последнего контакта прошло строго больше N дней (01_Input_Leads!AC).
+active_offer_stale_days: 14
+
+# Уровень по SPI, первый подходящий сверху (03_KPI_Agenti!AD).
+levels:
+  - { name: Elite, min_spi: 90 }
+  - { name: Gold, min_spi: 80 }
+  - { name: Silver, min_spi: 70 }
+  - { name: Bronze, min_spi: 60 }
+  - { name: Coaching, min_spi: 0 }

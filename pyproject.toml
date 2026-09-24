@@ -15,12 +15,14 @@ dependencies = [
 [dependency-groups]
 dev = [
     "mypy>=1.11",
+    "openpyxl>=3.1.5",
     "pre-commit>=3.7",
     "pytest>=8.2",
     "pytest-asyncio>=0.24",
     "respx>=0.21",
     "ruff>=0.6",
     "testcontainers[postgres]>=4.7",
+    "types-openpyxl>=3.1.5.20260827",
     "types-pyyaml>=6.0",
 ]
 
@@ -44,7 +46,7 @@ ignore = ["RUF001", "RUF002", "RUF003"]
 [tool.mypy]
 strict = true
 python_version = "3.12"
-files = ["src", "tests"]
+files = ["src", "tests", "scripts"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
