@@ -26,13 +26,16 @@ Telegram-бот: отчёты по расписанию из CRM mefi (лиды 
 
 ## Ловушки mefi API (`leads:read`)
 
-- Пустой body `POST /leads/search` → только `lifecycle: active`. Всегда передавать `["active","lost","junk"]`.
+- Пустой body `POST /leads/search` → только `lifecycle: active`. Всегда передавать `["active","lost","junk"]`. Lifecycle для классификации не использовать: все лиды со статусом, включая IRELEVANT и NU A RASPUNS, в mefi `active` (проверено 24.09.2026, `docs/mefi-api-notes.md`). Категория — только по `status.name`.
 - `date_field` ∈ {created_at, last_contact_at, status_changed_at}; `converted_at` фильтруется на своей стороне.
 - `estimated_value` = null при 0 и продавцами не заполняется. Деньги только из Oferte/Contracte (источник B).
-- Кастомное поле `Ofertat` — булево без даты.
-- Шоурум — `custom_fields[name="Showroom"]`, не `location.city`.
-- Неверный ключ фильтра → 422. Лимит 600 req/min на токен, 60 req/min на IP.
-- `POST /leads/search` может отдавать краткие карточки без `custom_fields` — проверить на первом запросе; если так — `GET /leads/{id}` на каждый лид.
+- Кастомное поле `Ofertat` (field_id 20) — select `"✅DA"` / `"❌NU"`, без даты.
+- Шоурум — `custom_fields[field_id=14, name="Showroom"]`, не `location.city` (там город клиента).
+- Неверный ключ фильтра → 422.
+- Реальный лимит ~1 req/s по IP (burst 10 / 10 с), а не 600/мин токена. Заголовки `X-RateLimit-*` показывают только лимит токена, по ним темп не подбирать. Пауза ≥ 1.2 с между любыми запросами, глобально на процесс; 429 → ждать `Retry-After` и повторить, прогон не валить.
+- `POST /leads/search` отдаёт полные карточки с `custom_fields`, `GET /leads/{id}` не нужен (проверено 24.09.2026).
+- Заметки недоступны: скоуп `leads:read:notes` у mefi не выпущен. `last_contact_at` при создании = `created_at` и перезаписывается последним касанием; `status_changed_at` = null, если статус задан при создании.
+- Источник id 7 в mefi называется `Arhirtect` (опечатка mefi) — писать так.
 
 ## Окна времени
 

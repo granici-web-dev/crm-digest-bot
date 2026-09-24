@@ -1,6 +1,8 @@
 # Маппинг status.name из mefi → категория. Читается кодом при старте.
 # Неизвестный статус → UNMAPPED (считается отдельно, алерт в служебный бот).
 # Сравнение по точному совпадению после trim; регистр и диакритику не нормализовать.
+# lifecycle из mefi для категории не используется: все лиды со статусом там "active"
+# (проверено 24.09.2026, docs/mefi-api-notes.md). status = null → UNMAPPED.
 
 categories:
   WON:
@@ -14,6 +16,7 @@ categories:
     counts_as: ACTIVE
   LOST:
     reasons:
+      # В mefi Stand BY — lifecycle active; LOST — наша категория по брифу §3.
       STAND_BY:          { statuses: ["Stand BY"], followup_field: "Data revenire" }
       NU_RASPUNS:        { statuses: ["NU A RASPUNS"] }
       A_REFUZAT:         { statuses: ["A REFUZAT"] }
@@ -21,17 +24,24 @@ categories:
       BUGET:             { statuses: ["BUGET"] }
       CONCURENT:         { statuses: ["CONCURENTA"] }
       TIMP:              { statuses: ["TIMP"], note: "отказ из-за срока производства 1–2 мес." }
+      # Статуса SPAM в mefi нет (24.09.2026); оставлен по брифу на случай появления.
       IRELEVANT:         { statuses: ["IRELEVANT", "SPAM"], excluded_from_useful: true }
   PARTNERSHIP:
     statuses: ["DESIGNER", "INFLUENCER"]
     excluded_from_leads: true
 
 custom_fields:
-  showroom: "Showroom"                     # București | Brașov | Cluj
-  ofertat: "Ofertat"                       # DA | NU (булево, без даты)
+  # Ищем по field_id, name сверяем: расхождение → алерт в служебный бот.
+  showroom: { field_id: 14, name: "Showroom" }   # București | Brașov | Cluj
+  ofertat:
+    field_id: 20
+    name: "Ofertat"
+    ofertat_yes: "✅DA"                    # точное значение из mefi, эмодзи без пробела
+    ofertat_no: "❌NU"                     # иное значение → алерт, лид не считается ofertat
   data_revenire: "Data revenire"
   revenire_notes: ["Revenire 1 (Data+Info)", "Revenirea 2 (Data+info)", "Revenirea 3 (Data+info)"]
   informatii: "Informatii"
+  mesaj: "Mesaj"                           # field_id 51, textarea, появилось после 28.05.2026
   utm: ["UTM_Source", "UTM_Campanie", "UTM_Content", "UTM_Medium"]
 
 sources:
@@ -40,6 +50,9 @@ sources:
   phone: ["Telefon"]
   whatsapp: ["WhatsApp"]
   partner: ["Colaborare"]
+  # "Arhirtect" — опечатка в самой mefi (id 7), не исправлять.
+  # Google (id 1) и Teren (id 4): лидов нет, имена из enums.md не проверены.
+  other: ["Recomandare", "Arhirtect", "Client Fidel", "Google", "Teren"]
 
 showrooms: ["București", "Brașov", "Cluj"]
 
