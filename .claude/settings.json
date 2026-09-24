@@ -22,7 +22,6 @@
       "Edit(.env)",
       "Edit(.env.local)",
       "Edit(.env.production)",
-      "Read(docs/reference/**)",
       "Bash(git push --force*)",
       "Bash(git push -f*)",
       "Bash(rm -rf *)",
