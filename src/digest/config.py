@@ -1,12 +1,25 @@
 from dataclasses import dataclass
 from datetime import time
 from pathlib import Path
-from typing import Any, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
 import yaml
-from pydantic import BaseModel, ConfigDict, JsonValue, PrivateAttr, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    PositiveInt,
+    PrivateAttr,
+    model_validator,
+)
 
 SourceCode = Literal["A", "B", "C", "D", "E", "F", "G", "H"]
+Share = Annotated[float, Field(ge=0, le=1)]
+
+# Ключи причин, на которые ссылается metrics/: контракт между status-mapping.yaml и кодом.
+# Это наши имена категорий, а не статусы mefi (PRINCIPLES.md, «Комментарии и имена»).
+LOSS_REASONS_USED_BY_METRICS = ("IRELEVANT", "NU_RASPUNS", "BUGET", "PRODUS_NEPOTRIVIT", "STAND_BY")
 
 
 class StrictConfigModel(BaseModel):
@@ -46,6 +59,13 @@ class LossReason(StrictConfigModel):
 
 class LostCategory(StrictConfigModel):
     reasons: dict[str, LossReason]
+
+    @model_validator(mode="after")
+    def reasons_used_by_metrics_exist(self) -> Self:
+        missing = [name for name in LOSS_REASONS_USED_BY_METRICS if name not in self.reasons]
+        if missing:
+            raise ValueError(f"LOST.reasons: нет причин {missing}, на них ссылается metrics/")
+        return self
 
 
 class PartnershipCategory(StrictConfigModel):
@@ -103,10 +123,19 @@ class SnapshotSettings(StrictConfigModel):
     completeness: CompletenessThresholds
 
 
+class SourceGroups(StrictConfigModel):
+    showroom_visit: list[str]
+    web: list[str]
+    phone: list[str]
+    whatsapp: list[str]
+    partner: list[str]
+    other: list[str]
+
+
 class StatusMapping(StrictConfigModel):
     categories: Categories
     custom_fields: CustomFields
-    sources: dict[str, list[str]]
+    sources: SourceGroups
     showrooms: list[str]
     time: TimeSettings
     raw_strip: list[str]
@@ -239,7 +268,7 @@ class RecommendationRule(StrictConfigModel):
 
 class KpiTarget(StrictConfigModel):
     direction: Direction
-    value: float
+    value: Share
 
 
 class SpiLevel(StrictConfigModel):
@@ -249,8 +278,8 @@ class SpiLevel(StrictConfigModel):
 
 class KpiSettings(StrictConfigModel):
     status: Literal["provisional"]
-    thresholds: dict[str, float]
-    active_offer_stale_days: int
+    thresholds: dict[str, Share]
+    active_offer_stale_days: PositiveInt
     levels: list[SpiLevel]
     scores: dict[KpiName, ScoreSteps]
     irr_penalty: ScoreSteps

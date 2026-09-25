@@ -1,9 +1,11 @@
 from datetime import UTC, datetime
 
+import pytest
+
 from digest.config import AppConfig
 from digest.metrics.frame import prepare_lead_frame, unknown_manager_ids
 from digest.snapshot import categorize
-from factories import make_snapshot_row
+from factories import make_snapshot_row, raw_repository_config
 
 TEST_ACCOUNT_ID = 4
 
@@ -80,3 +82,29 @@ def test_unassigned_lead_is_not_an_unknown_manager(app_config: AppConfig) -> Non
     rows = [make_snapshot_row(assigned_to_id=None)]
 
     assert unknown_manager_ids(prepare_lead_frame(rows, app_config), app_config) == set()
+
+
+def test_naive_timestamp_fails_instead_of_being_read_as_utc(app_config: AppConfig) -> None:
+    row = make_snapshot_row(created_at=datetime(2026, 9, 23, 16, 30))
+
+    with pytest.raises(ValueError, match="created_at"):
+        prepare_lead_frame([row], app_config)
+
+
+def test_useful_and_leads_exclusions_follow_config_flags() -> None:
+    raw_config = raw_repository_config()
+    reasons = raw_config["status_mapping"]["categories"]["LOST"]["reasons"]
+    reasons["IRELEVANT"]["excluded_from_useful"] = False
+    reasons["BUGET"]["excluded_from_useful"] = True
+    raw_config["status_mapping"]["categories"]["PARTNERSHIP"]["excluded_from_leads"] = False
+    config = AppConfig.model_validate(raw_config)
+    rows = [
+        make_snapshot_row(lead_id=1, category="LOST", loss_reason="IRELEVANT"),
+        make_snapshot_row(lead_id=2, category="LOST", loss_reason="BUGET"),
+        make_snapshot_row(lead_id=3, category="PARTNERSHIP"),
+    ]
+
+    lead_frame = prepare_lead_frame(rows, config)
+
+    assert lead_frame["is_excluded_from_useful"].tolist() == [False, True, False]
+    assert lead_frame["is_excluded_from_leads"].tolist() == [False, False, False]

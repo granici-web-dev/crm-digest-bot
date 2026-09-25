@@ -4,12 +4,22 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from digest.config import StatusMapping
+from digest.config import StatusMapping, read_yaml
 from digest.snapshot import categorize
 
 BUCHAREST = ZoneInfo("Europe/Bucharest")
 
 MEFI_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "mefi"
+CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
+
+
+def raw_repository_config() -> dict[str, Any]:
+    return {
+        "status_mapping": read_yaml(CONFIG_DIR / "status-mapping.yaml"),
+        "modules": read_yaml(CONFIG_DIR / "modules.yaml"),
+        "managers": read_yaml(CONFIG_DIR / "managers.yaml"),
+        "kpi": read_yaml(CONFIG_DIR / "kpi.yaml"),
+    }
 
 
 def recorded_search_leads() -> list[dict[str, Any]]:
@@ -105,10 +115,12 @@ def load_etalon() -> dict[str, Any]:
 
 def etalon_lead_rows(etalon: dict[str, Any], status_mapping: StatusMapping) -> list[dict[str, Any]]:
     manager_ids: dict[str, int] = etalon["managers"]
+    ofertat_field = status_mapping.custom_fields.ofertat
+    ofertat_values = {ofertat_field.ofertat_yes: True, ofertat_field.ofertat_no: False}
     rows = []
     for lead in etalon["leads"]:
         category = categorize(lead["status"], status_mapping)
-        assignee = " ".join((lead["assigned_to"] or "").split())
+        assignee = " ".join(lead["assigned_to"].split()) if lead["assigned_to"] else None
         rows.append(
             make_snapshot_row(
                 lead_id=lead["row"],
@@ -117,12 +129,12 @@ def etalon_lead_rows(etalon: dict[str, Any], status_mapping: StatusMapping) -> l
                 status_name=lead["status"],
                 source_name=lead["source"],
                 showroom=lead["showroom"],
-                ofertat={"✅DA": True, "❌NU": False}.get(lead["ofertat"]),
+                ofertat=None if lead["ofertat"] is None else ofertat_values[lead["ofertat"]],
                 data_revenire=date.fromisoformat(lead["data_revenire"])
                 if lead["data_revenire"]
                 else None,
                 is_duplicate=None,
-                assigned_to_id=manager_ids.get(assignee),
+                assigned_to_id=None if assignee is None else manager_ids[assignee],
                 assigned_to_name=lead["assigned_to"],
                 created_at=datetime.fromisoformat(lead["created_at"]),
                 last_contact_at=datetime.fromisoformat(lead["last_contact_at"])

@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.config import AppConfig
-from digest.db.schema import lead_snapshots
+from digest.db.schema import lead_snapshots, snapshot_runs
 
 LEAD_FRAME_COLUMNS = (
     "lead_id",
@@ -28,6 +28,10 @@ LEAD_FRAME_COLUMNS = (
 TIMESTAMP_COLUMNS = ("created_at", "status_changed_at", "last_contact_at", "converted_at")
 
 
+class SnapshotMissingError(Exception):
+    pass
+
+
 def prepare_lead_frame(rows: list[dict[str, Any]], config: AppConfig) -> pd.DataFrame:
     lead_frame = pd.DataFrame.from_records(rows, columns=list(LEAD_FRAME_COLUMNS))
     lead_frame["assigned_to_id"] = lead_frame["assigned_to_id"].astype("Int64")
@@ -38,19 +42,31 @@ def prepare_lead_frame(rows: list[dict[str, Any]], config: AppConfig) -> pd.Data
 
     timezone = config.status_mapping.time.timezone
     for column in TIMESTAMP_COLUMNS:
+        # utc=True молча считал бы naive-время UTC и сдвигал окна на 2–3 часа.
+        if any(value.tzinfo is None for value in lead_frame[column].dropna()):
+            raise ValueError(f"{column}: время без таймзоны, окна отчётов посчитать нельзя")
         lead_frame[column] = pd.to_datetime(lead_frame[column], utc=True).dt.tz_convert(timezone)
 
-    # Флаги только из category и loss_reason: статусы mefi живут в status-mapping.yaml.
+    # Флаги только из category, loss_reason и конфига: статусы mefi живут в status-mapping.yaml.
+    categories = config.status_mapping.categories
     category, loss_reason = lead_frame["category"], lead_frame["loss_reason"]
+    reasons_excluded_from_useful = [
+        reason_name
+        for reason_name, reason in categories.LOST.reasons.items()
+        if reason.excluded_from_useful
+    ]
     lead_frame["is_clienti"] = category.eq("WON")
-    lead_frame["is_partnership"] = category.eq("PARTNERSHIP")
+    lead_frame["is_excluded_from_leads"] = category.eq("PARTNERSHIP") & (
+        categories.PARTNERSHIP.excluded_from_leads
+    )
+    lead_frame["is_excluded_from_useful"] = loss_reason.isin(reasons_excluded_from_useful)
     lead_frame["is_irelevant"] = loss_reason.eq("IRELEVANT")
     lead_frame["is_nu_a_raspuns"] = loss_reason.eq("NU_RASPUNS")
     lead_frame["is_buget"] = loss_reason.eq("BUGET")
     lead_frame["is_produs_nepotrivit"] = loss_reason.eq("PRODUS_NEPOTRIVIT")
     # ofertat = null: поле пустое или значение не из ✅DA/❌NU; офертой не считается.
     lead_frame["is_ofertat"] = lead_frame["ofertat"].astype("boolean").fillna(False).astype(bool)
-    showroom_visit_sources = config.status_mapping.sources["showroom_visit"]
+    showroom_visit_sources = config.status_mapping.sources.showroom_visit
     lead_frame["is_showroom_visit"] = lead_frame["source_name"].isin(showroom_visit_sources)
     return lead_frame
 
@@ -72,7 +88,18 @@ async def load_lead_frame(
         )
         .order_by(lead_snapshots.c.lead_id)
     )
+    successful_run = select(snapshot_runs.c.id).where(
+        snapshot_runs.c.tenant_id == tenant_id,
+        snapshot_runs.c.snapshot_date == snapshot_date,
+        snapshot_runs.c.status == "success",
+    )
     async with engine.connect() as connection:
+        has_successful_run = (await connection.execute(successful_run)).first() is not None
         result = await connection.execute(query)
         rows = [dict(row) for row in result.mappings()]
+    # Пустой фрейм дал бы нули во всех счётчиках: неверная цифра вместо «данные недоступны».
+    if not has_successful_run or not rows:
+        raise SnapshotMissingError(
+            f"снапшот {tenant_id} за {snapshot_date} отсутствует или неполный"
+        )
     return prepare_lead_frame(rows, config)

@@ -83,3 +83,47 @@ def test_spi_levels_must_descend_to_zero() -> None:
 
     with pytest.raises(ValidationError, match="levels"):
         KpiSettings.model_validate(raw_kpi)
+
+
+@pytest.mark.parametrize(
+    "reason_name", ["IRELEVANT", "NU_RASPUNS", "BUGET", "PRODUS_NEPOTRIVIT", "STAND_BY"]
+)
+def test_missing_loss_reason_used_by_metrics_fails_config_load(reason_name: str) -> None:
+    raw_mapping = repository_yaml("status-mapping.yaml")
+    del raw_mapping["categories"]["LOST"]["reasons"][reason_name]
+
+    with pytest.raises(ValidationError, match=reason_name):
+        StatusMapping.model_validate(raw_mapping)
+
+
+def test_missing_partnership_category_fails_config_load() -> None:
+    raw_mapping = repository_yaml("status-mapping.yaml")
+    del raw_mapping["categories"]["PARTNERSHIP"]
+
+    with pytest.raises(ValidationError, match="PARTNERSHIP"):
+        StatusMapping.model_validate(raw_mapping)
+
+
+def test_missing_showroom_visit_sources_fails_config_load() -> None:
+    raw_mapping = repository_yaml("status-mapping.yaml")
+    del raw_mapping["sources"]["showroom_visit"]
+
+    with pytest.raises(ValidationError, match="showroom_visit"):
+        StatusMapping.model_validate(raw_mapping)
+
+
+def test_threshold_outside_zero_to_one_fails_config_load() -> None:
+    raw_kpi = repository_yaml("kpi.yaml")
+    raw_kpi["thresholds"]["scr_elite"] = 10
+
+    with pytest.raises(ValidationError, match="scr_elite"):
+        KpiSettings.model_validate(raw_kpi)
+
+
+@pytest.mark.parametrize("days", [0, -14])
+def test_non_positive_stale_days_fails_config_load(days: int) -> None:
+    raw_kpi = repository_yaml("kpi.yaml")
+    raw_kpi["active_offer_stale_days"] = days
+
+    with pytest.raises(ValidationError, match="active_offer_stale_days"):
+        KpiSettings.model_validate(raw_kpi)

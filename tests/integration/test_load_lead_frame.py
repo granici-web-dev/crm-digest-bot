@@ -2,13 +2,14 @@ from datetime import date
 from typing import Any
 
 import pandas as pd
+import pytest
 from sqlalchemy import insert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.config import AppConfig
-from digest.db.schema import lead_snapshots, tenants
-from digest.metrics.frame import load_lead_frame, prepare_lead_frame
+from digest.db.schema import lead_snapshots, snapshot_runs, tenants
+from digest.metrics.frame import SnapshotMissingError, load_lead_frame, prepare_lead_frame
 from factories import make_snapshot_row
 
 SNAPSHOT_DATE = date(2026, 9, 24)
@@ -18,12 +19,21 @@ def stored(row: dict[str, Any], tenant_id: str = "sofabelle", **keys: Any) -> di
     return {"tenant_id": tenant_id, "snapshot_date": SNAPSHOT_DATE, "raw": {}, **row, **keys}
 
 
-async def store(engine: AsyncEngine, rows: list[dict[str, Any]]) -> None:
+async def store(
+    engine: AsyncEngine, rows: list[dict[str, Any]], run_status: str | None = "success"
+) -> None:
     async with engine.begin() as connection:
         await connection.execute(
             pg_insert(tenants).values(id="other", name="Other").on_conflict_do_nothing()
         )
-        await connection.execute(insert(lead_snapshots), rows)
+        if rows:
+            await connection.execute(insert(lead_snapshots), rows)
+        if run_status is not None:
+            await connection.execute(
+                insert(snapshot_runs).values(
+                    tenant_id="sofabelle", snapshot_date=SNAPSHOT_DATE, attempt=1, status=run_status
+                )
+            )
 
 
 async def test_loads_only_requested_tenant_and_date(
@@ -63,3 +73,25 @@ async def test_loaded_frame_matches_frame_prepared_from_rows(
     lead_frame = await load_lead_frame(engine, "sofabelle", SNAPSHOT_DATE, app_config)
 
     pd.testing.assert_frame_equal(lead_frame, prepare_lead_frame(rows, app_config))
+
+
+@pytest.mark.parametrize(
+    ("rows", "run_status"),
+    [
+        ([], None),
+        ([stored(make_snapshot_row())], None),
+        ([stored(make_snapshot_row())], "failed"),
+        ([], "success"),
+    ],
+    ids=["nothing", "rows_without_run", "failed_run", "success_without_rows"],
+)
+async def test_missing_or_incomplete_snapshot_raises_instead_of_empty_frame(
+    engine: AsyncEngine,
+    app_config: AppConfig,
+    rows: list[dict[str, Any]],
+    run_status: str | None,
+) -> None:
+    await store(engine, rows, run_status=run_status)
+
+    with pytest.raises(SnapshotMissingError):
+        await load_lead_frame(engine, "sofabelle", SNAPSHOT_DATE, app_config)

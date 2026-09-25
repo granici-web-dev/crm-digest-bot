@@ -51,7 +51,7 @@ def count_flags(
     # docs/kpi-definitions.md, «Базовые множества»: период по created_at, [start, end).
     created_at = lead_frame["created_at"]
     in_period = created_at.ge(period.start) & created_at.lt(period.end)
-    leads = lead_frame[in_period & ~lead_frame["is_partnership"]]
+    leads = lead_frame[in_period & ~lead_frame["is_excluded_from_leads"]]
 
     last_contact_day = leads["last_contact_at"].dt.tz_localize(None).dt.normalize()
     days_since_contact = (pd.Timestamp(analysis_date) - last_contact_day).dt.days
@@ -63,7 +63,7 @@ def count_flags(
         {
             "leads": True,
             "irr_leads": irelevant,
-            "useful": ~irelevant,
+            "useful": ~leads["is_excluded_from_useful"],
             "clienti": clienti,
             "offers": offers,
             "nar": leads["is_nu_a_raspuns"],
