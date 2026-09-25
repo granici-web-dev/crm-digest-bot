@@ -63,8 +63,9 @@ async def enabled_schedules(engine: AsyncEngine, tenant_id: str) -> dict[ReportL
 
 
 def create_report_deps(
-    engine: AsyncEngine, config: AppConfig, app_settings: Settings
+    engine: AsyncEngine, config: AppConfig, app_settings: Settings, dry_run: bool
 ) -> ReportDeps:
+    # При dry-run продовый chat_id в зависимости не попадает: отправить в группу нечем.
     return ReportDeps(
         engine=engine,
         config=config,
@@ -74,8 +75,7 @@ def create_report_deps(
             create_bot(app_settings.telegram_ops_bot_token.get_secret_value()),
             app_settings.telegram_ops_chat_id,
         ),
-        group_chat_id=app_settings.telegram_group_chat_id,
-        test_chat_id=app_settings.telegram_test_chat_id,
+        report_chat_id=app_settings.report_chat_id(dry_run),
     )
 
 
@@ -93,18 +93,18 @@ async def snapshot_job(deps: ReportDeps, mefi_client: MefiClient) -> None:
         )
 
 
-async def report_job(deps: ReportDeps, level: ReportLevel, dry_run: bool) -> None:
+async def report_job(deps: ReportDeps, level: ReportLevel) -> None:
     now = datetime.now(ZoneInfo(deps.config.status_mapping.time.timezone))
     try:
-        await run_report(level, now, deps, dry_run)
+        await run_report(level, now, deps)
     except Exception as error:
-        logger.exception("report job failed", extra={"level": level})
+        logger.error("report job failed", extra={"level": level, "error": describe_error(error)})
         await notify_ops(deps.ops, f"Отчёт {level} упал до отправки: {describe_error(error)}.")
 
 
 async def run_app(engine: AsyncEngine, config: AppConfig, app_settings: Settings) -> None:
     await seed_defaults(engine, app_settings.tenant_id)
-    deps = create_report_deps(engine, config, app_settings)
+    deps = create_report_deps(engine, config, app_settings, app_settings.dry_run)
     mefi_client = MefiClient(
         create_mefi_http_client(app_settings.mefi_base_url, app_settings.mefi_api_key)
     )
@@ -124,7 +124,7 @@ async def run_app(engine: AsyncEngine, config: AppConfig, app_settings: Settings
         scheduler.add_job(
             report_job,
             CronTrigger.from_crontab(cron, timezone=timezone),
-            args=[deps, level, app_settings.dry_run],
+            args=[deps, level],
             id=f"report_{level}",
         )
     scheduler.start()

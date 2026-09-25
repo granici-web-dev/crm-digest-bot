@@ -1,4 +1,6 @@
-from pydantic import SecretStr
+from typing import Self
+
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,3 +22,16 @@ class Settings(BaseSettings):
 
     def report_chat_id(self, dry_run: bool) -> int:
         return self.telegram_test_chat_id if dry_run else self.telegram_group_chat_id
+
+    @model_validator(mode="after")
+    def chat_ids_are_distinct(self) -> Self:
+        # Совпадение test с group отправило бы DRY_RUN в продовую группу, ops с group отправил бы
+        # туда алерты.
+        chat_ids = {
+            "TELEGRAM_GROUP_CHAT_ID": self.telegram_group_chat_id,
+            "TELEGRAM_TEST_CHAT_ID": self.telegram_test_chat_id,
+            "TELEGRAM_OPS_CHAT_ID": self.telegram_ops_chat_id,
+        }
+        if len(set(chat_ids.values())) != len(chat_ids):
+            raise ValueError(f"chat_id должны различаться: {', '.join(chat_ids)}")
+        return self

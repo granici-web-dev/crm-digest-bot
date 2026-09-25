@@ -45,8 +45,7 @@ class ReportDeps:
     tenant_id: str
     report_bot: Bot
     ops: OpsChannel
-    group_chat_id: int
-    test_chat_id: int
+    report_chat_id: int
 
 
 @dataclass(frozen=True)
@@ -276,7 +275,11 @@ async def build_report(
         try:
             result = module_function(lead_frame, context)
         except Exception as error:
-            logger.exception("report module failed", extra={"module_id": module_id})
+            # str(error) может содержать строки raw (см. snapshot.describe_error).
+            logger.error(
+                "report module failed",
+                extra={"module_id": module_id, "error": describe_error(error)},
+            )
             await notify_ops(
                 deps.ops, f"Модуль {module_id} отчёта {level} упал: {describe_error(error)}."
             )
@@ -291,10 +294,8 @@ async def build_report(
     return BuiltReport(text, status, snapshot_date)
 
 
-async def run_report(
-    level: ReportLevel, now: datetime, deps: ReportDeps, dry_run: bool
-) -> ReportRunOutcome:
-    chat_id = deps.test_chat_id if dry_run else deps.group_chat_id
+async def run_report(level: ReportLevel, now: datetime, deps: ReportDeps) -> ReportRunOutcome:
+    chat_id = deps.report_chat_id
     time_settings = deps.config.status_mapping.time
     timezone = ZoneInfo(time_settings.timezone)
     period = report_period(level, now, timezone, time_settings.daily_window_end)
@@ -315,7 +316,7 @@ async def run_report(
         report = await build_report(deps, level, period, snapshot_date)
         parts = split_message(report.text) if report is not None else []
     except Exception as error:
-        logger.exception("report build failed", extra=log_extra)
+        logger.error("report build failed", extra={**log_extra, "error": describe_error(error)})
         await finish_report_run(deps, claim.run_id, "failed", error=describe_error(error))
         await notify_ops(deps.ops, f"Отчёт {level} за {label} не собран: {describe_error(error)}.")
         return "failed"

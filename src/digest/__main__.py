@@ -32,11 +32,11 @@ async def run_manual_report(
     config = load_app_config(CONFIG_DIR)
     engine = create_database_engine(app_settings.database_url.get_secret_value())
     await seed_defaults(engine, app_settings.tenant_id)
-    deps = create_report_deps(engine, config, app_settings)
+    deps = create_report_deps(engine, config, app_settings, dry_run or app_settings.dry_run)
     timezone = ZoneInfo(config.status_mapping.time.timezone)
     now = datetime.combine(report_date, MANUAL_REPORT_TIME, tzinfo=timezone)
     try:
-        outcome = await run_report(level, now, deps, dry_run or app_settings.dry_run)
+        outcome = await run_report(level, now, deps)
     finally:
         await deps.report_bot.session.close()
         await deps.ops.bot.session.close()

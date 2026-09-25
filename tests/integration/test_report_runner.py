@@ -1,3 +1,4 @@
+import logging
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -27,7 +28,9 @@ NOW = datetime(2026, 9, 25, 19, 30, tzinfo=BUCHAREST)
 
 
 class Harness:
-    def __init__(self, engine: AsyncEngine, config: AppConfig) -> None:
+    def __init__(
+        self, engine: AsyncEngine, config: AppConfig, report_chat_id: int = GROUP_CHAT_ID
+    ) -> None:
         report_bot, self.group = recording_bot()
         ops_bot, self.ops = recording_bot()
         self.deps = ReportDeps(
@@ -36,8 +39,7 @@ class Harness:
             tenant_id=TENANT_ID,
             report_bot=report_bot,
             ops=OpsChannel(ops_bot, OPS_CHAT_ID),
-            group_chat_id=GROUP_CHAT_ID,
-            test_chat_id=TEST_CHAT_ID,
+            report_chat_id=report_chat_id,
         )
 
     @property
@@ -106,7 +108,7 @@ async def report_run_rows(engine: AsyncEngine) -> list[dict[str, Any]]:
 async def test_daily_report_is_sent_to_group_and_recorded(harness: Harness) -> None:
     await store_snapshot(harness.deps.engine, REPORT_DATE, [todays_lead(1, source_name="Telefon")])
 
-    outcome = await run_report("daily", NOW, harness.deps, dry_run=False)
+    outcome = await run_report("daily", NOW, harness.deps)
 
     assert outcome == "success"
     assert {message.chat_id for message in harness.group.sent} == {GROUP_CHAT_ID}
@@ -121,10 +123,10 @@ async def test_daily_report_is_sent_to_group_and_recorded(harness: Harness) -> N
 
 async def test_second_run_for_same_period_sends_nothing(harness: Harness) -> None:
     await store_snapshot(harness.deps.engine, REPORT_DATE, [todays_lead(1)])
-    await run_report("daily", NOW, harness.deps, dry_run=False)
+    await run_report("daily", NOW, harness.deps)
     sent_before = len(harness.group.sent)
 
-    outcome = await run_report("daily", NOW + timedelta(hours=1), harness.deps, dry_run=False)
+    outcome = await run_report("daily", NOW + timedelta(hours=1), harness.deps)
 
     assert outcome == "already_sent"
     assert len(harness.group.sent) == sent_before
@@ -134,7 +136,7 @@ async def test_failed_run_is_sent_again(harness: Harness) -> None:
     await store_snapshot(harness.deps.engine, REPORT_DATE, [todays_lead(1)])
     await insert_run(harness.deps.engine, status="failed")
 
-    outcome = await run_report("daily", NOW, harness.deps, dry_run=False)
+    outcome = await run_report("daily", NOW, harness.deps)
 
     assert outcome == "success"
     assert harness.group.sent
@@ -146,7 +148,7 @@ async def test_stale_running_run_is_resent_with_alert(harness: Harness) -> None:
     await store_snapshot(harness.deps.engine, REPORT_DATE, [todays_lead(1)])
     await insert_run(harness.deps.engine, status="running", started_minutes_ago=31)
 
-    outcome = await run_report("daily", NOW, harness.deps, dry_run=False)
+    outcome = await run_report("daily", NOW, harness.deps)
 
     assert outcome == "success"
     assert harness.group.sent
@@ -157,7 +159,7 @@ async def test_fresh_running_run_is_left_alone(harness: Harness) -> None:
     await store_snapshot(harness.deps.engine, REPORT_DATE, [todays_lead(1)])
     await insert_run(harness.deps.engine, status="running", started_minutes_ago=5)
 
-    outcome = await run_report("daily", NOW, harness.deps, dry_run=False)
+    outcome = await run_report("daily", NOW, harness.deps)
 
     assert outcome == "in_progress"
     assert harness.group.sent == []
@@ -172,7 +174,7 @@ async def test_failing_module_is_replaced_by_note_and_reported(
     monkeypatch.setitem(IMPLEMENTED_MODULES, "d2", failing_module)
     await store_snapshot(harness.deps.engine, REPORT_DATE, [todays_lead(1)])
 
-    outcome = await run_report("daily", NOW, harness.deps, dry_run=False)
+    outcome = await run_report("daily", NOW, harness.deps)
 
     assert outcome == "partial"
     assert "<b>Sofabelle București:</b>" in harness.group_text
@@ -181,7 +183,7 @@ async def test_failing_module_is_replaced_by_note_and_reported(
 
 
 async def test_missing_snapshot_sends_report_with_note_and_alert(harness: Harness) -> None:
-    outcome = await run_report("daily", NOW, harness.deps, dry_run=False)
+    outcome = await run_report("daily", NOW, harness.deps)
 
     assert outcome == "partial"
     assert "Date mefi indisponibile" in harness.group_text
@@ -189,23 +191,37 @@ async def test_missing_snapshot_sends_report_with_note_and_alert(harness: Harnes
     assert any("отсутствует или failed" in alert for alert in harness.ops_texts)
 
 
-async def test_dry_run_sends_only_to_test_chat(harness: Harness) -> None:
+async def test_test_chat_run_does_not_block_production_run(
+    harness: Harness, app_config: AppConfig
+) -> None:
     await store_snapshot(harness.deps.engine, REPORT_DATE, [todays_lead(1)])
+    test_chat = Harness(harness.deps.engine, app_config, report_chat_id=TEST_CHAT_ID)
+    await run_report("daily", NOW, test_chat.deps)
 
-    await run_report("daily", NOW, harness.deps, dry_run=True)
-
-    assert harness.group.sent
-    assert {message.chat_id for message in harness.group.sent} == {TEST_CHAT_ID}
-
-
-async def test_dry_run_does_not_block_production_run(harness: Harness) -> None:
-    await store_snapshot(harness.deps.engine, REPORT_DATE, [todays_lead(1)])
-    await run_report("daily", NOW, harness.deps, dry_run=True)
-
-    outcome = await run_report("daily", NOW, harness.deps, dry_run=False)
+    outcome = await run_report("daily", NOW, harness.deps)
 
     assert outcome == "success"
-    assert GROUP_CHAT_ID in {message.chat_id for message in harness.group.sent}
+    assert {message.chat_id for message in test_chat.group.sent} == {TEST_CHAT_ID}
+    assert {message.chat_id for message in harness.group.sent} == {GROUP_CHAT_ID}
+
+
+async def test_module_error_text_reaches_neither_logs_nor_alerts(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    client_phone = "+40700000001"
+
+    def failing_module(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
+        raise ValueError(f"lead {client_phone} Client Unu")
+
+    monkeypatch.setitem(IMPLEMENTED_MODULES, "d2", failing_module)
+    await store_snapshot(harness.deps.engine, REPORT_DATE, [todays_lead(1)])
+
+    with caplog.at_level(logging.DEBUG):
+        await run_report("daily", NOW, harness.deps)
+
+    assert "Модуль d2 отчёта daily упал: ValueError." in harness.ops_texts
+    assert client_phone not in caplog.text
+    assert not any(client_phone in alert for alert in harness.ops_texts)
 
 
 async def test_snapshot_findings_are_alerted_as_ids_only(harness: Harness) -> None:
@@ -217,7 +233,7 @@ async def test_snapshot_findings_are_alerted_as_ids_only(harness: Harness) -> No
         won_converted_mismatch_ids=[3],
     )
 
-    await run_report("daily", NOW, harness.deps, dry_run=False)
+    await run_report("daily", NOW, harness.deps)
 
     assert (
         "Новые UNMAPPED лиды (1), id: [7]. Добавьте статус в config/status-mapping.yaml."
@@ -235,7 +251,7 @@ async def test_yesterdays_snapshot_gives_transitions(harness: Harness) -> None:
     await store_snapshot(harness.deps.engine, yesterday, [todays_lead(1, ofertat=False)])
     await store_snapshot(harness.deps.engine, REPORT_DATE, [todays_lead(1, ofertat=True)])
 
-    await run_report("daily", NOW, harness.deps, dry_run=False)
+    await run_report("daily", NOW, harness.deps)
 
     assert "Oferte 1" in harness.group_text
 
@@ -245,7 +261,7 @@ async def test_older_previous_snapshot_is_not_diffed(harness: Harness) -> None:
     await store_snapshot(harness.deps.engine, two_days_ago, [todays_lead(1, ofertat=False)])
     await store_snapshot(harness.deps.engine, REPORT_DATE, [todays_lead(1, ofertat=True)])
 
-    await run_report("daily", NOW, harness.deps, dry_run=False)
+    await run_report("daily", NOW, harness.deps)
 
     assert "Oferte —" in harness.group_text
     assert "lipsește snapshotul CRM de ieri" in harness.group_text
@@ -254,7 +270,7 @@ async def test_older_previous_snapshot_is_not_diffed(harness: Harness) -> None:
 async def test_report_without_implemented_modules_is_not_sent(harness: Harness) -> None:
     await store_snapshot(harness.deps.engine, REPORT_DATE, [todays_lead(1)])
 
-    outcome = await run_report("weekly", NOW, harness.deps, dry_run=False)
+    outcome = await run_report("weekly", NOW, harness.deps)
 
     assert outcome == "failed"
     assert harness.group.sent == []
@@ -268,7 +284,7 @@ async def test_module_disabled_in_module_settings_is_skipped(harness: Harness) -
             insert(module_settings).values(tenant_id=TENANT_ID, module_id="d1", enabled=False)
         )
 
-    outcome = await run_report("daily", NOW, harness.deps, dry_run=False)
+    outcome = await run_report("daily", NOW, harness.deps)
 
     assert outcome == "failed"
     assert harness.group.sent == []
@@ -293,8 +309,8 @@ async def test_send_failure_marks_run_failed_and_next_run_resends(harness: Harne
     await store_snapshot(harness.deps.engine, REPORT_DATE, [todays_lead(1)])
     harness.group.fail_next(TelegramNetworkError(SendMessage(chat_id=1, text="x"), "down"))
 
-    first_outcome = await run_report("daily", NOW, harness.deps, dry_run=False)
-    second_outcome = await run_report("daily", NOW, harness.deps, dry_run=False)
+    first_outcome = await run_report("daily", NOW, harness.deps)
+    second_outcome = await run_report("daily", NOW, harness.deps)
 
     assert (first_outcome, second_outcome) == ("failed", "success")
     assert any("не удалась: TelegramNetworkError" in alert for alert in harness.ops_texts)
