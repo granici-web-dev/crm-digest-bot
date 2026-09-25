@@ -26,6 +26,7 @@ def healthy_counts(**overrides: int) -> LeadCounts:
         "showroom_visits": 20,
         "clienti_from_showroom": 5,
         "active_offers_14": 5,
+        "unmapped": 0,
     }
     counts.update(overrides)
     return LeadCounts(**counts)

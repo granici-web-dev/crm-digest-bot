@@ -56,6 +56,7 @@ def prepare_lead_frame(rows: list[dict[str, Any]], config: AppConfig) -> pd.Data
         if reason.excluded_from_useful
     ]
     lead_frame["is_clienti"] = category.eq("WON")
+    lead_frame["is_unmapped"] = category.eq("UNMAPPED")
     lead_frame["is_excluded_from_leads"] = category.eq("PARTNERSHIP") & (
         categories.PARTNERSHIP.excluded_from_leads
     )

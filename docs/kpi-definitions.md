@@ -21,6 +21,8 @@
 
 Лиды без консультанта входят в итог по компании, но ни в одну строку по консультантам.
 
+Разрез по шоуруму: строки для каждого значения `showrooms` из `status-mapping.yaml`, затем для каждого значения поля Showroom вне этого списка (отдельной строкой, чтобы лиды не пропали из разреза молча), затем строка «без шоурума» для `null`.
+
 ## Базовые множества (за период, по `created_at` лида)
 
 | Обозначение | Определение |
@@ -34,6 +36,7 @@
 | `BUGET` | `LEADS` с `is_buget` |
 | `PNP` | `LEADS` с `is_produs_nepotrivit` |
 | `SHOWROOM_VISITS` | `LEADS` с `is_showroom_visit` |
+| `UNMAPPED` | `LEADS` с категорией `UNMAPPED` (инвариант 4); входят в `LEADS` и `USEFUL` и считаются отдельно |
 | `ACTIVE_OFFERS_14` | `OFFERS`, не `CLIENTI`, не `IRR_LEADS`, `analysis_date − date(last_contact_at) > 14` дней; `last_contact_at = null` → не входит |
 
 `analysis_date` — дата расчёта отчёта, дата `last_contact_at` берётся в Europe/Bucharest. Порог дней — `active_offer_stale_days`. `status_changed_at` не используется: в mefi он `null`, если статус задан при создании лида.

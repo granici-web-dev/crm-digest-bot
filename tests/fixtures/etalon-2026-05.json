@@ -24,7 +24,8 @@
         "pnp": 2,
         "showroom_visits": 10,
         "clienti_from_showroom": 0,
-        "active_offers_14": 6
+        "active_offers_14": 6,
+        "unmapped": 0
       }
     }
   },
@@ -4781,7 +4782,8 @@
         "pnp": 9,
         "showroom_visits": 16,
         "clienti_from_showroom": 3,
-        "active_offers_14": 9
+        "active_offers_14": 9,
+        "unmapped": 0
       },
       "kpi": {
         "scr": 0.14285714285714285,
@@ -4807,7 +4809,8 @@
         "pnp": 7,
         "showroom_visits": 36,
         "clienti_from_showroom": 2,
-        "active_offers_14": 16
+        "active_offers_14": 16,
+        "unmapped": 0
       },
       "kpi": {
         "scr": 0.031746031746031744,
@@ -4833,7 +4836,8 @@
         "pnp": 6,
         "showroom_visits": 20,
         "clienti_from_showroom": 0,
-        "active_offers_14": 13
+        "active_offers_14": 13,
+        "unmapped": 0
       },
       "kpi": {
         "scr": 0.03636363636363636,
@@ -4859,7 +4863,8 @@
         "pnp": 2,
         "showroom_visits": 10,
         "clienti_from_showroom": 0,
-        "active_offers_14": 6
+        "active_offers_14": 6,
+        "unmapped": 0
       },
       "kpi": {
         "scr": 0.0,
@@ -4885,7 +4890,8 @@
         "pnp": 5,
         "showroom_visits": 30,
         "clienti_from_showroom": 1,
-        "active_offers_14": 14
+        "active_offers_14": 14,
+        "unmapped": 0
       },
       "kpi": {
         "scr": 0.027777777777777776,
@@ -4911,7 +4917,8 @@
         "pnp": 4,
         "showroom_visits": 13,
         "clienti_from_showroom": 2,
-        "active_offers_14": 2
+        "active_offers_14": 2,
+        "unmapped": 0
       },
       "kpi": {
         "scr": 0.15384615384615385,
@@ -4926,6 +4933,147 @@
       }
     }
   },
+  "expected_company": {
+    "counts": {
+      "leads": 301,
+      "irr_leads": 66,
+      "useful": 235,
+      "clienti": 14,
+      "offers": 90,
+      "nar": 44,
+      "buget": 56,
+      "pnp": 33,
+      "showroom_visits": 125,
+      "clienti_from_showroom": 8,
+      "active_offers_14": 60,
+      "unmapped": 0
+    },
+    "kpi": {
+      "scr": 0.059574468085106386,
+      "l2o": 0.3829787234042553,
+      "o2c": 0.15555555555555556,
+      "cdr": 0.8538205980066446,
+      "plr": 0.2931937172774869,
+      "sc": 0.064,
+      "pfr": 0.14042553191489363,
+      "acr": 0.19933554817275748,
+      "irr": 0.21926910299003322
+    }
+  },
+  "expected_by_showroom": [
+    {
+      "showroom": "Brașov",
+      "counts": {
+        "leads": 89,
+        "irr_leads": 15,
+        "useful": 74,
+        "clienti": 2,
+        "offers": 24,
+        "nar": 21,
+        "buget": 13,
+        "pnp": 8,
+        "showroom_visits": 30,
+        "clienti_from_showroom": 0,
+        "active_offers_14": 19,
+        "unmapped": 0
+      },
+      "kpi": {
+        "scr": 0.02702702702702703,
+        "l2o": 0.32432432432432434,
+        "o2c": 0.08333333333333333,
+        "cdr": 0.7640449438202247,
+        "plr": 0.24528301886792453,
+        "sc": 0.0,
+        "pfr": 0.10810810810810811,
+        "acr": 0.21348314606741572,
+        "irr": 0.16853932584269662
+      }
+    },
+    {
+      "showroom": "București",
+      "counts": {
+        "leads": 135,
+        "irr_leads": 23,
+        "useful": 112,
+        "clienti": 9,
+        "offers": 38,
+        "nar": 21,
+        "buget": 38,
+        "pnp": 16,
+        "showroom_visits": 52,
+        "clienti_from_showroom": 5,
+        "active_offers_14": 25,
+        "unmapped": 0
+      },
+      "kpi": {
+        "scr": 0.08035714285714286,
+        "l2o": 0.3392857142857143,
+        "o2c": 0.23684210526315788,
+        "cdr": 0.8444444444444444,
+        "plr": 0.4175824175824176,
+        "sc": 0.09615384615384616,
+        "pfr": 0.14285714285714285,
+        "acr": 0.18518518518518517,
+        "irr": 0.17037037037037037
+      }
+    },
+    {
+      "showroom": "Cluj",
+      "counts": {
+        "leads": 71,
+        "irr_leads": 22,
+        "useful": 49,
+        "clienti": 3,
+        "offers": 28,
+        "nar": 2,
+        "buget": 5,
+        "pnp": 9,
+        "showroom_visits": 43,
+        "clienti_from_showroom": 3,
+        "active_offers_14": 16,
+        "unmapped": 0
+      },
+      "kpi": {
+        "scr": 0.061224489795918366,
+        "l2o": 0.5714285714285714,
+        "o2c": 0.10714285714285714,
+        "cdr": 0.971830985915493,
+        "plr": 0.10638297872340426,
+        "sc": 0.06976744186046512,
+        "pfr": 0.1836734693877551,
+        "acr": 0.22535211267605634,
+        "irr": 0.30985915492957744
+      }
+    },
+    {
+      "showroom": null,
+      "counts": {
+        "leads": 6,
+        "irr_leads": 6,
+        "useful": 0,
+        "clienti": 0,
+        "offers": 0,
+        "nar": 0,
+        "buget": 0,
+        "pnp": 0,
+        "showroom_visits": 0,
+        "clienti_from_showroom": 0,
+        "active_offers_14": 0,
+        "unmapped": 0
+      },
+      "kpi": {
+        "scr": null,
+        "l2o": null,
+        "o2c": null,
+        "cdr": 1.0,
+        "plr": null,
+        "sc": null,
+        "pfr": null,
+        "acr": 0.0,
+        "irr": 1.0
+      }
+    }
+  ],
   "excel_reference": {
     "Raileanu Leon": {
       "showroom": "București",

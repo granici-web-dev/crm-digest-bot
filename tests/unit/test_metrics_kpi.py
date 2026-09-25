@@ -33,16 +33,30 @@ def test_kpi_matches_etalon(app_config: AppConfig) -> None:
     config = app_config.model_copy(update={"managers": roster})
     lead_frame = prepare_lead_frame(etalon_lead_rows(etalon, config.status_mapping), config)
 
+    assert set(etalon["expected_by_agent"]) == set(etalon["managers"])
     counts_by_manager = lead_counts_by_manager(
         lead_frame, ETALON_PERIOD, ETALON_ANALYSIS_DATE, config
     )
-
     for name, manager_id in etalon["managers"].items():
-        expected = etalon["expected_by_agent"][name]
-        assert asdict(counts_by_manager[manager_id]) == expected["counts"], name
-        assert asdict(kpis_from(counts_by_manager[manager_id])) == pytest.approx(
-            expected["kpi"], abs=1e-9
-        ), name
+        assert_matches_expected(
+            counts_by_manager[manager_id], etalon["expected_by_agent"][name], name
+        )
+
+    company = lead_counts(lead_frame, ETALON_PERIOD, ETALON_ANALYSIS_DATE, config)
+    assert_matches_expected(company, etalon["expected_company"], "company")
+
+    counts_by_showroom = lead_counts_by_showroom(
+        lead_frame, ETALON_PERIOD, ETALON_ANALYSIS_DATE, config
+    )
+    expected_by_showroom = {entry["showroom"]: entry for entry in etalon["expected_by_showroom"]}
+    assert set(counts_by_showroom) == set(expected_by_showroom)
+    for showroom, expected in expected_by_showroom.items():
+        assert_matches_expected(counts_by_showroom[showroom], expected, str(showroom))
+
+
+def assert_matches_expected(counts: LeadCounts, expected: dict[str, Any], label: str) -> None:
+    assert asdict(counts) == expected["counts"], label
+    assert asdict(kpis_from(counts)) == pytest.approx(expected["kpi"], abs=1e-9), label
 
 
 SEPTEMBER = Period(
@@ -204,3 +218,28 @@ def test_showroom_slice_keeps_leads_without_showroom_under_none(app_config: AppC
     )
 
     assert (counts["Cluj"].leads, counts[None].leads, counts["București"].leads) == (1, 1, 0)
+
+
+def test_unmapped_lead_is_counted_separately(app_config: AppConfig) -> None:
+    rows = [
+        make_snapshot_row(lead_id=1, created_at=IN_SEPTEMBER, category="UNMAPPED", status_name="X"),
+        make_snapshot_row(lead_id=2, created_at=IN_SEPTEMBER),
+    ]
+
+    counts = company_counts(rows, app_config)
+
+    assert (counts.leads, counts.useful, counts.unmapped) == (2, 2, 1)
+
+
+def test_showroom_outside_config_list_gets_its_own_row(app_config: AppConfig) -> None:
+    rows = [
+        make_snapshot_row(lead_id=1, created_at=IN_SEPTEMBER, showroom="Bucuresti"),
+        make_snapshot_row(lead_id=2, created_at=IN_SEPTEMBER, showroom="Cluj"),
+    ]
+
+    counts = lead_counts_by_showroom(
+        prepare_lead_frame(rows, app_config), SEPTEMBER, SEPTEMBER_END, app_config
+    )
+
+    assert list(counts) == ["București", "Brașov", "Cluj", "Bucuresti", None]
+    assert (counts["Bucuresti"].leads, counts["Cluj"].leads) == (1, 1)

@@ -27,6 +27,7 @@ class LeadCounts:
     showroom_visits: int
     clienti_from_showroom: int
     active_offers_14: int
+    unmapped: int
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,8 @@ def count_flags(
             "showroom_visits": showroom_visits,
             "clienti_from_showroom": clienti & showroom_visits,
             "active_offers_14": offers & ~clienti & ~irelevant & stale_contact,
+            # Инвариант 4: UNMAPPED входит в LEADS и USEFUL и отдельно считается здесь.
+            "unmapped": leads["is_unmapped"],
         },
         index=leads.index,
     )

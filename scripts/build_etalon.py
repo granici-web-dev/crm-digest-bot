@@ -69,6 +69,26 @@ STATUSES_PARTNERSHIP = {"DESIGNER", "INFLUENCER"}
 STATUS_NU_A_RASPUNS = "NU A RASPUNS"
 STATUS_BUGET = "BUGET"
 STATUS_PRODUS_NEPOTRIVIT = "PRODUS NEPOTRIVIT"
+# Every status the mapping knows; anything else is UNMAPPED (invariant 4).
+KNOWN_STATUSES = {
+    STATUS_CLIENTI,
+    *STATUSES_IRELEVANT,
+    *STATUSES_PARTNERSHIP,
+    STATUS_NU_A_RASPUNS,
+    STATUS_BUGET,
+    STATUS_PRODUS_NEPOTRIVIT,
+    "IN PROCES",
+    "Ofertat",
+    "SHOWROOM",
+    "BIFE 2026",
+    "Revenire 1",
+    "Revenire 2",
+    "Revenire 3",
+    "Stand BY",
+    "A REFUZAT",
+    "CONCURENTA",
+    "TIMP",
+}
 SOURCE_SHOWROOM = "Showroom"
 OFERTAT_YES = "✅DA"
 ACTIVE_OFFER_STALE_DAYS = 14
@@ -93,6 +113,7 @@ MANUAL_CHECK: dict[str, Any] = {
         "showroom_visits": 10,
         "clienti_from_showroom": 0,
         "active_offers_14": 6,
+        "unmapped": 0,
     },
 }
 
@@ -218,6 +239,7 @@ def brief_counts(leads: list[dict[str, Any]], analysis_date: date) -> dict[str, 
         counts["active_offers_14"] += (
             offer and not clienti and not irelevant and is_stale_offer(lead, analysis_date)
         )
+        counts["unmapped"] += status not in KNOWN_STATUSES
     counts["useful"] = counts["leads"] - counts["irr_leads"]
     return counts
 
@@ -243,9 +265,25 @@ def expected_by_agent(
     for agent in agents:
         # 03_KPI_Agenti keys agents by TRIM(Desemnat); mefi keeps "Raileanu  Leon" with two spaces.
         own = [lead for lead in leads if collapse_spaces(lead["assigned_to"] or "") == agent]
-        counts = brief_counts(own, analysis_date)
-        expected[agent] = {"counts": counts, "kpi": brief_kpis(counts)}
+        expected[agent] = expected_for(own, analysis_date)
     return expected
+
+
+def expected_for(leads: list[dict[str, Any]], analysis_date: date) -> dict[str, Any]:
+    counts = brief_counts(leads, analysis_date)
+    return {"counts": counts, "kpi": brief_kpis(counts)}
+
+
+def expected_by_showroom(leads: list[dict[str, Any]], analysis_date: date) -> list[dict[str, Any]]:
+    # A list, not a dict: leads without a showroom need a null key, which JSON objects lack.
+    showrooms = sorted({lead["showroom"] for lead in leads}, key=lambda name: (name is None, name))
+    return [
+        {
+            "showroom": showroom,
+            **expected_for([lead for lead in leads if lead["showroom"] == showroom], analysis_date),
+        }
+        for showroom in showrooms
+    ]
 
 
 def leaked_pii(payload: Any, pii: set[str], dump: str) -> list[str]:
@@ -280,7 +318,8 @@ def main() -> None:
     leads, pii = read_leads(wb[LEADS_SHEET])
     analysis_date, thresholds = read_thresholds(wb[SETTINGS_SHEET])
     excel_reference = read_excel_reference(wb[KPI_SHEET])
-    expected = expected_by_agent(leads, list(excel_reference), date.fromisoformat(analysis_date))
+    analysis_day = date.fromisoformat(analysis_date)
+    expected = expected_by_agent(leads, list(excel_reference), analysis_day)
     checked = expected[MANUAL_CHECK["agent"]]["counts"]
     if checked != MANUAL_CHECK["counts"]:
         sys.exit(f"manual check drifted for {MANUAL_CHECK['agent']}, etalon not written")
@@ -301,6 +340,9 @@ def main() -> None:
         # Agent name as in 03_KPI_Agenti (spaces collapsed) -> mefi assigned_to.id.
         "managers": manager_ids_by_name(list(excel_reference)),
         "expected_by_agent": expected,
+        # Whole company, unassigned leads included, and per Showroom field with null for none.
+        "expected_company": expected_for(leads, analysis_day),
+        "expected_by_showroom": expected_by_showroom(leads, analysis_day),
         # SB KPi.xlsx 03_KPI_Agenti as-is, including the AC defect (ACR = 0 everywhere).
         # Comparison only; tests assert against expected_by_agent.
         "excel_reference": excel_reference,
