@@ -10,13 +10,15 @@
 - Сессия 4, часть 2 (25.09.2026): SB KPi.xlsx составлен через ИИ, ADR-002 переписан (`ADR-002-kpi-brief-primary.md`): формулы по брифу, SPI предварительный и скрыт. Эталон пересобран по формулам брифа, значения Excel в `excel_reference`, Moaca Andreea сверена вручную (`meta.manual_check`). m6 выключен.
 - Сессия 4, часть 3 (25.09.2026): metrics/ по shape `docs/shapes/2026-09-25-metrics.md` через tdd, коммиты 6cbccb6..907b0c8. `frame.py` (load_lead_frame, prepare_lead_frame, unknown_manager_ids), `kpi.py` (счётчики и 9 KPI по компании, шоуруму, консультанту), `spi.py` (provisional), `cockpit.py` (m5), `extra.py` (revenire, когорта, дельта). `test_kpi_matches_etalon` зелёный, 151 тест.
 - Сессия 4, часть 4 (25.09.2026): critique metrics/ (28 замечаний), решения в дополнении к shape; harden пятью коммитами: 84f7fbf (громкий отказ: нет снапшота → SnapshotMissingError, ключи причин и PARTNERSHIP обязательны в конфиге, LEADS/USEFUL по флагам excluded_from_*, naive-время → ошибка, границы порогов), 824175d (provisional структурно: requires_kpi_status у m6 плюс валидатор AppConfig, тест импортов spi), 2660141 (цели ссылаются на имена порогов, полнота целей и ступеней, монотонность, срок 14 дней только в kpi.yaml), dc88cac (LeadCounts.unmapped, эталон сверяет итог по компании и разрез по шоурумам), b86af9f (исключение для ключей причин в PRINCIPLES), d4bb0b0 (load_lead_frame в src/digest/db/lead_frame.py, ссылки на kpi-definitions у формул, DST-тесты), 885034e (overdue_revenire отдаёт id лидов, счётчики m5 остаются int). 211 тестов зелёные, pre-commit чистый.
-- Сейчас: сессия 5, планировщик и доставка.
-- Алерт unknown_manager_ids и алерт UNMAPPED шлёт раннер отчёта.
-- Для сессии 5: раннер ловит SnapshotMissingError из load_lead_frame и отправляет отчёт с пометкой «данные mefi недоступны». d4 берёт срок из kpi.yaml active_offer_stale_days; stale_after_days из status-mapping.yaml и d4.params.days удалены. Алерт ACTIVE «без движения» получит stale_lead_days (см. «Принятые решения»).
+- Сессия 5 (25.09.2026): ядро доставки по shape `docs/shapes/2026-09-25-delivery.md` через craft, три коммита: 62cc137 (settings, report_period, split_message по 4096 UTF-16, повтор flood wait, notify_ops), 371d3b2 (metrics/daily.py, шаблоны d1 RO/RU, syrupy), bbfdc95 (runner, app с APScheduler, `python -m digest report daily --date --dry-run`, засев schedules и report_language). 260 тестов зелёные, pre-commit чистый. Реальная отправка в Telegram не проверялась: нет токенов в окружении, только фейковая сессия aiogram.
+- Сейчас: /rigorous critique и harden ядра доставки, затем прогон с DRY_RUN=1 в тестовой группе, затем shape d2–d6.
+- Пока d2–d6 не реализованы, каждый ежедневный отчёт шлёт в служебный бот алерт «модули включены, но не реализованы». Weekly/monthly/yearly без реализованных модулей не отправляются (report_runs failed, алерт).
+- Логи пока `logging.basicConfig`; JSON-форматтер из STACK.md в harden.
+- Для shape d2–d6: d4 берёт срок из kpi.yaml active_offer_stale_days; stale_after_days из status-mapping.yaml и d4.params.days удалены. Алерт ACTIVE «без движения» получит stale_lead_days (см. «Принятые решения»).
 - Расхождение с дополнением к shape: там сказано, что 5 от API и 4 записанных при порогах по умолчанию это failed, но по записанным там же порогам (max(5, 0.5 %) недополучено, max(10, 1 %) пропущено) это success. Реализованы пороги; тест переименован в test_snapshot_below_thresholds_is_success_with_alert_data. Если 5/4 должно падать, пороги в status-mapping.yaml нужно ужесточить.
-- Для сессии 5: планировщик ловит исключение run_daily_snapshot и логирует только describe_error(error), без traceback со str(error). Незнакомые ключи лида (unknown_raw_key) пишутся в raw, не вырезаются: алерт обязателен.
+- Незнакомые ключи лида (unknown_raw_key) пишутся в raw, не вырезаются: алерт обязателен (в раннере ещё не подключён).
 - Локально тесты идут с `TESTCONTAINERS_RYUK_DISABLED=true`: docker pull образа ryuk зависает.
-- Дальше по docs/first-sessions.md: сессия 5 планировщик и доставка, сессия 6 /settings, сессия 7 harden и деплой.
+- Дальше по docs/first-sessions.md: сессия 6 /settings, сессия 7 harden и деплой.
 
 ## Принятые решения (не обсуждать заново)
 
@@ -35,9 +37,13 @@
 - m6 и любой модуль с requires_kpi_status: calibrated не включается, пока kpi.yaml в status: provisional; /settings (сессия 6) использует тот же валидатор AppConfig.
 - Лиды с assigned_to.id консультанта с test_account: true исключаются из всех метрик в prepare_lead_frame.
 - Отчёты читают только снапшот с snapshot_date = today и status = success, иначе пометка «данные mefi недоступны».
-- Data revenire часто равна дню создания: правило для d3 решается в shape сессии 5.
+- Data revenire часто равна дню создания: правило для d3 решается в shape d2–d6.
 - m19 в MVP только Excel, PDF на этапе 2.
-- Лид на assigned_to.id = 7 (Marketing Sofa) считается не взятым в работу; использовать в d2 (сессия 5).
+- Лид на assigned_to.id = 7 (Marketing Sofa) считается не взятым в работу; использовать в d2.
+- d1 сравнивает только со снапшотом строго за вчера; при пропуске снапшота строки Vizita/Oferta/Contract за тот день теряются, недельный отчёт их покроет.
+- Строки Leads d1 взаимоисключающие: PARTNERSHIP или источник Colaborare → Designer/Colaboratori; sources.other, Showroom ∧ ACTIVE_FOLLOWUP и источник вне всех групп → Alte/Showroom (revenire); затем web, Telefon, WhatsApp. Showroom вне ACTIVE_FOLLOWUP это визит (Vizita), не лид. «Leads N» в итоге = сумма пяти строк.
+- RU-шаблон d1: подписи строк румынские, переводятся шапка, пометки и сноска. Заголовок шоурума как в mefi (`Brașov`).
+- report_runs: success/partial не отправляются повторно; failed отправляется заново; running старше 30 минут = прерван, отправляется целиком с алертом (дубль лучше пропуска); running моложе 30 минут не трогается.
 - Источник B на этапе 2 читается через POST /admin/<модуль>/table с length=5000, не через обход HTML. Вход в mefi это блокер: reCAPTCHA плюс обязательная 2FA; цель официальный API, временная мера ручной вход с cookie.
 
 ## Ждём извне
