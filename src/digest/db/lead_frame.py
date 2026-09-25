@@ -1,7 +1,7 @@
 from datetime import date
 
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.config import AppConfig
@@ -39,3 +39,17 @@ async def load_lead_frame(
             f"снапшот {tenant_id} за {snapshot_date} отсутствует или неполный"
         )
     return prepare_lead_frame(rows, config)
+
+
+async def previous_success_snapshot_date(
+    engine: AsyncEngine, tenant_id: str, before: date
+) -> date | None:
+    async with engine.connect() as connection:
+        previous_date: date | None = await connection.scalar(
+            select(func.max(snapshot_runs.c.snapshot_date)).where(
+                snapshot_runs.c.tenant_id == tenant_id,
+                snapshot_runs.c.status == "success",
+                snapshot_runs.c.snapshot_date < before,
+            )
+        )
+    return previous_date

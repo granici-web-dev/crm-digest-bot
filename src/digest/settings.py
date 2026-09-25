@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     telegram_test_chat_id: int
     telegram_ops_chat_id: int
     dry_run: bool = False
+    log_level: str = "INFO"
 
     def report_chat_id(self, dry_run: bool) -> int:
         return self.telegram_test_chat_id if dry_run else self.telegram_group_chat_id

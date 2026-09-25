@@ -1,0 +1,19 @@
+{% set titles = {"daily": "Ежедневный отчёт", "weekly": "Недельный отчёт", "monthly": "Месячный отчёт", "yearly": "Годовой отчёт"} %}
+<b>{{ titles[level] }} Sofabelle</b>
+{{ period_label }}
+
+
+{% if snapshot_missing %}
+⚠️ Данные mefi недоступны: снапшот CRM за {{ snapshot_date.strftime("%d.%m.%Y") }} отсутствует или неполный.
+{% endif %}
+{% for block in blocks %}
+{% if block.text is none %}
+⚠️ Блок {{ block.module_id }} не удалось посчитать, техподдержка уведомлена.
+{% else %}
+{{ block.text }}
+{% endif %}
+{% if not loop.last %}
+
+
+{% endif %}
+{% endfor %}

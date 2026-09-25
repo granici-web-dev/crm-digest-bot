@@ -1,0 +1,19 @@
+{% set titles = {"daily": "Raport zilnic", "weekly": "Raport săptămânal", "monthly": "Raport lunar", "yearly": "Raport anual"} %}
+<b>{{ titles[level] }} Sofabelle</b>
+{{ period_label }}
+
+
+{% if snapshot_missing %}
+⚠️ Date mefi indisponibile: snapshotul CRM din {{ snapshot_date.strftime("%d.%m.%Y") }} lipsește sau este incomplet.
+{% endif %}
+{% for block in blocks %}
+{% if block.text is none %}
+⚠️ Blocul {{ block.module_id }} nu a putut fi calculat, echipa tehnică a fost anunțată.
+{% else %}
+{{ block.text }}
+{% endif %}
+{% if not loop.last %}
+
+
+{% endif %}
+{% endfor %}
