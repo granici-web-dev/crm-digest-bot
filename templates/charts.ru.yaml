@@ -5,7 +5,7 @@ funnel_title: "Воронка месяца по шоурумам"
 funnel_stages: [Лиды, Полезные, Оферты, "Клиенты (Clienți)"]
 clienti_note: "Клиенты (Clienți): из лидов месяца, статус на дату отчёта"
 company: Итого
-without_showroom: "(без шоурума)"
+without_showroom_leads: "{leads} лидов без шоурума, из них {irrelevant} нерелевантных"
 trend_title: "Тренд за 6 месяцев"
 trend_leads: Лиды
 trend_contracts: Контракты

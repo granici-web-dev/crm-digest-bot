@@ -8,7 +8,6 @@ from digest.config import KPI_NAMES, AppConfig
 from digest.metrics.cockpit import manager_cockpit_table
 from digest.metrics.monthly import (
     BELOW_ALL_LEVELS,
-    MonthlyFunnel,
     month_window,
     monthly_funnel,
     monthly_loss_reasons,
@@ -18,7 +17,7 @@ from digest.metrics.monthly import (
 from digest.reports.charts import chart_labels, funnel_chart, trend_chart
 from digest.reports.context import ModuleResult, ReportContext, ReportPhoto
 from digest.reports.modules.weekly import WITHOUT_SHOWROOM
-from digest.reports.render import render
+from digest.reports.render import ReportLanguage, render, target_label
 
 # m5 в Telegram: девять KPI не помещаются в одну строку <code> на телефоне.
 COCKPIT_KPI_LINES = (KPI_NAMES[:5], KPI_NAMES[5:])
@@ -28,22 +27,27 @@ def month_file_suffix(report_date: date) -> str:
     return f"{report_date:%Y-%m}"
 
 
-def showrooms_with_leads(funnel: MonthlyFunnel) -> list[str | None]:
-    return [showroom for showroom, counts in funnel.by_showroom.items() if counts.leads]
-
-
 def funnel_by_showroom_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
     funnel = monthly_funnel(lead_frame, context.report_date, context.config)
     labels = chart_labels(context.language)
+    without_showroom = funnel.without_showroom
+    alerts: tuple[str, ...] = ()
+    if without_showroom.useful:
+        # По агрегату снапшота все лиды без шоурума IRELEVANT (docs/PLAN.md); полезный лид без
+        # поля Showroom выпадает из воронок шоурумов, это вопрос качества данных в mefi.
+        alerts = (
+            f"m2 за {funnel.month:%m.%Y}: {without_showroom.useful} полезных лидов без шоурума "
+            f"(всего без шоурума {without_showroom.leads}). Заполнить поле Showroom в mefi.",
+        )
     return ModuleResult(
         render(
             "funnel_by_showroom",
             context.language,
             funnel=funnel,
-            showrooms=showrooms_with_leads(funnel),
-            without_showroom=WITHOUT_SHOWROOM,
+            without_showroom_note=labels.without_showroom_note(without_showroom),
             clienti_note=labels.clienti_note,
         ),
+        alerts=alerts,
         photo=ReportPhoto(
             f"funnel_{month_file_suffix(context.report_date)}.png", funnel_chart(funnel, labels)
         ),
@@ -58,7 +62,7 @@ def trend_6m_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleR
             "trend_6m",
             context.language,
             trend=trend,
-            month_names=[labels.months[month.month - 1] for month in trend.months],
+            month_names=[labels.month_name(month) for month in trend.months],
         ),
         photo=ReportPhoto(
             f"trend_{month_file_suffix(context.report_date)}.png", trend_chart(trend, labels)
@@ -68,9 +72,8 @@ def trend_6m_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleR
 
 def target_labels(config: AppConfig) -> dict[str, str]:
     return {
-        kpi_name: (
-            f"{'≥' if config.kpi.targets[kpi_name].direction == 'higher' else '≤'}"
-            f"{config.kpi.target_value(kpi_name) * 100:g}%"
+        kpi_name: target_label(
+            config.kpi.target_value(kpi_name), config.kpi.targets[kpi_name].direction
         )
         for kpi_name in KPI_NAMES
     }
@@ -96,7 +99,7 @@ def scr_with_targets_report(lead_frame: pd.DataFrame, context: ReportContext) ->
             "scr_with_targets",
             context.language,
             scr=monthly_scr(funnel, config),
-            showrooms=showrooms_with_leads(funnel),
+            showrooms=funnel.showrooms_with_leads,
             levels=[
                 (level.threshold, config.kpi.thresholds[level.threshold])
                 for level in config.modules.scr_levels_params.levels
@@ -130,24 +133,23 @@ def manager_cockpit_report(lead_frame: pd.DataFrame, context: ReportContext) -> 
     )
 
 
-def loss_reason_labels(context: ReportContext) -> dict[str, str]:
+def loss_reason_labels(config: AppConfig, language: ReportLanguage) -> dict[str, str]:
     return {
-        key: reason.label_ro if context.language == "ro" else reason.label_ru
-        for key, reason in context.config.status_mapping.categories.LOST.reasons.items()
+        key: reason.label_ro if language == "ro" else reason.label_ru
+        for key, reason in config.status_mapping.categories.LOST.reasons.items()
     }
 
 
 def loss_reasons_trend_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
     losses = monthly_loss_reasons(lead_frame, context.report_date, context.config)
-    months = chart_labels(context.language).months
-    month = context.report_date.month
+    labels = chart_labels(context.language)
     return ModuleResult(
         render(
             "loss_reasons_trend",
             context.language,
             losses=losses,
-            reason_labels=loss_reason_labels(context),
-            month_name=months[month - 1],
-            previous_month_name=months[(month - 2) % 12],
+            reason_labels=loss_reason_labels(context.config, context.language),
+            month_name=labels.month_name(losses.month),
+            previous_month_name=labels.month_name(losses.previous_month),
         )
     )

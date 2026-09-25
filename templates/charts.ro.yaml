@@ -5,7 +5,7 @@ funnel_title: "Pâlnia lunii pe showroom"
 funnel_stages: [Lead-uri, Utile, Oferte, "Clienți"]
 clienti_note: "Clienți: din lead-urile lunii, status la data raportului"
 company: Total
-without_showroom: "(fără showroom)"
+without_showroom_leads: "{leads} lead-uri fără showroom, dintre care {irrelevant} irelevante"
 trend_title: "Trend 6 luni"
 trend_leads: Lead-uri
 trend_contracts: Contracte

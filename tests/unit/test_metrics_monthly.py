@@ -109,6 +109,10 @@ def test_monthly_funnel_counts_leads_in_month_window_by_showroom(app_config: App
     assert funnel.by_showroom["Iași"].leads == 1
     assert funnel.by_showroom[None].useful == 0
     assert sum(counts.leads for counts in funnel.by_showroom.values()) == company.leads
+    assert funnel.showrooms_with_leads == ("Brașov", "Cluj", "Iași", None)
+    assert funnel.named_showrooms_with_leads == ("Brașov", "Cluj", "Iași")
+    assert funnel.without_showroom == funnel.by_showroom[None]
+    assert (funnel.without_showroom.leads, funnel.without_showroom.irr_leads) == (1, 1)
 
 
 @pytest.mark.parametrize(
@@ -192,6 +196,7 @@ def test_monthly_loss_reasons_compare_with_previous_month(app_config: AppConfig)
 
     losses = monthly_loss_reasons(leads, SEPTEMBER_END, app_config)
 
+    assert (losses.month, losses.previous_month) == (date(2026, 9, 1), date(2026, 8, 1))
     assert losses.current.reason_total("BUGET") == 2
     assert losses.current.reason_total("NU_RASPUNS") == 2
     assert losses.current.reason_total("TIMP") == 0

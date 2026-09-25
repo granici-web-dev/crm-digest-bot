@@ -25,6 +25,14 @@ def percent_one_decimal(value: float | None) -> str:
     return "—" if value is None else f"{value * 100:.1f}%".replace(".", ",")
 
 
+TARGET_DIRECTION_SIGNS = {"higher": "≥", "lower": "≤"}
+
+
+def target_label(value: float, direction: str) -> str:
+    # Цель в том же формате, что факт рядом с ней (percent1).
+    return f"{TARGET_DIRECTION_SIGNS[direction]}{percent_one_decimal(value)}"
+
+
 def change_label(value: float | None) -> str:
     if value is None:
         return "(—)"

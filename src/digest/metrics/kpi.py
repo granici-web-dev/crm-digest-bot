@@ -46,13 +46,17 @@ class Kpis:
 COUNT_NAMES = tuple(field.name for field in fields(LeadCounts))
 
 
+def leads_in_period(lead_frame: pd.DataFrame, period: Period) -> pd.DataFrame:
+    # docs/kpi-definitions.md, «Базовые множества», LEADS: период по created_at, [start, end).
+    created_at = lead_frame["created_at"]
+    in_period = created_at.ge(period.start) & created_at.lt(period.end)
+    return lead_frame[in_period & ~lead_frame["is_excluded_from_leads"]]
+
+
 def count_flags(
     lead_frame: pd.DataFrame, period: Period, analysis_date: date, config: AppConfig
 ) -> pd.DataFrame:
-    # docs/kpi-definitions.md, «Базовые множества»: период по created_at, [start, end).
-    created_at = lead_frame["created_at"]
-    in_period = created_at.ge(period.start) & created_at.lt(period.end)
-    leads = lead_frame[in_period & ~lead_frame["is_excluded_from_leads"]]
+    leads = leads_in_period(lead_frame, period)
 
     # docs/kpi-definitions.md, «Базовые множества», ACTIVE_OFFERS_14 (ADR-005): оферта у лида в
     # работе, день контакта по Бухаресту строго больше active_offer_stale_days назад;

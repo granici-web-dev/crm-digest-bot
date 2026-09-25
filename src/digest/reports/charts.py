@@ -31,14 +31,22 @@ class ChartLabels(StrictConfigModel):
     funnel_stages: Annotated[list[str], Field(min_length=4, max_length=4)]
     clienti_note: str
     company: str
-    without_showroom: str
+    without_showroom_leads: str
     trend_title: str
     trend_leads: str
     trend_contracts: str
     trend_note: str
 
+    def month_name(self, month: date) -> str:
+        return self.months[month.month - 1]
+
     def month_label(self, month: date) -> str:
-        return f"{self.months[month.month - 1]} {month:%Y}"
+        return f"{self.month_name(month)} {month:%Y}"
+
+    def without_showroom_note(self, counts: LeadCounts) -> str | None:
+        if not counts.leads:
+            return None
+        return self.without_showroom_leads.format(leads=counts.leads, irrelevant=counts.irr_leads)
 
 
 @cache
@@ -91,10 +99,9 @@ def draw_funnel_panel(axes: Axes, title: str, counts: LeadCounts, labels: ChartL
 
 
 def funnel_chart(funnel: MonthlyFunnel, labels: ChartLabels) -> bytes:
+    # Лиды без шоурума без своей панели: у них нет воронки, только строка в сноске.
     panels = [
-        (labels.without_showroom if showroom is None else showroom, counts)
-        for showroom, counts in funnel.by_showroom.items()
-        if counts.leads
+        (showroom, funnel.by_showroom[showroom]) for showroom in funnel.named_showrooms_with_leads
     ]
     panels.append((labels.company, funnel.company))
     rows = ceil(len(panels) / FUNNEL_PANEL_COLUMNS)
@@ -112,7 +119,14 @@ def funnel_chart(funnel: MonthlyFunnel, labels: ChartLabels) -> bytes:
         draw_funnel_panel(axes, title, counts, labels)
     for axes in cells[len(panels) :]:
         axes.set_visible(False)
-    figure.supxlabel(labels.clienti_note, color=TEXT_SECONDARY, fontsize=8, x=0.01, ha="left")
+    notes = [labels.clienti_note, labels.without_showroom_note(funnel.without_showroom)]
+    figure.supxlabel(
+        "\n".join(note for note in notes if note),
+        color=TEXT_SECONDARY,
+        fontsize=8,
+        x=0.01,
+        ha="left",
+    )
     return png_bytes(figure)
 
 

@@ -11,8 +11,8 @@
   Lead-uri → utile → oferte → Clienți
   Brașov: 10 → 10 → 2 → 1
   Cluj: 2 → 2 → 1 → 0
-  (fără showroom): 1 → 0 → 0 → 0
   <b>Total: 13 → 12 → 3 → 1</b>
+  1 lead-uri fără showroom, dintre care 1 irelevante
   <i>Clienți: din lead-urile lunii, status la data raportului. Ofertele și clienții din aceste lead-uri vor mai crește.</i>
   '''
 # ---
@@ -22,8 +22,8 @@
   Лиды → полезные → оферты → клиенты (Clienți)
   Brașov: 10 → 10 → 2 → 1
   Cluj: 2 → 2 → 1 → 0
-  (fără showroom): 1 → 0 → 0 → 0
   <b>Итого: 13 → 12 → 3 → 1</b>
+  1 лидов без шоурума, из них 1 нерелевантных
   <i>Клиенты (Clienți): из лидов месяца, статус на дату отчёта. Оферты и клиенты из этих лидов ещё будут расти.</i>
   '''
 # ---
@@ -45,7 +45,7 @@
 # ---
 # name: test_monthly_module_text[m4-ro]
   '''
-  <b>Conversie (SCR) pe showroom</b>, țintă ≥10%
+  <b>Conversie (SCR) pe showroom</b>, țintă ≥10,0%
   <i>Elită ≥10,0% · Bine ≥7,0% · Minim ≥5,0%</i>
   Brașov 10,0% · Elită ✓
   Cluj 0,0% · Sub minim ✗
@@ -55,7 +55,7 @@
 # ---
 # name: test_monthly_module_text[m4-ru]
   '''
-  <b>Конверсия (SCR) по шоурумам</b>, цель ≥10%
+  <b>Конверсия (SCR) по шоурумам</b>, цель ≥10,0%
   <i>Элита ≥10,0% · Хорошо ≥7,0% · Минимум ≥5,0%</i>
   Brașov 10,0% · Элита ✓
   Cluj 0,0% · Ниже минимума ✗
@@ -66,8 +66,8 @@
 # name: test_monthly_module_text[m5-ro]
   '''
   <b>Manager Cockpit: 9 KPI pe consilier</b>
-  <i>Ținte: SCR ≥10% · L2O ≥50% · O2C ≥20% · CDR ≥90% · PLR ≤25%</i>
-  <i>Ținte: SC ≥20% · PFR ≤10% · ACR ≤20% · IRR ≤20%</i>
+  <i>Ținte: SCR ≥10,0% · L2O ≥50,0% · O2C ≥20,0% · CDR ≥90,0% · PLR ≤25,0%</i>
+  <i>Ținte: SC ≥20,0% · PFR ≤10,0% · ACR ≤20,0% · IRR ≤20,0%</i>
   <i>Clienți: din lead-urile lunii, status la data raportului</i>
   
   <b>Roibu Valeria</b> · Brașov
@@ -104,8 +104,8 @@
 # name: test_monthly_module_text[m5-ru]
   '''
   <b>Manager Cockpit: 9 KPI по консультантам</b>
-  <i>Цели: SCR ≥10% · L2O ≥50% · O2C ≥20% · CDR ≥90% · PLR ≤25%</i>
-  <i>Цели: SC ≥20% · PFR ≤10% · ACR ≤20% · IRR ≤20%</i>
+  <i>Цели: SCR ≥10,0% · L2O ≥50,0% · O2C ≥20,0% · CDR ≥90,0% · PLR ≤25,0%</i>
+  <i>Цели: SC ≥20,0% · PFR ≤10,0% · ACR ≤20,0% · IRR ≤20,0%</i>
   <i>Клиенты (Clienți): из лидов месяца, статус на дату отчёта</i>
   
   <b>Roibu Valeria</b> · Brașov

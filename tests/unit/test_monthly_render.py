@@ -134,7 +134,9 @@ def test_funnel_text_and_photo(app_config: AppConfig) -> None:
 
     assert "Brașov: 10 → 10 → 2 → 1" in result.text
     assert "Cluj: 2 → 2 → 1 → 0" in result.text
-    assert "(fără showroom): 1 → 0 → 0 → 0" in result.text
+    assert "1 lead-uri fără showroom, dintre care 1 irelevante" in result.text
+    assert "(fără showroom)" not in result.text
+    assert result.alerts == ()
     assert "București" not in result.text
     assert "Total: 13 → 12 → 3 → 1" in result.text
     assert "Lead-uri → utile → oferte → Clienți" in result.text
@@ -143,6 +145,27 @@ def test_funnel_text_and_photo(app_config: AppConfig) -> None:
     assert result.photo is not None
     assert result.photo.filename == "funnel_2026-09.png"
     assert result.photo.content.startswith(PNG_SIGNATURE)
+
+
+def test_useful_lead_without_showroom_alerts_ops_without_client_data(
+    app_config: AppConfig,
+) -> None:
+    frame = pd.concat(
+        [
+            month_frame(app_config),
+            prepare_lead_frame(
+                [lead(17, at(date(2026, 9, 21), 12), showroom=None)], app_config
+            ).assign(**CLIENT_DATA),
+        ]
+    )
+
+    result = IMPLEMENTED_MODULES["m2"](frame, context(app_config, "ro"))
+
+    assert "2 lead-uri fără showroom, dintre care 1 irelevante" in result.text
+    assert result.alerts == (
+        "m2 за 09.2026: 1 полезных лидов без шоурума (всего без шоурума 2). "
+        "Заполнить поле Showroom в mefi.",
+    )
 
 
 def test_trend_text_and_photo(app_config: AppConfig) -> None:
@@ -158,7 +181,7 @@ def test_trend_text_and_photo(app_config: AppConfig) -> None:
 def test_scr_text_shows_level_and_target(app_config: AppConfig) -> None:
     text = module_text(app_config, "m4")
 
-    assert "țintă ≥10%" in text
+    assert "țintă ≥10,0%" in text
     assert "Brașov 10,0% · Elită ✓" in text
     assert "Cluj 0,0% · Sub minim ✗" in text
     assert "(fără showroom) —\n" in text
@@ -231,7 +254,7 @@ def test_monthly_workbook_manager_sheet(app_config: AppConfig) -> None:
         "SCR",
     )
     assert rows[1][0] == "Țintă"
-    assert rows[1][6] == "≥10%"
+    assert rows[1][6] == "≥10,0%"
     moaca = next(row for row in rows if row[0] == "Moaca Andreea")
     assert moaca[1:6] == ("Brașov", 2, 2, 2, 1)
     assert moaca[6] == pytest.approx(0.5)
@@ -272,13 +295,32 @@ def test_monthly_workbook_funnel_and_loss_sheets(app_config: AppConfig) -> None:
     assert irelevant[1:] == (1, 0.5, 0, "—")
 
 
+def test_monthly_workbook_is_romanian_in_russian_run(app_config: AppConfig) -> None:
+    result = IMPLEMENTED_MODULES["m19"](month_frame(app_config), context(app_config, "ru"))
+    assert result.document is not None
+    losses = sheet_rows(load_workbook(BytesIO(result.document.content)), "Motive pierdere")
+
+    assert losses[0] == ("Motiv", "Sep", "Pondere", "Aug", "Variație")
+    assert {row[0] for row in losses[1:]} == {"Buget", "Irelevant", "Nu a răspuns", "Total"}
+
+
 def test_monthly_workbook_lead_sheet_matches_funnel_without_client_data(
     app_config: AppConfig,
 ) -> None:
     _, book = workbook(app_config)
     rows = sheet_rows(book, "Lead-uri luna")
 
-    assert rows[0] == ("ID", "Creat", "Zi", "Showroom", "Sursa", "Status", "Ofertat", "Consilier")
+    assert rows[0][:8] == (
+        "ID",
+        "Creat",
+        "Zi",
+        "Showroom",
+        "Sursa",
+        "Status",
+        "Ofertat",
+        "Consilier",
+    )
+    assert rows[0][9] == "Luna: lead-uri create 31.08.2026 19:00 → 30.09.2026 19:00"
     assert len(rows) - 1 == 13
     cells = {
         str(cell)

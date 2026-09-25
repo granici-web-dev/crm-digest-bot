@@ -6,20 +6,26 @@ import xlsxwriter
 
 from digest.config import KPI_NAMES
 from digest.metrics.kpi import kpis_from
-from digest.metrics.monthly import monthly_funnel, monthly_lead_rows, monthly_loss_reasons
+from digest.metrics.monthly import (
+    month_window,
+    monthly_funnel,
+    monthly_lead_rows,
+    monthly_loss_reasons,
+)
 from digest.reports.charts import chart_labels
 from digest.reports.context import ModuleResult, ReportContext, ReportDocument
 from digest.reports.modules.monthly import (
     loss_reason_labels,
     manager_cockpit_rows,
     month_file_suffix,
-    showrooms_with_leads,
     target_labels,
 )
 from digest.reports.modules.weekly import showroom_label
-from digest.reports.modules.weekly_excel import write_lead_sheet
-from digest.reports.render import render
+from digest.reports.modules.weekly_excel import LEAD_SHEET_COLUMNS, write_lead_sheet
+from digest.reports.render import ReportLanguage, render
 
+# Excel целиком на RO, как названия листов и колонок, независимо от языка текста отчёта.
+EXCEL_LANGUAGE: ReportLanguage = "ro"
 COUNT_HEADERS = (
     ("leads", "Lead-uri"),
     ("useful", "Utile"),
@@ -42,7 +48,7 @@ def write_share(
 
 
 def write_clienti_note(worksheet: Any, last_table_row: int) -> None:
-    worksheet.write(last_table_row + 2, 0, chart_labels("ro").clienti_note)
+    worksheet.write(last_table_row + 2, 0, chart_labels(EXCEL_LANGUAGE).clienti_note)
 
 
 def write_manager_sheet(
@@ -68,7 +74,11 @@ def write_manager_sheet(
         worksheet.write_row(
             row_index,
             0,
-            [row["name"], row["showroom"] or "", *(int(row[name]) for name, _ in COUNT_HEADERS)],
+            [
+                row["name"],
+                showroom_label(row["showroom"]),
+                *(int(row[name]) for name, _ in COUNT_HEADERS),
+            ],
         )
         for offset, kpi_name in enumerate(KPI_NAMES):
             meets_target = row[f"{kpi_name}_meets_target"]
@@ -97,7 +107,7 @@ def write_funnel_sheet(
     )
     rows = [
         (showroom_label(showroom), funnel.by_showroom[showroom])
-        for showroom in showrooms_with_leads(funnel)
+        for showroom in funnel.showrooms_with_leads
     ]
     rows.append(("Total", funnel.company))
     for row_index, (label, counts) in enumerate(rows, start=1):
@@ -123,11 +133,18 @@ def write_loss_sheet(
 ) -> None:
     worksheet = workbook.add_worksheet("Motive pierdere")
     losses = monthly_loss_reasons(lead_frame, context.report_date, context.config)
-    labels = loss_reason_labels(context)
-    months = chart_labels("ro").months
-    month = context.report_date.month
+    labels = loss_reason_labels(context.config, EXCEL_LANGUAGE)
+    month_labels = chart_labels(EXCEL_LANGUAGE)
     worksheet.write_row(
-        0, 0, ["Motiv", months[month - 1], "Pondere", months[(month - 2) % 12], "Variație"]
+        0,
+        0,
+        [
+            "Motiv",
+            month_labels.month_name(losses.month),
+            "Pondere",
+            month_labels.month_name(losses.previous_month),
+            "Variație",
+        ],
     )
     rows = [
         (
@@ -174,6 +191,14 @@ def monthly_workbook(lead_frame: pd.DataFrame, context: ReportContext) -> bytes:
         "Zi",
         monthly_lead_rows(lead_frame, context.report_date, context.config),
         context.config,
+    )
+    # Лид последнего вечера прошлого месяца стоит в листе с датой прошлого месяца: окно
+    # месяца начинается в 19:00 (docs/kpi-definitions.md, «Месячное окно»).
+    window = month_window(context.report_date, context.config.status_mapping.time)
+    workbook.get_worksheet_by_name("Lead-uri luna").write(
+        0,
+        len(LEAD_SHEET_COLUMNS) + 1,
+        f"Luna: lead-uri create {window.start:%d.%m.%Y %H:%M} → {window.end:%d.%m.%Y %H:%M}",
     )
     workbook.close()
     return output.getvalue()

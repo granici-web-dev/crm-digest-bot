@@ -12,6 +12,7 @@ from digest.metrics.kpi import (
     kpis_from,
     lead_counts,
     lead_counts_by_showroom,
+    leads_in_period,
     ratio,
 )
 from digest.metrics.weekly import (
@@ -31,6 +32,19 @@ class MonthlyFunnel:
     month: date
     company: LeadCounts
     by_showroom: dict[str | None, LeadCounts]
+
+    @property
+    def showrooms_with_leads(self) -> tuple[str | None, ...]:
+        return tuple(showroom for showroom, counts in self.by_showroom.items() if counts.leads)
+
+    @property
+    def named_showrooms_with_leads(self) -> tuple[str, ...]:
+        return tuple(showroom for showroom in self.showrooms_with_leads if showroom is not None)
+
+    @property
+    def without_showroom(self) -> LeadCounts:
+        # lead_counts_by_showroom всегда отдаёт ключ None последним.
+        return self.by_showroom[None]
 
 
 @dataclass(frozen=True)
@@ -55,6 +69,8 @@ class MonthlyTrend:
 
 @dataclass(frozen=True)
 class MonthlyLossReasons:
+    month: date
+    previous_month: date
     current: LossReasons
     previous: LossReasons
 
@@ -176,6 +192,8 @@ def monthly_loss_reasons(
     time_settings = config.status_mapping.time
     previous_month = first_day_of_month(report_date) - timedelta(days=1)
     return MonthlyLossReasons(
+        first_day_of_month(report_date),
+        first_day_of_month(previous_month),
         loss_reasons_in_window(lead_frame, month_window(report_date, time_settings), config),
         loss_reasons_in_window(lead_frame, month_window(previous_month, time_settings), config),
     )
@@ -185,12 +203,5 @@ def monthly_lead_rows(
     lead_frame: pd.DataFrame, report_date: date, config: AppConfig
 ) -> pd.DataFrame:
     # Те же лиды, что LEADS компании в m2: строки листа сходятся с воронкой.
-    window = month_window(report_date, config.status_mapping.time)
-    created_at = lead_frame["created_at"]
-    in_month = (
-        created_at.ge(window.start)
-        & created_at.lt(window.end)
-        & ~lead_frame["is_excluded_from_leads"]
-    )
-    leads = lead_frame[in_month]
+    leads = leads_in_period(lead_frame, month_window(report_date, config.status_mapping.time))
     return lead_rows(leads.assign(day=leads["created_at"].dt.tz_localize(None).dt.date))
