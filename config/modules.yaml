@@ -1,5 +1,6 @@
 # Реестр модулей отчётов. enabled — дефолт при первом запуске; дальше — таблица module_settings в Postgres через /settings.
 # Модуль нельзя включить, пока не подключены все его sources: проверяется при загрузке конфига.
+# requires_kpi_status: calibrated — модуль нельзя включить, пока kpi.yaml в status: provisional.
 
 sources:
   A: { title: "mefi leads:read",                           connected: true }
@@ -42,8 +43,8 @@ monthly:          # 1-е число 09:00
   m4:  { name: scr_with_targets,      sources: [A],    enabled: true }
   # Таблица 9 KPI по консультантам (docs/kpi-definitions.md) с целями, без SPI, баллов и уровней.
   m5:  { name: manager_cockpit,       sources: [A],    enabled: true }
-  # До калибровки, ADR-002.
-  m6:  { name: spi_ranking,           sources: [A],    enabled: false }
+  # Баллы и SPI предварительные (ADR-002): включить можно только при kpi.yaml status: calibrated.
+  m6:  { name: spi_ranking,           sources: [A],    enabled: false, requires_kpi_status: calibrated }
   m7:  { name: scr_by_source_campaign, sources: [A],   enabled: false }
   m8:  { name: loss_reasons_trend,    sources: [A],    enabled: true }
   m9:  { name: cohort_conversion,     sources: [A],    enabled: false }

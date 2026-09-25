@@ -13,6 +13,7 @@ from digest.config import (
     StatusMapping,
     read_yaml,
 )
+from factories import raw_repository_config
 
 CONFIG_DIR = Path(__file__).resolve().parents[2] / "config"
 
@@ -126,4 +127,28 @@ def test_non_positive_stale_days_fails_config_load(days: int) -> None:
     raw_kpi["active_offer_stale_days"] = days
 
     with pytest.raises(ValidationError, match="active_offer_stale_days"):
+        KpiSettings.model_validate(raw_kpi)
+
+
+def test_spi_module_cannot_be_enabled_while_kpi_is_provisional() -> None:
+    raw_config = raw_repository_config()
+    raw_config["modules"]["monthly"]["m6"]["enabled"] = True
+
+    with pytest.raises(ValidationError, match="m6"):
+        AppConfig.model_validate(raw_config)
+
+
+def test_spi_module_can_be_enabled_once_kpi_is_calibrated() -> None:
+    raw_config = raw_repository_config()
+    raw_config["modules"]["monthly"]["m6"]["enabled"] = True
+    raw_config["kpi"]["status"] = "calibrated"
+
+    assert AppConfig.model_validate(raw_config).modules.monthly["m6"].enabled
+
+
+def test_unknown_kpi_status_fails_config_load() -> None:
+    raw_kpi = repository_yaml("kpi.yaml")
+    raw_kpi["status"] = "final"
+
+    with pytest.raises(ValidationError, match="status"):
         KpiSettings.model_validate(raw_kpi)

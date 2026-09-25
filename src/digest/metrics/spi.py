@@ -1,4 +1,5 @@
-# Предварительная механика (ADR-002): отчёты MVP и чат этот модуль не вызывают.
+# Предварительная механика (ADR-002): остальной src/ этот модуль не импортирует
+# (tests/unit/test_spi_isolation.py).
 from dataclasses import asdict
 
 from digest.config import KpiName, KpiSettings, ScoreSteps

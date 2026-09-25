@@ -5,6 +5,7 @@
 # Ключи совпадают с thresholds в tests/fixtures/etalon-2026-05.json.
 # Изменение порога = ADR + обновление эталона (docs/kpi-definitions.md).
 
+# provisional | calibrated. Модули с requires_kpi_status: calibrated при provisional не включаются.
 status: provisional
 
 thresholds:

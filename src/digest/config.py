@@ -182,11 +182,15 @@ class DataSource(StrictConfigModel):
     connected: bool
 
 
+KpiStatus = Literal["provisional", "calibrated"]
+
+
 class ReportModule(StrictConfigModel):
     name: str
     sources: list[SourceCode]
     enabled: bool
     params: dict[str, JsonValue] = {}
+    requires_kpi_status: Literal["calibrated"] | None = None
 
 
 class ChatSettings(StrictConfigModel):
@@ -203,9 +207,13 @@ class ModuleRegistry(StrictConfigModel):
     yearly: dict[str, ReportModule]
     chat: ChatSettings
 
+    @property
+    def all_modules(self) -> dict[str, ReportModule]:
+        return {**self.daily, **self.weekly, **self.monthly, **self.yearly}
+
     @model_validator(mode="after")
     def enabled_modules_have_connected_sources(self) -> Self:
-        all_modules = {**self.daily, **self.weekly, **self.monthly, **self.yearly}
+        all_modules = self.all_modules
         module_count = sum(
             len(level) for level in (self.daily, self.weekly, self.monthly, self.yearly)
         )
@@ -277,7 +285,7 @@ class SpiLevel(StrictConfigModel):
 
 
 class KpiSettings(StrictConfigModel):
-    status: Literal["provisional"]
+    status: KpiStatus
     thresholds: dict[str, Share]
     active_offer_stale_days: PositiveInt
     levels: list[SpiLevel]
@@ -312,6 +320,23 @@ class AppConfig(StrictConfigModel):
     modules: ModuleRegistry
     managers: ManagerRoster
     kpi: KpiSettings
+
+    @model_validator(mode="after")
+    def modules_needing_calibrated_kpi_stay_disabled(self) -> Self:
+        # Баллы и SPI предварительные (ADR-002): модуль на них не включается ни из YAML,
+        # ни через /settings, пока kpi.yaml не переведён в calibrated отдельным ADR.
+        blocked = sorted(
+            module_id
+            for module_id, module in self.modules.all_modules.items()
+            if module.enabled
+            and module.requires_kpi_status is not None
+            and self.kpi.status != module.requires_kpi_status
+        )
+        if blocked:
+            raise ValueError(
+                f"модули {blocked} требуют kpi.yaml status: calibrated, сейчас {self.kpi.status}"
+            )
+        return self
 
     @model_validator(mode="after")
     def manager_showrooms_are_known(self) -> Self:
