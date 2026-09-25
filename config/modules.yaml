@@ -20,7 +20,7 @@ daily:            # 19:30, окно 19:00 вчера → 19:00 сегодня
   # Срок «висящей» оферты: kpi.yaml active_offer_stale_days, тот же, что в ACR.
   d4: { name: stale_offers,           sources: [A], enabled: true }
   # 646 лидов с Site за восемь месяцев, меньше трёх в день: порог 3 почти не срабатывал бы.
-  d5: { name: anomalies,              sources: [A], enabled: true,  params: { site_zero_min_average: 2, irelevant_spike_min: 5 } }
+  d5: { name: anomalies,              sources: [A], enabled: true,  params: { site_zero_min_average: 2, site_average_days: 7, irelevant_spike_min: 5 } }
   d6: { name: same_weekday_compare,   sources: [A], enabled: true }
   d7: { name: scr_rolling_30,         sources: [A], enabled: false }
   d8: { name: instant_alerts,         sources: [A], enabled: false, params: { site_zero_by: "15:00" } }

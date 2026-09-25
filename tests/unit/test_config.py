@@ -244,8 +244,20 @@ def test_repository_marks_marketing_sofa_as_not_taken(app_config: AppConfig) -> 
     [
         ("d2", {"threshold_hours": 4}),
         ("d2", {"threshold_hours": 0, "lookback_days": 3}),
-        ("d5", {"site_zero_min_average": 2, "irelevant_spike_min": "five"}),
-        ("d5", {"site_zero_min_average": 2, "irelevant_spike_min": 5, "web_zero": 1}),
+        (
+            "d5",
+            {"site_zero_min_average": 2, "site_average_days": 7, "irelevant_spike_min": "five"},
+        ),
+        (
+            "d5",
+            {
+                "site_zero_min_average": 2,
+                "site_average_days": 7,
+                "irelevant_spike_min": 5,
+                "web_zero": 1,
+            },
+        ),
+        ("d5", {"site_zero_min_average": 2, "site_average_days": 0, "irelevant_spike_min": 5}),
     ],
 )
 def test_module_params_are_validated_at_load(module_id: str, params: dict[str, Any]) -> None:
@@ -257,11 +269,21 @@ def test_module_params_are_validated_at_load(module_id: str, params: dict[str, A
 
 
 def test_repository_module_params(app_config: AppConfig) -> None:
-    untouched = app_config.modules.untouched_leads_params()
-    anomalies = app_config.modules.anomaly_params()
+    untouched = app_config.modules.untouched_leads_params
+    anomalies = app_config.modules.anomaly_params
 
     assert (untouched.threshold_hours, untouched.lookback_days) == (4, 3)
+    assert untouched.touch_tolerance_seconds == 60
     assert (anomalies.site_zero_min_average, anomalies.irelevant_spike_min) == (2, 5)
+    assert anomalies.site_average_days == 7
+
+
+def test_module_with_params_must_be_in_registry() -> None:
+    raw_modules = repository_yaml("modules.yaml")
+    del raw_modules["daily"]["d5"]
+
+    with pytest.raises(ValidationError, match="модуль anomalies не найден"):
+        ModuleRegistry.model_validate(raw_modules)
 
 
 def test_new_sources_are_in_groups(app_config: AppConfig) -> None:

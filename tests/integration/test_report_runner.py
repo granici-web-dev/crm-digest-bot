@@ -342,7 +342,7 @@ async def test_unknown_raw_key_is_alerted(harness: Harness) -> None:
 
     raw_key_alerts = [alert for alert in harness.ops_texts if "Незнакомый ключ" in alert]
     assert raw_key_alerts == [
-        "Незнакомый ключ лида «whatsapp_number» в ответе mefi (2 лидов), сохранён в raw. "
+        "Незнакомый ключ лида «whatsapp_number» в ответе mefi, лидов: 2, сохранён в raw. "
         "Проверьте, не контакт ли это, и добавьте в raw_known_keys или raw_strip "
         "config/status-mapping.yaml."
     ]

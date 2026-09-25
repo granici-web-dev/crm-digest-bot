@@ -64,6 +64,7 @@ class IrelevantSpike:
 
 @dataclass(frozen=True)
 class Anomalies:
+    site_average_days: int
     # None: правило «сайт молчит» не сработало.
     site_zero_previous_average: float | None
     irelevant_spikes: tuple[IrelevantSpike, ...]
@@ -112,7 +113,7 @@ def untouched_leads(
     lead_frame: pd.DataFrame, report_date: date, config: AppConfig
 ) -> UntouchedLeads:
     # docs/kpi-definitions.md, «Ежедневные проверки», d2.
-    params = config.modules.untouched_leads_params()
+    params = config.modules.untouched_leads_params
     # Возраст от конца окна, а не от now(): повтор отчёта даёт те же цифры.
     window_end = daily_window(report_date, config.status_mapping.time).end
     created_at = lead_frame["created_at"]
@@ -198,7 +199,7 @@ def stale_offers(
 
 def anomalies(lead_frame: pd.DataFrame, report_date: date, config: AppConfig) -> Anomalies:
     # docs/kpi-definitions.md, «Ежедневные проверки», d5.
-    params = config.modules.anomaly_params()
+    params = config.modules.anomaly_params
     time_settings = config.status_mapping.time
     is_site = lead_frame["source_name"].isin(config.status_mapping.sources.site)
 
@@ -208,8 +209,13 @@ def anomalies(lead_frame: pd.DataFrame, report_date: date, config: AppConfig) ->
         return int((flags["leads_web"] & is_site).sum())
 
     # Среднее по created_at сегодняшнего кадра: пропуск снапшота в прошлом его не ломает.
+    average_days = params.site_average_days
     previous_days_average = (
-        sum(site_leads(report_date - timedelta(days=days_back)) for days_back in range(1, 8)) / 7
+        sum(
+            site_leads(report_date - timedelta(days=days_back))
+            for days_back in range(1, average_days + 1)
+        )
+        / average_days
     )
     site_zero_previous_average = (
         previous_days_average
@@ -233,7 +239,7 @@ def anomalies(lead_frame: pd.DataFrame, report_date: date, config: AppConfig) ->
     irelevant_spikes = tuple(
         sorted(spikes, key=lambda spike: not_taken_first(spike.manager_name, spike.lead_count))
     )
-    return Anomalies(site_zero_previous_average, irelevant_spikes)
+    return Anomalies(average_days, site_zero_previous_average, irelevant_spikes)
 
 
 def same_weekday_comparison(

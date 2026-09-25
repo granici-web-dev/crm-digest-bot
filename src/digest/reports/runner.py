@@ -298,8 +298,8 @@ async def alert_snapshot_findings(
     for mismatch in unknown_raw_keys:
         await notify_ops(
             deps.ops,
-            f"Незнакомый ключ лида «{mismatch['expected_name']}» в ответе mefi "
-            f"({mismatch['lead_count']} лидов), сохранён в raw. Проверьте, не контакт ли это, "
+            f"Незнакомый ключ лида «{mismatch['expected_name']}» в ответе mefi, "
+            f"лидов: {mismatch['lead_count']}, сохранён в raw. Проверьте, не контакт ли это, "
             "и добавьте в raw_known_keys или raw_strip config/status-mapping.yaml.",
         )
     if won_mismatch_ids:

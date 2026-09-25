@@ -545,7 +545,7 @@ def test_every_check_is_empty_on_empty_frame(app_config: AppConfig) -> None:
     assert stale_offers(lead_frame, yesterday, REPORT_DATE, app_config) == StaleOffers(
         {"Brașov": 0, "București": 0, "Cluj": 0, None: 0}, 0, 0
     )
-    assert anomalies(lead_frame, REPORT_DATE, app_config) == Anomalies(None, ())
+    assert anomalies(lead_frame, REPORT_DATE, app_config) == Anomalies(7, None, ())
     assert same_weekday_comparison(lead_frame, REPORT_DATE, app_config) == SameWeekdayComparison(
         date(2026, 9, 18), 0, 0, 0, 0
     )

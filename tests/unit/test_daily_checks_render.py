@@ -90,10 +90,10 @@ def test_stale_offers_render(
 @pytest.mark.parametrize(
     "found",
     [
-        Anomalies(2.2857, (IrelevantSpike("Dragoi Mihaela", 6), IrelevantSpike(None, 5))),
-        Anomalies(3.0, ()),
-        Anomalies(None, (IrelevantSpike("Marc Andra", 5),)),
-        Anomalies(None, ()),
+        Anomalies(7, 2.2857, (IrelevantSpike("Dragoi Mihaela", 6), IrelevantSpike(None, 5))),
+        Anomalies(7, 3.0, ()),
+        Anomalies(7, None, (IrelevantSpike("Marc Andra", 5),)),
+        Anomalies(7, None, ()),
     ],
     ids=["both", "site_only", "spike_only", "none"],
 )

@@ -217,14 +217,8 @@ class UntouchedLeadsParams(StrictConfigModel):
 
 class AnomalyParams(StrictConfigModel):
     site_zero_min_average: PositiveFloat
+    site_average_days: PositiveInt
     irelevant_spike_min: PositiveInt
-
-
-# Параметры проверяются при загрузке: опечатка в пороге роняет старт, а не отчёт в 19:30.
-PARAMS_MODEL_BY_MODULE_NAME: dict[str, type[StrictConfigModel]] = {
-    "untouched_leads": UntouchedLeadsParams,
-    "anomalies": AnomalyParams,
-}
 
 
 class ChatSettings(StrictConfigModel):
@@ -245,24 +239,44 @@ class ModuleRegistry(StrictConfigModel):
     def all_modules(self) -> dict[str, ReportModule]:
         return {**self.daily, **self.weekly, **self.monthly, **self.yearly}
 
-    def module_named(self, name: str) -> ReportModule:
-        return next(module for module in self.all_modules.values() if module.name == name)
+    _untouched_leads_params: UntouchedLeadsParams = PrivateAttr()
+    _anomaly_params: AnomalyParams = PrivateAttr()
 
+    @property
     def untouched_leads_params(self) -> UntouchedLeadsParams:
-        return UntouchedLeadsParams.model_validate(self.module_named("untouched_leads").params)
+        return self._untouched_leads_params
 
+    @property
     def anomaly_params(self) -> AnomalyParams:
-        return AnomalyParams.model_validate(self.module_named("anomalies").params)
+        return self._anomaly_params
+
+    def module_named(self, name: str) -> tuple[str, ReportModule]:
+        for module_id, module in self.all_modules.items():
+            if module.name == name:
+                return module_id, module
+        raise ValueError(f"модуль {name} не найден в config/modules.yaml")
+
+    def parsed_params[ParamsModel: StrictConfigModel](
+        self, module_name: str, params_model: type[ParamsModel]
+    ) -> ParamsModel:
+        module_id, module = self.module_named(module_name)
+        try:
+            return params_model.model_validate(module.params)
+        except ValidationError as error:
+            raise ValueError(f"модуль {module_id}: неверные params: {error}") from error
 
     @model_validator(mode="after")
-    def enabled_modules_have_connected_sources(self) -> Self:
-        all_modules = self.all_modules
+    def module_ids_are_unique(self) -> Self:
         module_count = sum(
             len(level) for level in (self.daily, self.weekly, self.monthly, self.yearly)
         )
-        if len(all_modules) != module_count:
+        if len(self.all_modules) != module_count:
             raise ValueError("id модуля повторяется в разных отчётах")
-        for module_id, module in all_modules.items():
+        return self
+
+    @model_validator(mode="after")
+    def enabled_modules_have_connected_sources(self) -> Self:
+        for module_id, module in self.all_modules.items():
             undeclared = [code for code in module.sources if code not in self.sources]
             if undeclared:
                 raise ValueError(f"модуль {module_id}: источники {undeclared} не описаны в sources")
@@ -271,12 +285,13 @@ class ModuleRegistry(StrictConfigModel):
                 raise ValueError(
                     f"модуль {module_id} включён, но источники {disconnected} не подключены"
                 )
-            params_model = PARAMS_MODEL_BY_MODULE_NAME.get(module.name)
-            if params_model is not None:
-                try:
-                    params_model.model_validate(module.params)
-                except ValidationError as error:
-                    raise ValueError(f"модуль {module_id}: неверные params: {error}") from error
+        return self
+
+    @model_validator(mode="after")
+    def module_params_are_parsed(self) -> Self:
+        # Один разбор при загрузке: опечатка в пороге роняет старт, а не отчёт в 19:30.
+        self._untouched_leads_params = self.parsed_params("untouched_leads", UntouchedLeadsParams)
+        self._anomaly_params = self.parsed_params("anomalies", AnomalyParams)
         return self
 
 
