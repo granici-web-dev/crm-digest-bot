@@ -8,7 +8,8 @@
 - Фундамент закрыт (сессия 3): craft 267f27f, 44f81c1; critique; дополнение к shape d996160; harden тремя коммитами: 41f2a4c (персональные данные, pre-commit), f9b73ff (терпимая модель лида, nullable is_duplicate, проверка полноты снапшота), 91db89e (устойчивость прогона, Retry-After через пейсер, время по Бухаресту и DST). 55 тестов зелёные, pre-commit чистый.
 - Сессия 4, часть 1: эталон из SB KPi.xlsx (`scripts/build_etalon.py` → `tests/fixtures/etalon-2026-05.json`, 314 лидов, 6 консультантов, проверка на контакты клиента), `docs/kpi-definitions.md` переписан по формулам workbook, `config/kpi.yaml`, ADR-002 (v1 повторяет Excel). Speed-to-lead теперь ADR-003.
 - Сессия 4, часть 2 (25.09.2026): SB KPi.xlsx составлен через ИИ, ADR-002 переписан (`ADR-002-kpi-brief-primary.md`): формулы по брифу, SPI предварительный и скрыт. Эталон пересобран по формулам брифа, значения Excel в `excel_reference`, Moaca Andreea сверена вручную (`meta.manual_check`). m6 выключен.
-- Сейчас: /rigorous shape metrics/. Тест сверяет `metrics/` с `expected_by_agent` (счётчики и 9 KPI); SPI и баллы тестировать на синтетике, не на эталоне. Консультанты в эталоне по имени, в `metrics/` по `assigned_to.id`: сопоставление решить в shape.
+- Сессия 4, часть 3 (25.09.2026): metrics/ по shape `docs/shapes/2026-09-25-metrics.md` через tdd, коммиты 6cbccb6..907b0c8. `frame.py` (load_lead_frame, prepare_lead_frame, unknown_manager_ids), `kpi.py` (счётчики и 9 KPI по компании, шоуруму, консультанту), `spi.py` (provisional), `cockpit.py` (m5), `extra.py` (revenire, когорта, дельта). `test_kpi_matches_etalon` зелёный, 151 тест.
+- Сейчас: /rigorous critique metrics/, затем harden. Потом сессия 5: планировщик и доставка; вызывающий код шлёт алерт по unknown_manager_ids.
 - Расхождение с дополнением к shape: там сказано, что 5 от API и 4 записанных при порогах по умолчанию это failed, но по записанным там же порогам (max(5, 0.5 %) недополучено, max(10, 1 %) пропущено) это success. Реализованы пороги; тест переименован в test_snapshot_below_thresholds_is_success_with_alert_data. Если 5/4 должно падать, пороги в status-mapping.yaml нужно ужесточить.
 - Для сессии 5: планировщик ловит исключение run_daily_snapshot и логирует только describe_error(error), без traceback со str(error). Незнакомые ключи лида (unknown_raw_key) пишутся в raw, не вырезаются: алерт обязателен.
 - Локально тесты идут с `TESTCONTAINERS_RYUK_DISABLED=true`: docker pull образа ryuk зависает.
@@ -25,8 +26,8 @@
 - success = снапшот полный: пороги полноты в секции snapshot status-mapping.yaml. is_duplicate nullable, NULL = неизвестно; метрики с исключением дублей падают на NULL в окне.
 - raw jsonb без контактов клиента (список raw_strip в status-mapping.yaml), textarea-поля хранятся.
 - Консультанты: config/managers.yaml, сверен со списком пользователей mefi 24.09.2026.
-- Метрики по консультантам считают только active: true; лид с assigned_to.id вне managers.yaml даёт алерт (реализовать в сессии 4).
-- Лиды с assigned_to.id консультанта с test_account: true исключаются из всех метрик на уровне базовых множеств (LEADS). Реализовать в сессии 4.
+- Метрики по консультантам считают только active: true; лид с assigned_to.id вне managers.yaml находит unknown_manager_ids (metrics/ не логирует), алерт шлёт раннер отчёта (сессия 5).
+- Лиды с assigned_to.id консультанта с test_account: true исключаются из всех метрик в prepare_lead_frame.
 - Отчёты читают только снапшот с snapshot_date = today и status = success, иначе пометка «данные mefi недоступны».
 - Data revenire часто равна дню создания: правило для d3 решается в shape сессии 5.
 - m19 в MVP только Excel, PDF на этапе 2.
