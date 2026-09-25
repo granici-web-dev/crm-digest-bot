@@ -167,7 +167,7 @@ def test_blocks_follow_config_order_and_todays_showroom(app_config: AppConfig) -
 
     counts = seller_format_counts(today, yesterday(previous), REPORT_DATE, app_config)
 
-    assert list(counts.by_showroom) == ["București", "Brașov", "Cluj", "Iași"]
+    assert list(counts.by_showroom) == ["Brașov", "București", "Cluj", "Iași"]
     assert counts.by_showroom["Brașov"].offers == 1
     assert counts.by_showroom["Cluj"].offers == 0
     assert counts.by_showroom["Iași"].leads == 1

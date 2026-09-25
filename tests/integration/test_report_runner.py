@@ -123,6 +123,7 @@ async def test_daily_report_is_sent_to_group_and_recorded(harness: Harness) -> N
     assert "<b>Raport zilnic Sofabelle</b>" in harness.group_text
     assert "24.09.2026 19:00 → 25.09.2026 19:00" in harness.group_text
     assert "<b>Sofabelle București:</b>" in harness.group_text
+    assert harness.group_text.count("sursa B indisponibilă") == 1
     [run] = await report_run_rows(harness.deps.engine)
     assert run["status"] == "success"
     assert run["snapshot_date"] == REPORT_DATE

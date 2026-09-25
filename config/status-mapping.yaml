@@ -115,7 +115,8 @@ sources:
   # Google (id 1) и Teren (id 4): лидов нет, имена из enums.md не проверены.
   other: ["Recomandare", "Arhirtect", "Client Fidel", "Google", "Teren"]
 
-showrooms: ["București", "Brașov", "Cluj"]
+# Порядок блоков в отчётах, как в ручном отчёте продавцов.
+showrooms: ["Brașov", "București", "Cluj"]
 
 # success значит «снапшот полный»: отчёты читают только success. Выше порога прогон failed,
 # отчёт уходит с пометкой «данные mefi недоступны»; ниже порога расхождение идёт в алерт.

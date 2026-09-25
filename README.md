@@ -24,3 +24,16 @@ docs/first-sessions.md        ← порядок сессий 0–7 с гото�
 Что нужно от других людей (не блокирует сессии 0–7):
 - директор Sofabelle: письмо в mefi про API для Oferte/Contracte/Facturi; доступы в Meta BM / Google Ads / GA4 / TikTok BC; документы себестоимости
 - Serghei: сервисный read-only пользователь в mefi без 2FA; разведка источника B через Chrome; Excel 2024–2025
+
+## Локальный прогон
+
+Нужны Docker, uv и заполненный `.env` (см. `.env.example`, включая `POSTGRES_PASSWORD` и `DATABASE_URL` на localhost).
+
+```
+docker compose up -d postgres
+uv run alembic upgrade head
+uv run python -m digest snapshot
+uv run python -m digest report daily --date YYYY-MM-DD --dry-run
+```
+
+`snapshot` всегда снимает состояние mefi за сегодня по Бухаресту; строки Vizita, Oferta и Contract появятся в отчёте со второго дня подряд. `--dry-run` отправляет только в `TELEGRAM_TEST_CHAT_ID`.

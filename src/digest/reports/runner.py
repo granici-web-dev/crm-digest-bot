@@ -197,8 +197,7 @@ async def runnable_modules(
         if disconnected:
             await notify_ops(
                 deps.ops,
-                f"Модуль {module_id} включён в module_settings, но источники {disconnected} "
-                "не подключены: пропущен.",
+                f"Модуль {module_id} включён, но источники {disconnected} не подключены: пропущен.",
             )
         elif module_id not in deps.modules:
             not_implemented.append(module_id)
@@ -271,7 +270,14 @@ async def build_report(
             f"Снапшот {deps.tenant_id} за {snapshot_date} отсутствует или failed: "
             f"отчёт {level} уходит с пометкой «данные mefi недоступны».",
         )
-        text = render("report", language, blocks=[], snapshot_missing=True, **render_values)
+        text = render(
+            "report",
+            language,
+            blocks=[],
+            snapshot_missing=True,
+            unavailable_sources=[],
+            **render_values,
+        )
         return BuiltReport(text, "partial", snapshot_date)
 
     await alert_snapshot_findings(deps, snapshot_date, lead_frame)
@@ -286,6 +292,7 @@ async def build_report(
     )
     context = ReportContext(snapshot_date, previous, deps.config, language)
     blocks: list[ModuleBlock] = []
+    unavailable_sources: set[str] = set()
     for module_id, module_function in modules:
         try:
             result = module_function(lead_frame, context)
@@ -302,9 +309,17 @@ async def build_report(
         else:
             for alert in result.alerts:
                 await notify_ops(deps.ops, alert)
+            unavailable_sources.update(result.unavailable_sources)
             # Текст модуля уже отрендерен своим шаблоном с autoescape, второй раз не экранируем.
             blocks.append(ModuleBlock(module_id, Markup(result.text)))
-    text = render("report", language, blocks=blocks, snapshot_missing=False, **render_values)
+    text = render(
+        "report",
+        language,
+        blocks=blocks,
+        snapshot_missing=False,
+        unavailable_sources=sorted(unavailable_sources),
+        **render_values,
+    )
     status: Literal["success", "partial"] = (
         "partial" if any(block.text is None for block in blocks) else "success"
     )

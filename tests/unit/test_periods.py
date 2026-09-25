@@ -48,3 +48,12 @@ def test_utc_now_is_read_in_bucharest_time(app_config: AppConfig) -> None:
     period = report_period("daily", utc_now, app_config.status_mapping.time)
 
     assert period == Period(at(2026, 9, 24, 19), at(2026, 9, 25, 19))
+
+
+def test_daily_window_across_dst_start_is_23_hours(app_config: AppConfig) -> None:
+    period = report_period("daily", at(2026, 3, 29, 19, 30), app_config.status_mapping.time)
+
+    assert period == Period(at(2026, 3, 28, 19), at(2026, 3, 29, 19))
+    utc = ZoneInfo("UTC")
+    duration = period.end.astimezone(utc) - period.start.astimezone(utc)
+    assert duration.total_seconds() == 23 * 3600

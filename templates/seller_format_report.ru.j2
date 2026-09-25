@@ -28,12 +28,11 @@ Contract Cantitate: {{ row.contracts | dash }}
 
 {% endfor %}
 {% if counts.without_showroom_lead_count > 0 %}
-Без шоурума: {{ counts.without_showroom_lead_count }}
+Fără showroom: {{ counts.without_showroom_lead_count }}
 {% endif %}
 ———
-<b>ИТОГО</b> · Leads {{ counts.total.leads }} · Vizite {{ counts.total.showroom_visits | dash }} · Oferte {{ counts.total.offers | dash }} · Contracte {{ counts.total.contracts | dash }}
+<b>TOTAL</b> · Leads {{ counts.total.leads }} · Vizite {{ counts.total.showroom_visits | dash }} · Oferte {{ counts.total.offers | dash }} · Contracte {{ counts.total.contracts | dash }}
 
 {% if not counts.has_previous_snapshot %}
 <i>Vizita, Oferta, Contract: нет снапшота CRM за вчера, посчитать нельзя.</i>
 {% endif %}
-<i>Reoferta, Încasări: источник B недоступен.</i>

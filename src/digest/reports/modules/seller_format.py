@@ -23,4 +23,5 @@ def seller_format_report(lead_frame: pd.DataFrame, context: ReportContext) -> Mo
     text = render(
         "seller_format_report", context.language, counts=counts, report_date=context.report_date
     )
-    return ModuleResult(text, tuple(alerts))
+    # Reoferta и Încasări берутся только из Oferte/Contracte (источник B, CLAUDE.md).
+    return ModuleResult(text, tuple(alerts), unavailable_sources=("B",))

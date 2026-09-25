@@ -1,31 +1,6 @@
 # serializer version: 1
 # name: test_seller_format_matches_seller_whatsapp_layout[ro]
   '''
-  <b>Sofabelle București:</b>
-  12.08.2026
-  
-  Leads Mail/FB/IG: 0
-  
-  Leads Telefon: 1
-  
-  Leads WhatsApp: 2
-  
-  Leads Designer/Colaboratori: 0
-  
-  Leads Alte/Showroom (revenire): 0
-  
-  Vizita in showroom: 3
-  
-  Oferta: 0
-  
-  Reoferta: —
-  
-  Contract Cantitate: 0
-  
-  Încasări: —
-  
-  
-  
   <b>Sofabelle Brașov:</b>
   12.08.2026
   
@@ -42,6 +17,31 @@
   Vizita in showroom: 1
   
   Oferta: 1
+  
+  Reoferta: —
+  
+  Contract Cantitate: 0
+  
+  Încasări: —
+  
+  
+  
+  <b>Sofabelle București:</b>
+  12.08.2026
+  
+  Leads Mail/FB/IG: 0
+  
+  Leads Telefon: 1
+  
+  Leads WhatsApp: 2
+  
+  Leads Designer/Colaboratori: 0
+  
+  Leads Alte/Showroom (revenire): 0
+  
+  Vizita in showroom: 3
+  
+  Oferta: 0
   
   Reoferta: —
   
@@ -79,37 +79,10 @@
   Fără showroom: 1
   ———
   <b>TOTAL</b> · Leads 6 · Vizite 6 · Oferte 3 · Contracte 0
-  
-  <i>Reoferta, Încasări: sursa B indisponibilă.</i>
   '''
 # ---
 # name: test_seller_format_matches_seller_whatsapp_layout[ru]
   '''
-  <b>Sofabelle București:</b>
-  12.08.2026
-  
-  Leads Mail/FB/IG: 0
-  
-  Leads Telefon: 1
-  
-  Leads WhatsApp: 2
-  
-  Leads Designer/Colaboratori: 0
-  
-  Leads Alte/Showroom (revenire): 0
-  
-  Vizita in showroom: 3
-  
-  Oferta: 0
-  
-  Reoferta: —
-  
-  Contract Cantitate: 0
-  
-  Încasări: —
-  
-  
-  
   <b>Sofabelle Brașov:</b>
   12.08.2026
   
@@ -126,6 +99,31 @@
   Vizita in showroom: 1
   
   Oferta: 1
+  
+  Reoferta: —
+  
+  Contract Cantitate: 0
+  
+  Încasări: —
+  
+  
+  
+  <b>Sofabelle București:</b>
+  12.08.2026
+  
+  Leads Mail/FB/IG: 0
+  
+  Leads Telefon: 1
+  
+  Leads WhatsApp: 2
+  
+  Leads Designer/Colaboratori: 0
+  
+  Leads Alte/Showroom (revenire): 0
+  
+  Vizita in showroom: 3
+  
+  Oferta: 0
   
   Reoferta: —
   
@@ -160,23 +158,21 @@
   
   
   
-  Без шоурума: 1
+  Fără showroom: 1
   ———
-  <b>ИТОГО</b> · Leads 6 · Vizite 6 · Oferte 3 · Contracte 0
-  
-  <i>Reoferta, Încasări: источник B недоступен.</i>
+  <b>TOTAL</b> · Leads 6 · Vizite 6 · Oferte 3 · Contracte 0
   '''
 # ---
 # name: test_seller_format_without_previous_snapshot_shows_dashes[ro]
   '''
-  <b>Sofabelle București:</b>
+  <b>Sofabelle Brașov:</b>
   12.08.2026
   
-  Leads Mail/FB/IG: 0
+  Leads Mail/FB/IG: 1
   
   Leads Telefon: 1
   
-  Leads WhatsApp: 2
+  Leads WhatsApp: 0
   
   Leads Designer/Colaboratori: 0
   
@@ -194,14 +190,14 @@
   
   
   
-  <b>Sofabelle Brașov:</b>
+  <b>Sofabelle București:</b>
   12.08.2026
   
-  Leads Mail/FB/IG: 1
+  Leads Mail/FB/IG: 0
   
   Leads Telefon: 1
   
-  Leads WhatsApp: 0
+  Leads WhatsApp: 2
   
   Leads Designer/Colaboratori: 0
   
@@ -248,19 +244,18 @@
   <b>TOTAL</b> · Leads 6 · Vizite — · Oferte — · Contracte —
   
   <i>Vizita, Oferta, Contract: lipsește snapshotul CRM de ieri, nu se poate calcula.</i>
-  <i>Reoferta, Încasări: sursa B indisponibilă.</i>
   '''
 # ---
 # name: test_seller_format_without_previous_snapshot_shows_dashes[ru]
   '''
-  <b>Sofabelle București:</b>
+  <b>Sofabelle Brașov:</b>
   12.08.2026
   
-  Leads Mail/FB/IG: 0
+  Leads Mail/FB/IG: 1
   
   Leads Telefon: 1
   
-  Leads WhatsApp: 2
+  Leads WhatsApp: 0
   
   Leads Designer/Colaboratori: 0
   
@@ -278,14 +273,14 @@
   
   
   
-  <b>Sofabelle Brașov:</b>
+  <b>Sofabelle București:</b>
   12.08.2026
   
-  Leads Mail/FB/IG: 1
+  Leads Mail/FB/IG: 0
   
   Leads Telefon: 1
   
-  Leads WhatsApp: 0
+  Leads WhatsApp: 2
   
   Leads Designer/Colaboratori: 0
   
@@ -329,9 +324,8 @@
   
   
   ———
-  <b>ИТОГО</b> · Leads 6 · Vizite — · Oferte — · Contracte —
+  <b>TOTAL</b> · Leads 6 · Vizite — · Oferte — · Contracte —
   
   <i>Vizita, Oferta, Contract: нет снапшота CRM за вчера, посчитать нельзя.</i>
-  <i>Reoferta, Încasări: источник B недоступен.</i>
   '''
 # ---

@@ -18,8 +18,8 @@ def fixed_counts(has_previous_snapshot: bool, without_showroom: int) -> SellerFo
 
     return SellerFormatCounts(
         by_showroom={
-            "București": row(0, 1, 2, 0, 0, 3, 0, 0),
             "Brașov": row(1, 1, 0, 0, 0, 1, 1, 0),
+            "București": row(0, 1, 2, 0, 0, 3, 0, 0),
             "Cluj": row(0, 0, 0, 0, 0, 2, 2, 0),
         },
         without_showroom_lead_count=without_showroom,

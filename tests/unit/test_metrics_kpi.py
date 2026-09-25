@@ -252,7 +252,7 @@ def test_showroom_outside_config_list_gets_its_own_row(app_config: AppConfig) ->
         prepare_lead_frame(rows, app_config), SEPTEMBER, SEPTEMBER_END, app_config
     )
 
-    assert list(counts) == ["București", "Brașov", "Cluj", "Bucuresti", None]
+    assert list(counts) == ["Brașov", "București", "Cluj", "Bucuresti", None]
     assert (counts["Bucuresti"].leads, counts["Cluj"].leads) == (1, 1)
 
 

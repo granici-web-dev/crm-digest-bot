@@ -101,7 +101,7 @@ async def report_job(deps: ReportDeps, level: ReportLevel) -> None:
         await run_report(level, now, deps)
     except Exception as error:
         logger.error("report job failed", extra={"level": level, "error": describe_error(error)})
-        await notify_ops(deps.ops, f"Отчёт {level} упал до отправки: {describe_error(error)}.")
+        await notify_ops(deps.ops, f"Прогон отчёта {level} упал: {describe_error(error)}.")
 
 
 async def run_app(engine: AsyncEngine, config: AppConfig, app_settings: Settings) -> None:

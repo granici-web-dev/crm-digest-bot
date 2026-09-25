@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import date
 
-from digest.config import AppConfig
+from digest.config import AppConfig, SourceCode
 from digest.metrics.daily import PreviousSnapshot
 from digest.reports.render import ReportLanguage
 
@@ -18,3 +18,4 @@ class ReportContext:
 class ModuleResult:
     text: str
     alerts: tuple[str, ...] = ()
+    unavailable_sources: tuple[SourceCode, ...] = ()
