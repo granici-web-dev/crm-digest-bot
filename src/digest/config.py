@@ -124,6 +124,7 @@ class SnapshotSettings(StrictConfigModel):
 
 class SourceGroups(StrictConfigModel):
     showroom_visit: list[str]
+    showroom_visit_status: str
     web: list[str]
     phone: list[str]
     whatsapp: list[str]
@@ -168,6 +169,11 @@ class StatusMapping(StrictConfigModel):
                     f"{category_by_status[status]} и {category}"
                 )
             category_by_status[status] = category
+        if self.sources.showroom_visit_status not in category_by_status:
+            raise ValueError(
+                f"sources.showroom_visit_status {self.sources.showroom_visit_status!r} "
+                "не указан ни в одной категории"
+            )
         self._category_by_status = category_by_status
         return self
 

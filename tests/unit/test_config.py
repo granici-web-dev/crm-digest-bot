@@ -113,6 +113,14 @@ def test_missing_showroom_visit_sources_fails_config_load() -> None:
         StatusMapping.model_validate(raw_mapping)
 
 
+def test_showroom_visit_status_must_be_a_mapped_status() -> None:
+    raw_mapping = repository_yaml("status-mapping.yaml")
+    raw_mapping["sources"]["showroom_visit_status"] = "VIZITA"
+
+    with pytest.raises(ValidationError, match="showroom_visit_status"):
+        StatusMapping.model_validate(raw_mapping)
+
+
 def test_threshold_outside_zero_to_one_fails_config_load() -> None:
     raw_kpi = repository_yaml("kpi.yaml")
     raw_kpi["thresholds"]["scr_elite"] = 10

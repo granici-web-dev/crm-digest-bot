@@ -105,6 +105,8 @@ raw_known_keys:
 
 sources:
   showroom_visit: ["Showroom"]             # считается отдельно от входящих лидов
+  # Статус визита: d1 считает «Vizita in showroom» по переходу в этот статус между снапшотами.
+  showroom_visit_status: "SHOWROOM"
   web: ["Site", "Mail", "Meta ADS"]        # строка «Leads Mail/FB/IG» в формате продавцов
   phone: ["Telefon"]
   whatsapp: ["WhatsApp"]
