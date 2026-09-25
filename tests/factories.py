@@ -158,6 +158,8 @@ def make_snapshot_row(**overrides: Any) -> dict[str, Any]:
         "is_duplicate": False,
         "assigned_to_id": 12,
         "assigned_to_name": "Dragoi Mihaela",
+        # Лид с сайта создаёт API, а не консультант.
+        "created_by_id": None,
         "created_at": datetime(2026, 9, 23, 11, 0, tzinfo=BUCHAREST),
         "status_changed_at": None,
         "last_contact_at": datetime(2026, 9, 23, 11, 0, tzinfo=BUCHAREST),
@@ -165,3 +167,11 @@ def make_snapshot_row(**overrides: Any) -> dict[str, Any]:
     }
     row.update(overrides)
     return row
+
+
+def lead_snapshots_row(row: dict[str, Any]) -> dict[str, Any]:
+    # created_by_id в кадре читается из raw (digest.db.lead_frame), колонки в lead_snapshots нет.
+    columns = {name: value for name, value in row.items() if name != "created_by_id"}
+    created_by_id = row.get("created_by_id")
+    raw = {} if created_by_id is None else {"created_by": {"id": created_by_id}}
+    return {"raw": raw, **columns}

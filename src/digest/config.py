@@ -128,10 +128,19 @@ class SourceGroups(StrictConfigModel):
     showroom_visit: list[str]
     showroom_visit_status: str
     web: list[str]
+    # Подмножество web для правила d5 «сайт молчит»: Messenger и Meta ADS сбой формы не покажут.
+    site: list[str]
     phone: list[str]
     whatsapp: list[str]
     partner: list[str]
     other: list[str]
+
+    @model_validator(mode="after")
+    def site_sources_are_web(self) -> Self:
+        outside_web = [source for source in self.site if source not in self.web]
+        if outside_web:
+            raise ValueError(f"sources.site {outside_web} не входят в sources.web")
+        return self
 
 
 class StatusMapping(StrictConfigModel):

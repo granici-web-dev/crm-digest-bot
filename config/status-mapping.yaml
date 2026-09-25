@@ -109,6 +109,7 @@ sources:
   showroom_visit_status: "SHOWROOM"
   # "FacebookMessanger" — написание mefi, не исправлять.
   web: ["Site", "Mail", "Meta ADS", "FacebookMessanger"]   # строка «Leads Mail/FB/IG» в формате продавцов
+  site: ["Site"]                           # из web: правило d5 «0 лидов с сайта»
   phone: ["Telefon"]
   whatsapp: ["WhatsApp"]
   partner: ["Colaborare"]

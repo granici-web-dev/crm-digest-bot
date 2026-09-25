@@ -268,3 +268,11 @@ def test_new_sources_are_in_groups(app_config: AppConfig) -> None:
     sources = app_config.status_mapping.sources
     assert "FacebookMessanger" in sources.web
     assert "BIFE 2026" in sources.other
+
+
+def test_site_sources_must_be_web() -> None:
+    raw_mapping = repository_yaml("status-mapping.yaml")
+    raw_mapping["sources"]["site"] = ["Telefon"]
+
+    with pytest.raises(ValidationError, match="Telefon"):
+        StatusMapping.model_validate(raw_mapping)

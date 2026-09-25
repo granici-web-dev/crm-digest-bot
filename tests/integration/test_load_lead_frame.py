@@ -11,13 +11,18 @@ from digest.config import AppConfig
 from digest.db.lead_frame import SnapshotMissingError, load_lead_frame
 from digest.db.schema import lead_snapshots, snapshot_runs, tenants
 from digest.metrics.frame import prepare_lead_frame
-from factories import make_snapshot_row
+from factories import lead_snapshots_row, make_snapshot_row
 
 SNAPSHOT_DATE = date(2026, 9, 24)
 
 
 def stored(row: dict[str, Any], tenant_id: str = "sofabelle", **keys: Any) -> dict[str, Any]:
-    return {"tenant_id": tenant_id, "snapshot_date": SNAPSHOT_DATE, "raw": {}, **row, **keys}
+    return {
+        "tenant_id": tenant_id,
+        "snapshot_date": SNAPSHOT_DATE,
+        **lead_snapshots_row(row),
+        **keys,
+    }
 
 
 async def store(
@@ -58,7 +63,8 @@ async def test_loaded_frame_matches_frame_prepared_from_rows(
     engine: AsyncEngine, app_config: AppConfig
 ) -> None:
     rows = [
-        make_snapshot_row(lead_id=1),
+        # created_by_id приходит из raw.created_by.id, у лида 2 его нет (лид из API).
+        make_snapshot_row(lead_id=1, created_by_id=8),
         make_snapshot_row(
             lead_id=2,
             ofertat=None,

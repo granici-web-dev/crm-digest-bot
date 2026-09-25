@@ -1,7 +1,7 @@
 from datetime import date
 
 import pandas as pd
-from sqlalchemy import func, select
+from sqlalchemy import Integer, func, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.config import AppConfig
@@ -16,8 +16,17 @@ class SnapshotMissingError(Exception):
 async def load_lead_frame(
     engine: AsyncEngine, tenant_id: str, snapshot_date: date, config: AppConfig
 ) -> pd.DataFrame:
+    # created_by не отдельная колонка снапшота: читается из raw, где он хранится без изменений.
+    created_by_id = (
+        lead_snapshots.c.raw["created_by"]["id"].astext.cast(Integer).label("created_by_id")
+    )
     query = (
-        select(*(lead_snapshots.c[column] for column in LEAD_FRAME_COLUMNS))
+        select(
+            *(
+                created_by_id if column == "created_by_id" else lead_snapshots.c[column]
+                for column in LEAD_FRAME_COLUMNS
+            )
+        )
         .where(
             lead_snapshots.c.tenant_id == tenant_id,
             lead_snapshots.c.snapshot_date == snapshot_date,

@@ -17,7 +17,7 @@ from digest.delivery.ops import OpsChannel
 from digest.reports.context import ModuleResult, ReportContext
 from digest.reports.modules import IMPLEMENTED_MODULES
 from digest.reports.runner import ReportDeps, run_report
-from factories import BUCHAREST, make_snapshot_row
+from factories import BUCHAREST, lead_snapshots_row, make_snapshot_row
 from fakes import recording_bot
 
 TENANT_ID = "sofabelle"
@@ -66,7 +66,7 @@ async def store_snapshot(
         await connection.execute(
             insert(lead_snapshots),
             [
-                {"tenant_id": TENANT_ID, "snapshot_date": snapshot_date, "raw": {}, **row}
+                {"tenant_id": TENANT_ID, "snapshot_date": snapshot_date, **lead_snapshots_row(row)}
                 for row in rows
             ],
         )

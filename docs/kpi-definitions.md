@@ -114,9 +114,24 @@
 | Метрика | Формула |
 |---|---|
 | Speed-to-lead | Формула брифа недействительна: заметки через API недоступны, а `last_contact_at` и `status_changed_at` по одному снапшоту первое касание не дают (`docs/mefi-api-notes.md`, 24.09.2026). Переопределяется в ADR-003 перед включением w5. В MVP w5 выключен. |
-| Просроченные revenire | лиды с кастомным `Data revenire ≤ today` и без изменения статуса после этой даты (`status_changed_at` null или раньше `Data revenire`). Категории: ACTIVE, ACTIVE_FOLLOWUP, LOST · STAND BY, UNMAPPED; WON, PARTNERSHIP и остальные причины LOST не входят |
+| Просроченные revenire | лиды с кастомным `Data revenire < today` (строго, ADR-004) и без изменения статуса после этой даты (`status_changed_at` null или раньше `Data revenire`). Категории: ACTIVE, ACTIVE_FOLLOWUP, LOST · STAND BY, UNMAPPED; WON, PARTNERSHIP и остальные причины LOST не входят |
 | Когортная конверсия | `CLIENTI из лидов месяца M на дату D / USEFUL месяца M` — считается по снапшоту на D |
 | Дельта к периоду | `(X_now − X_prev) / X_prev`; при `X_prev = 0` → «n/a» |
+
+## Ежедневные проверки (d2–d6, shape `docs/shapes/2026-09-25-daily-d2-d6.md`)
+
+Окно — суточное, 19:00 вчера → 19:00 сегодня по Europe/Bucharest, [start, end). Функции в `src/digest/metrics/daily_checks.py`. «Не взят» — лид на консультанте с `not_taken: true` в `config/managers.yaml` (Marketing Sofa) или без `assigned_to`; такие лиды идут отдельной группой.
+
+| Модуль | Формула |
+|---|---|
+| d2 лиды без касания | `created_at` в [конец окна − `lookback_days`, конец окна), возраст от конца окна > `threshold_hours`, не PARTNERSHIP, источник не `sources.showroom_visit`. Без касания: `status_changed_at` null ∧ `last_contact_at = created_at` ∧ не `ofertat` ∧ `created_by.id` не консультант с `active: true`. Не взятый лид попадает в d2 независимо от касаний. По группе: число лидов и возраст самого старого в целых часах |
+| d3 просроченные revenire | «Просроченные revenire» (ниже в «Дополнительных метриках»), по группе: число лидов и максимальная просрочка `today − Data revenire` в днях |
+| d4 висящие оферты | `ACTIVE_OFFERS_14` по всем лидам снапшота (без ограничения периода), по шоурумам. Дельта итога к вчера только при снапшоте ровно за вчера, иначе «—» |
+| d5 сайт молчит | лидов строки web d1 с источником из `sources.site` в окне 0, а среднее по семи предыдущим окнам (по `created_at` сегодняшнего кадра) ≥ `site_zero_min_average` |
+| d5 всплеск IRELEVANT | у группы лидов с причиной IRELEVANT, отмеченных в окне (`status_changed_at`, а если он null — `created_at`), ≥ `irelevant_spike_min` |
+| d6 тот же день недели | лиды: сумма пяти строк Leads d1 в окне сегодня и в окне `report_date − 7`, оба по сегодняшнему кадру. Контракты: `converted_at` в каждом окне (ADR-004) |
+
+**d6 и d1 считают контракты по-разному.** d6 по `converted_at`, d1 по разнице сегодняшнего и вчерашнего снапшотов. В одном сообщении цифры могут расходиться; расхождение `Clienți` и `converted_at` видно в алерте снапшота.
 
 ## Эталон
 

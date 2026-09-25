@@ -17,9 +17,9 @@ def overdue_ids(rows: list[dict[str, Any]], config: AppConfig) -> list[int]:
 
 
 @pytest.mark.parametrize(
-    ("data_revenire", "is_overdue"), [(date(2026, 9, 25), True), (date(2026, 9, 26), False)]
+    ("data_revenire", "is_overdue"), [(date(2026, 9, 24), True), (date(2026, 9, 25), False)]
 )
-def test_revenire_is_overdue_from_its_date(
+def test_revenire_is_overdue_after_its_date(
     app_config: AppConfig, data_revenire: date, is_overdue: bool
 ) -> None:
     rows = [make_snapshot_row(lead_id=1, data_revenire=data_revenire)]

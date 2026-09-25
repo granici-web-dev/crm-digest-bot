@@ -16,6 +16,7 @@ LEAD_FRAME_COLUMNS = (
     "is_duplicate",
     "assigned_to_id",
     "assigned_to_name",
+    "created_by_id",
     "created_at",
     "status_changed_at",
     "last_contact_at",
@@ -27,6 +28,7 @@ TIMESTAMP_COLUMNS = ("created_at", "status_changed_at", "last_contact_at", "conv
 def prepare_lead_frame(rows: list[dict[str, Any]], config: AppConfig) -> pd.DataFrame:
     lead_frame = pd.DataFrame.from_records(rows, columns=list(LEAD_FRAME_COLUMNS))
     lead_frame["assigned_to_id"] = lead_frame["assigned_to_id"].astype("Int64")
+    lead_frame["created_by_id"] = lead_frame["created_by_id"].astype("Int64")
     test_account_ids = [manager.id for manager in config.managers.managers if manager.test_account]
     # Лиды тестовых аккаунтов вне всех метрик (docs/kpi-definitions.md, «Базовые множества»).
     lead_frame = lead_frame[~lead_frame["assigned_to_id"].isin(test_account_ids)]

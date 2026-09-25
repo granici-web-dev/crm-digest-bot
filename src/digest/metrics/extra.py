@@ -23,7 +23,8 @@ def overdue_revenire(lead_frame: pd.DataFrame, today: date, config: AppConfig) -
     status_change_day = lead_frame["status_changed_at"].dt.tz_localize(None).dt.normalize()
     # status_changed_at = null: статус задан при создании и с тех пор не менялся (CLAUDE.md).
     untouched_since_revenire = status_change_day.isna() | status_change_day.lt(revenire_day)
-    due = revenire_day.le(pd.Timestamp(today))
+    # ADR-004: дата revenire это день, когда продавец должен вернуться; просрочка со следующего.
+    due = revenire_day.lt(pd.Timestamp(today))
     overdue = lead_frame.loc[eligible & due & untouched_since_revenire, "lead_id"]
     return [int(lead_id) for lead_id in overdue]
 
