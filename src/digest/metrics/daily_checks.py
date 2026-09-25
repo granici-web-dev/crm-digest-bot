@@ -14,6 +14,8 @@ from digest.metrics.daily import (
 from digest.metrics.extra import overdue_revenire
 from digest.metrics.kpi import Period, lead_counts_by_showroom
 
+EARLIEST_TIMESTAMP = pd.Timestamp.min.tz_localize("UTC")
+
 
 @dataclass(frozen=True)
 class UntouchedGroup:
@@ -124,12 +126,14 @@ def untouched_leads(
         & ~lead_frame["is_showroom_visit"]
     )
     consultant_ids = [manager.id for manager in config.managers.managers if manager.active]
-    # «Contactat astăzi» включён по умолчанию: при создании last_contact_at = created_at, это
-    # не касание (docs/mefi-api-notes.md, «Наблюдения о качестве данных»). Лид, созданный
-    # консультантом руками, уже обработан им.
+    # «Contactat astăzi» включён по умолчанию: при создании last_contact_at = created_at с
+    # отставанием до минуты, это не касание (docs/mefi-api-notes.md, «Наблюдения о качестве
+    # данных»). Пустой или раньше создания last_contact_at тоже не касание: NaN в сравнении
+    # даёт False. Лид, созданный консультантом руками, уже обработан им.
+    contact_after_creation = (lead_frame["last_contact_at"] - created_at).dt.total_seconds()
     touched = (
         lead_frame["status_changed_at"].notna()
-        | lead_frame["last_contact_at"].ne(created_at)
+        | contact_after_creation.gt(params.touch_tolerance_seconds)
         | lead_frame["is_ofertat"]
         | lead_frame["created_by_id"].isin(consultant_ids)
     )
@@ -159,10 +163,10 @@ def stale_offer_counts_by_showroom(
     lead_frame: pd.DataFrame, analysis_date: date, config: AppConfig
 ) -> dict[str | None, int]:
     # Та же ACTIVE_OFFERS_14, что в ACR (docs/kpi-definitions.md, «Базовые множества»), но по
-    # всем лидам снапшота, а не по лидам периода.
+    # всем лидам снапшота, а не по лидам периода. Начало не от created_at.min(): у пустого
+    # кадра это NaT.
     all_time = Period(
-        lead_frame["created_at"].min(),
-        daily_window(analysis_date, config.status_mapping.time).end,
+        EARLIEST_TIMESTAMP, daily_window(analysis_date, config.status_mapping.time).end
     )
     counts = lead_counts_by_showroom(lead_frame, all_time, analysis_date, config)
     return {
@@ -221,10 +225,13 @@ def anomalies(lead_frame: pd.DataFrame, report_date: date, config: AppConfig) ->
         lead_frame["is_irelevant"] & marked_at.ge(window.start) & marked_at.lt(window.end)
     )
     counts = manager_names(lead_frame[marked_in_window], config).value_counts(dropna=False)
-    irelevant_spikes = tuple(
+    spikes = [
         IrelevantSpike(name_or_not_taken(manager_name), int(lead_count))
         for manager_name, lead_count in counts.items()
         if lead_count >= params.irelevant_spike_min
+    ]
+    irelevant_spikes = tuple(
+        sorted(spikes, key=lambda spike: not_taken_first(spike.manager_name, spike.lead_count))
     )
     return Anomalies(site_zero_previous_average, irelevant_spikes)
 

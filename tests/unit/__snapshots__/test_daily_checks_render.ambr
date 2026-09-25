@@ -84,14 +84,14 @@
   'Зависшие оферты >14 дней: нет (к вчера: -2)'
 # ---
 # name: test_untouched_leads_render[found-ro]
-  '⚠ Lead-uri neatinse: 4 (cel mai vechi: 26h) · Nepreluate 1 (5h), Roibu Valeria 2 (26h), Raileanu  Leon 1 (1h)'
+  '⚠ Lead-uri neatinse sau nepreluate: 4 (cel mai vechi: 26h) · Nepreluate 1 (5h), Roibu Valeria 2 (26h), Raileanu  Leon 1 (1h)'
 # ---
 # name: test_untouched_leads_render[found-ru]
-  '⚠ Лиды без касания: 4 (самый старый: 26 ч) · Не взяты 1 (5 ч), Roibu Valeria 2 (26 ч), Raileanu  Leon 1 (1 ч)'
+  '⚠ Лиды без касания или не взятые: 4 (самый старый: 26 ч) · Не взяты 1 (5 ч), Roibu Valeria 2 (26 ч), Raileanu  Leon 1 (1 ч)'
 # ---
 # name: test_untouched_leads_render[none-ro]
-  'Lead-uri neatinse: nu'
+  'Lead-uri neatinse sau nepreluate: nu'
 # ---
 # name: test_untouched_leads_render[none-ru]
-  'Лиды без касания: нет'
+  'Лиды без касания или не взятые: нет'
 # ---

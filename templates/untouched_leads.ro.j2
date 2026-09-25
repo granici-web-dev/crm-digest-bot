@@ -1,7 +1,7 @@
 {% from "_names.ro.j2" import manager %}
 {% if untouched.lead_count %}
-⚠ Lead-uri neatinse: {{ untouched.lead_count }} (cel mai vechi: {{ untouched.oldest_age_hours }}h) · {% for group in untouched.groups %}{{ manager(group.manager_name) }} {{ group.lead_count }} ({{ group.oldest_age_hours }}h){% if not loop.last %}, {% endif %}{% endfor %}
+⚠ Lead-uri neatinse sau nepreluate: {{ untouched.lead_count }} (cel mai vechi: {{ untouched.oldest_age_hours }}h) · {% for group in untouched.groups %}{{ manager(group.manager_name) }} {{ group.lead_count }} ({{ group.oldest_age_hours }}h){% if not loop.last %}, {% endif %}{% endfor %}
 
 {% else %}
-Lead-uri neatinse: nu
+Lead-uri neatinse sau nepreluate: nu
 {% endif %}

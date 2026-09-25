@@ -70,5 +70,7 @@ def prepare_lead_frame(rows: list[dict[str, Any]], config: AppConfig) -> pd.Data
 
 def unknown_manager_ids(lead_frame: pd.DataFrame, config: AppConfig) -> set[int]:
     known_ids = {manager.id for manager in config.managers.managers}
-    assigned_ids = lead_frame["assigned_to_id"].dropna().unique()
-    return {int(manager_id) for manager_id in assigned_ids if manager_id not in known_ids}
+    # created_by тоже: лид, заведённый продавцом вне managers.yaml, d2 молча показал бы
+    # нетронутым.
+    referenced_ids = pd.concat([lead_frame["assigned_to_id"], lead_frame["created_by_id"]])
+    return {int(manager_id) for manager_id in referenced_ids.dropna().unique()} - known_ids

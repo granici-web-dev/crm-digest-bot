@@ -7,9 +7,12 @@ import pytest
 from digest.config import AppConfig
 from digest.metrics.daily import LEAD_ROWS, PreviousSnapshot, seller_format_counts
 from digest.metrics.daily_checks import (
+    Anomalies,
     IrelevantSpike,
     OverdueGroup,
     OverdueRevenire,
+    SameWeekdayComparison,
+    StaleOffers,
     UntouchedGroup,
     UntouchedLeads,
     anomalies,
@@ -19,6 +22,7 @@ from digest.metrics.daily_checks import (
     untouched_leads,
 )
 from digest.metrics.frame import prepare_lead_frame
+from digest.metrics.kpi import Period, lead_counts_by_showroom
 from factories import BUCHAREST, make_snapshot_row
 
 REPORT_DATE = date(2026, 9, 25)
@@ -78,6 +82,59 @@ def test_lead_created_by_consultant_is_touched(app_config: AppConfig) -> None:
     ]
 
     assert untouched(rows, app_config) == (UntouchedGroup("Dragoi Mihaela", 1, 9),)
+
+
+@pytest.mark.parametrize(
+    ("last_contact_at", "is_reported"),
+    [
+        (datetime(2026, 9, 25, 10, 1, tzinfo=BUCHAREST), True),
+        (datetime(2026, 9, 25, 10, 1, 1, tzinfo=BUCHAREST), False),
+        (None, True),
+        (datetime(2026, 9, 25, 9, 55, tzinfo=BUCHAREST), True),
+    ],
+    ids=["60s_after_creation", "61s_after_creation", "empty", "before_creation"],
+)
+def test_contact_is_a_touch_only_beyond_tolerance(
+    app_config: AppConfig, last_contact_at: datetime | None, is_reported: bool
+) -> None:
+    created_at = datetime(2026, 9, 25, 10, 0, tzinfo=BUCHAREST)
+    rows = [make_snapshot_row(lead_id=1, created_at=created_at, last_contact_at=last_contact_at)]
+
+    assert bool(untouched(rows, app_config)) is is_reported
+
+
+def test_lead_created_by_inactive_user_is_not_touched(app_config: AppConfig) -> None:
+    # id 6 в managers.yaml, но не консультант (active: false): его лид никто не обработал.
+    rows = [new_lead(1, datetime(2026, 9, 25, 10, 0, tzinfo=BUCHAREST), created_by_id=6)]
+
+    assert untouched(rows, app_config) == (UntouchedGroup("Dragoi Mihaela", 1, 9),)
+
+
+def test_untouched_age_across_dst_end_counts_real_hours(app_config: AppConfig) -> None:
+    # 25.10.2026 переход на зимнее время: от 24.10 19:00 до 25.10 19:00 прошло 25 часов.
+    rows = [new_lead(1, datetime(2026, 10, 24, 19, 0, tzinfo=BUCHAREST))]
+
+    result = untouched_leads(frame(rows, app_config), date(2026, 10, 25), app_config)
+
+    assert result.oldest_age_hours == 25
+
+
+@pytest.mark.parametrize(
+    ("created_at", "is_reported"),
+    [
+        (datetime(2026, 10, 22, 19, 0, tzinfo=BUCHAREST), True),
+        (datetime(2026, 10, 22, 18, 59, tzinfo=BUCHAREST), False),
+    ],
+    ids=["lookback_start", "before_lookback"],
+)
+def test_lookback_across_dst_end_is_three_calendar_days(
+    app_config: AppConfig, created_at: datetime, is_reported: bool
+) -> None:
+    result = untouched_leads(
+        frame([new_lead(1, created_at)], app_config), date(2026, 10, 25), app_config
+    )
+
+    assert bool(result.groups) is is_reported
 
 
 @pytest.mark.parametrize(
@@ -256,6 +313,25 @@ def test_stale_offers_are_counted_by_showroom(app_config: AppConfig) -> None:
     assert result.change_since_yesterday is None
 
 
+def test_stale_offers_match_active_offers_14(app_config: AppConfig) -> None:
+    rows = [
+        offer(1, 1, showroom="Cluj"),
+        offer(2, 2, category="ACTIVE_FOLLOWUP", status_name="Revenire 1", showroom="Brașov"),
+        offer(3, 3, category="LOST", loss_reason="BUGET", status_name="BUGET", showroom="Cluj"),
+        offer(4, 4, category="LOST", loss_reason="STAND_BY", status_name="Stand BY"),
+    ]
+    lead_frame = frame(rows, app_config)
+
+    result = stale_offers(lead_frame, None, REPORT_DATE, app_config)
+
+    all_time = Period(datetime(2026, 1, 1, tzinfo=BUCHAREST), WINDOW_END)
+    counts = lead_counts_by_showroom(lead_frame, all_time, REPORT_DATE, app_config)
+    assert result.by_showroom == {
+        showroom: showroom_counts.active_offers_14 for showroom, showroom_counts in counts.items()
+    }
+    assert result.by_showroom == {"Brașov": 1, "București": 0, "Cluj": 1, None: 0}
+
+
 @pytest.mark.parametrize(
     ("previous_date", "expected_change"), [(date(2026, 9, 24), 1), (date(2026, 9, 23), None)]
 )
@@ -372,6 +448,25 @@ def test_irelevant_set_at_creation_counts_by_created_at(app_config: AppConfig) -
     assert result.irelevant_spikes == (IrelevantSpike("Dragoi Mihaela", 5),)
 
 
+def test_irelevant_spikes_put_not_taken_first(app_config: AppConfig) -> None:
+    marked_at = datetime(2026, 9, 25, 12, 0, tzinfo=BUCHAREST)
+    not_taken = {"assigned_to_id": None, "assigned_to_name": None}
+    rows = [
+        *[irelevant(lead_id, status_changed_at=marked_at) for lead_id in range(6)],
+        *[
+            irelevant(lead_id, status_changed_at=marked_at, **not_taken)
+            for lead_id in range(10, 15)
+        ],
+    ]
+
+    result = anomalies(frame(rows, app_config), REPORT_DATE, app_config)
+
+    assert result.irelevant_spikes == (
+        IrelevantSpike(None, 5),
+        IrelevantSpike("Dragoi Mihaela", 6),
+    )
+
+
 def test_irelevant_marked_at_window_end_belongs_to_next_day(app_config: AppConfig) -> None:
     rows = [irelevant(lead_id, status_changed_at=WINDOW_END) for lead_id in range(5)]
 
@@ -434,3 +529,23 @@ def test_same_weekday_window_crosses_dst(app_config: AppConfig) -> None:
     result = same_weekday_comparison(frame(rows, app_config), date(2026, 10, 25), app_config)
 
     assert (result.leads, result.leads_week_ago) == (2, 1)
+
+
+# Пустой кадр
+
+
+def test_every_check_is_empty_on_empty_frame(app_config: AppConfig) -> None:
+    lead_frame = frame([], app_config)
+    yesterday = PreviousSnapshot(date(2026, 9, 24), lead_frame)
+
+    assert untouched_leads(lead_frame, REPORT_DATE, app_config) == UntouchedLeads(0, None, ())
+    assert overdue_revenire_by_manager(lead_frame, REPORT_DATE, app_config) == OverdueRevenire(
+        0, None, ()
+    )
+    assert stale_offers(lead_frame, yesterday, REPORT_DATE, app_config) == StaleOffers(
+        {"Brașov": 0, "București": 0, "Cluj": 0, None: 0}, 0, 0
+    )
+    assert anomalies(lead_frame, REPORT_DATE, app_config) == Anomalies(None, ())
+    assert same_weekday_comparison(lead_frame, REPORT_DATE, app_config) == SameWeekdayComparison(
+        date(2026, 9, 18), 0, 0, 0, 0
+    )

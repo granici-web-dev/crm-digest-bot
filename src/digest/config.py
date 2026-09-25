@@ -212,6 +212,7 @@ class ReportModule(StrictConfigModel):
 class UntouchedLeadsParams(StrictConfigModel):
     threshold_hours: PositiveInt
     lookback_days: PositiveInt
+    touch_tolerance_seconds: PositiveInt
 
 
 class AnomalyParams(StrictConfigModel):

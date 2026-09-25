@@ -78,6 +78,16 @@ def test_unknown_manager_id_is_reported(app_config: AppConfig) -> None:
     assert unknown_manager_ids(prepare_lead_frame(rows, app_config), app_config) == {77}
 
 
+def test_unknown_creator_id_is_reported(app_config: AppConfig) -> None:
+    rows = [
+        make_snapshot_row(lead_id=1, assigned_to_id=12, created_by_id=12),
+        make_snapshot_row(lead_id=2, assigned_to_id=12, created_by_id=55),
+        make_snapshot_row(lead_id=3, assigned_to_id=12, created_by_id=None),
+    ]
+
+    assert unknown_manager_ids(prepare_lead_frame(rows, app_config), app_config) == {55}
+
+
 def test_unassigned_lead_is_not_an_unknown_manager(app_config: AppConfig) -> None:
     rows = [make_snapshot_row(assigned_to_id=None)]
 

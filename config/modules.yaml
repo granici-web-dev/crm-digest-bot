@@ -14,7 +14,8 @@ sources:
 
 daily:            # 19:30, окно 19:00 вчера → 19:00 сегодня
   d1: { name: seller_format_report,   sources: [A], enabled: true }
-  d2: { name: untouched_leads,        sources: [A], enabled: true,  params: { threshold_hours: 4, lookback_days: 3 } }
+  # last_contact_at у нового лида отстаёт от created_at до минуты (замер 25.09.2026: 982 точно, 14 до 60 с).
+  d2: { name: untouched_leads,        sources: [A], enabled: true,  params: { threshold_hours: 4, lookback_days: 3, touch_tolerance_seconds: 60 } }
   d3: { name: overdue_revenire,       sources: [A], enabled: true }
   # Срок «висящей» оферты: kpi.yaml active_offer_stale_days, тот же, что в ACR.
   d4: { name: stale_offers,           sources: [A], enabled: true }

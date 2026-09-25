@@ -154,7 +154,7 @@ async def test_daily_report_contains_d1_to_d6_in_order(harness: Harness) -> None
         text.index(marker)
         for marker in (
             "<b>TOTAL</b>",
-            "⚠ Lead-uri neatinse: 2 (cel mai vechi: 9h) · Dragoi Mihaela 2 (9h)",
+            "⚠ Lead-uri neatinse sau nepreluate: 2 (cel mai vechi: 9h) · Dragoi Mihaela 2 (9h)",
             "⏰ Reveniri restante: 1 (cea mai veche: 3 zile) · Dragoi Mihaela 1 (3 zile)",
             "Oferte blocate >14 zile: nu",
             "Anomalii: nu",
@@ -284,8 +284,8 @@ async def test_snapshot_findings_are_alerted_as_ids_only(harness: Harness) -> No
     )
     assert "Clienți и converted_at расходятся (1), id: [3]." in harness.ops_texts
     assert (
-        "Лиды на консультантах вне config/managers.yaml, assigned_to.id: [999]."
-        in harness.ops_texts
+        "Лиды на консультантах или созданные пользователями вне config/managers.yaml, "
+        "assigned_to.id или created_by.id: [999]." in harness.ops_texts
     )
 
 
@@ -346,6 +346,41 @@ async def test_unknown_raw_key_is_alerted(harness: Harness) -> None:
         "Проверьте, не контакт ли это, и добавьте в raw_known_keys или raw_strip "
         "config/status-mapping.yaml."
     ]
+    # Только имя ключа и число: значение поля и id лидов в алерт не попадают.
+    assert not any("POATE" in alert for alert in harness.ops_texts)
+    assert not any("[1, 5]" in alert for alert in harness.ops_texts)
+
+
+def unknown_raw_key(name: str) -> dict[str, Any]:
+    return {
+        "field_id": None,
+        "expected_name": name,
+        "problem": "unknown_raw_key",
+        "actual": None,
+        "lead_count": 1,
+        "lead_ids": [1],
+    }
+
+
+async def test_unknown_raw_key_is_alerted_only_on_first_appearance(harness: Harness) -> None:
+    await store_snapshot(
+        harness.deps.engine,
+        REPORT_DATE - timedelta(days=2),
+        [todays_lead(1)],
+        custom_field_mismatches=[unknown_raw_key("whatsapp_number")],
+    )
+    await store_snapshot(
+        harness.deps.engine,
+        REPORT_DATE,
+        [todays_lead(1)],
+        custom_field_mismatches=[unknown_raw_key("whatsapp_number"), unknown_raw_key("viber")],
+    )
+
+    await run_report("daily", NOW, harness.deps)
+
+    raw_key_alerts = [alert for alert in harness.ops_texts if "Незнакомый ключ" in alert]
+    assert len(raw_key_alerts) == 1
+    assert "«viber»" in raw_key_alerts[0]
 
 
 async def test_yesterdays_snapshot_gives_transitions(harness: Harness) -> None:

@@ -221,6 +221,7 @@ async def runnable_modules(
 async def alert_snapshot_findings(
     deps: ReportDeps, snapshot_date: date, lead_frame: pd.DataFrame
 ) -> None:
+    previous_date = await previous_success_snapshot_date(deps.engine, deps.tenant_id, snapshot_date)
     async with deps.engine.connect() as connection:
         findings = (
             await connection.execute(
@@ -246,6 +247,21 @@ async def alert_snapshot_findings(
                 )
             )
         ).all()
+        previous_mismatches = (
+            (
+                await connection.execute(
+                    select(snapshot_runs.c.custom_field_mismatches).where(
+                        snapshot_runs.c.tenant_id == deps.tenant_id,
+                        snapshot_runs.c.snapshot_date == previous_date,
+                        snapshot_runs.c.status == "success",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+            if previous_date is not None
+            else []
+        )
     ids_by_unknown_status: dict[str, list[int]] = {}
     without_status_ids: list[int] = []
     for lead_id, status_name in sorted(unmapped_status_rows):
@@ -265,10 +281,19 @@ async def alert_snapshot_findings(
             f"Новые лиды с неизвестным статусом «{status_name}», UNMAPPED ({len(lead_ids)}), "
             f"id: {lead_ids}. Добавьте статус в config/status-mapping.yaml.",
         )
+    # Как у UNMAPPED: алерт только при первом появлении ключа, иначе он повторялся бы
+    # каждый день до правки конфига.
+    previously_seen_keys = {
+        mismatch["expected_name"]
+        for mismatches in previous_mismatches
+        for mismatch in mismatches or []
+        if mismatch["problem"] == "unknown_raw_key"
+    }
     unknown_raw_keys = [
         mismatch
         for mismatch in custom_field_mismatches or []
         if mismatch["problem"] == "unknown_raw_key"
+        and mismatch["expected_name"] not in previously_seen_keys
     ]
     for mismatch in unknown_raw_keys:
         await notify_ops(
@@ -287,8 +312,8 @@ async def alert_snapshot_findings(
     if unknown_ids:
         await notify_ops(
             deps.ops,
-            "Лиды на консультантах вне config/managers.yaml, "
-            f"assigned_to.id: {sorted(unknown_ids)}.",
+            "Лиды на консультантах или созданные пользователями вне config/managers.yaml, "
+            f"assigned_to.id или created_by.id: {sorted(unknown_ids)}.",
         )
 
 
