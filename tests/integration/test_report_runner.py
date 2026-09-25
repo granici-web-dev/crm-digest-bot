@@ -586,29 +586,41 @@ async def test_weekly_report_contains_implemented_modules_and_excel(harness: Har
     assert document.filename == "sofabelle_sapt39_2026.xlsx"
 
 
-@pytest.mark.parametrize(("stored_days_back", "expected_week_ago"), [(7, True), (6, False)])
-async def test_weekly_context_has_snapshot_exactly_a_week_old(
-    harness: Harness, stored_days_back: int, expected_week_ago: bool
-) -> None:
+async def weekly_contexts(
+    harness: Harness, module_id: str, older_date: date
+) -> list[ReportContext]:
     seen: list[ReportContext] = []
 
     def weekly_module(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
         seen.append(context)
         return ModuleResult("ok")
 
-    deps = replace(harness.deps, modules={"w8": weekly_module})
-    older_date = WEEK_SUNDAY - timedelta(days=stored_days_back)
+    deps = replace(harness.deps, modules={module_id: weekly_module})
     await store_snapshot(harness.deps.engine, older_date, [todays_lead(1)])
     await store_snapshot(harness.deps.engine, WEEK_SUNDAY, [todays_lead(1)])
-
     await run_report("weekly", MONDAY_09, deps)
+    return seen
 
-    [context] = seen
-    if expected_week_ago:
-        assert context.week_ago is not None
-        assert context.week_ago.snapshot_date == older_date
-    else:
-        assert context.week_ago is None
+
+async def test_w8_gets_snapshot_exactly_a_week_old(harness: Harness) -> None:
+    week_ago_date = WEEK_SUNDAY - timedelta(days=7)
+
+    [context] = await weekly_contexts(harness, "w8", week_ago_date)
+
+    assert context.week_ago is not None
+    assert context.week_ago.snapshot_date == week_ago_date
+
+
+async def test_w8_gets_no_snapshot_when_only_six_days_old_exists(harness: Harness) -> None:
+    [context] = await weekly_contexts(harness, "w8", WEEK_SUNDAY - timedelta(days=6))
+
+    assert context.week_ago is None
+
+
+async def test_week_old_snapshot_is_not_loaded_without_w8(harness: Harness) -> None:
+    [context] = await weekly_contexts(harness, "w1", WEEK_SUNDAY - timedelta(days=7))
+
+    assert context.week_ago is None
 
 
 async def test_daily_report_job_alerts_when_backup_dir_has_no_dumps(

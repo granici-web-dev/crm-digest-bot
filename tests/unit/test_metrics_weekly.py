@@ -6,10 +6,11 @@ import pandas as pd
 import pytest
 
 from digest.config import AppConfig
-from digest.metrics.daily import PreviousSnapshot
+from digest.metrics.daily import PreviousSnapshot, daily_window
 from digest.metrics.frame import prepare_lead_frame
 from digest.metrics.weekly import (
     LEAD_ROW_COLUMNS,
+    daily_window_days,
     relative_change,
     week_over_week,
     weekly_funnel,
@@ -266,9 +267,7 @@ def test_week_over_week_counts_both_weeks_from_sundays_snapshot(app_config: AppC
     assert change.offers is None
 
 
-def test_week_over_week_offers_come_from_snapshot_exactly_a_week_old(
-    app_config: AppConfig,
-) -> None:
+def test_week_over_week_offers_are_diff_with_week_ago_snapshot(app_config: AppConfig) -> None:
     today = week_over_week_leads(app_config)
     week_ago_frame = frame(
         app_config,
@@ -276,15 +275,11 @@ def test_week_over_week_offers_come_from_snapshot_exactly_a_week_old(
         lead(7, at(date(2026, 8, 1), 11), ofertat=False),
     )
 
-    exact = week_over_week(
+    change = week_over_week(
         today, PreviousSnapshot(SUNDAY - timedelta(days=7), week_ago_frame), SUNDAY, app_config
     )
-    six_days = week_over_week(
-        today, PreviousSnapshot(SUNDAY - timedelta(days=6), week_ago_frame), SUNDAY, app_config
-    )
 
-    assert exact.offers == 2
-    assert six_days.offers is None
+    assert change.offers == 2
 
 
 @pytest.mark.parametrize(
@@ -295,13 +290,14 @@ def test_relative_change(current: int, previous: int, expected: float | None) ->
     assert relative_change(current, previous) == pytest.approx(expected)
 
 
-def test_lead_rows_have_only_safe_columns_and_match_tables(app_config: AppConfig) -> None:
+def test_lead_rows_are_week_leads_sorted_by_day_and_time(app_config: AppConfig) -> None:
     leads = frame(
         app_config,
-        lead(1, at(MONDAY, 11), ofertat=True),
-        lead(2, at(SUNDAY, 11), ofertat=None, assigned_to_id=99, assigned_to_name="Nume Nou"),
-        lead(3, at(MONDAY, 12), assigned_to_id=None, assigned_to_name=None),
+        lead(1, at(MONDAY, 11)),
+        lead(2, at(SUNDAY, 11)),
+        lead(3, at(MONDAY, 12)),
         visit(4, at(SUNDAY, 12)),
+        lead(5, at(SUNDAY, 19)),
     )
 
     rows = weekly_lead_rows(leads, SUNDAY, app_config)
@@ -310,8 +306,98 @@ def test_lead_rows_have_only_safe_columns_and_match_tables(app_config: AppConfig
     assert tuple(rows.columns) == LEAD_ROW_COLUMNS
     assert list(rows["lead_id"]) == [1, 3, 2]
     assert len(rows) == weekly_lead_tables(leads, SUNDAY, app_config).total
-    assert list(rows["consultant"].fillna("")) == ["Dragoi Mihaela", "", "id 99"]
-    assert list(rows["ofertat"].fillna("")) == ["✅DA", "❌NU", ""]
-    assert rows["created_at"].iloc[0] == datetime(2026, 9, 21, 11, 0)
+    assert list(rows["day"]) == [MONDAY, MONDAY, SUNDAY]
     assert list(visit_rows["lead_id"]) == [4]
     assert tuple(visit_rows.columns) == LEAD_ROW_COLUMNS
+
+
+@pytest.mark.parametrize(
+    "created_at",
+    [
+        at(SUNDAY, 18, 59, 59),
+        at(SUNDAY, 19, 0),
+        at(SUNDAY, 0, 30),
+        datetime(2026, 10, 25, 0, 30, tzinfo=UTC),
+        datetime(2026, 10, 25, 16, 59, tzinfo=UTC),
+        datetime(2026, 3, 29, 0, 30, tzinfo=UTC),
+        datetime(2026, 3, 29, 15, 59, tzinfo=UTC),
+        datetime(2026, 3, 29, 16, 0, tzinfo=UTC),
+    ],
+)
+def test_visit_day_is_the_daily_window_containing_the_lead(
+    app_config: AppConfig, created_at: datetime
+) -> None:
+    time_settings = app_config.status_mapping.time
+    created_at_series = pd.Series([created_at]).dt.tz_convert(BUCHAREST)
+
+    [day] = daily_window_days(created_at_series, time_settings)
+
+    window = daily_window(day, time_settings)
+    assert window.start <= created_at < window.end
+
+
+def test_week_on_dst_start_reads_local_time(app_config: AppConfig) -> None:
+    dst_sunday = date(2026, 3, 29)
+    leads = frame(
+        app_config,
+        # 29.03.2026 в 03:00 часы переводятся на 04:00: 15:59 UTC это 18:59 по Бухаресту.
+        lead(1, datetime(2026, 3, 29, 15, 59, tzinfo=UTC)),
+        lead(2, datetime(2026, 3, 29, 16, 0, tzinfo=UTC)),
+        lead(3, datetime(2026, 3, 29, 6, 59, tzinfo=UTC)),
+        lead(4, datetime(2026, 3, 29, 7, 0, tzinfo=UTC)),
+    )
+
+    tables = weekly_lead_tables(leads, dst_sunday, app_config)
+
+    assert tables.by_day_showroom.day_total(dst_sunday) == 2
+    assert tables.total == 2
+
+
+@pytest.mark.parametrize(
+    ("dst_sunday", "last_in_window", "first_after_window"),
+    [
+        (
+            date(2026, 3, 29),
+            datetime(2026, 3, 29, 15, 59, tzinfo=UTC),
+            datetime(2026, 3, 29, 16, 0, tzinfo=UTC),
+        ),
+        (
+            date(2026, 10, 25),
+            datetime(2026, 10, 25, 16, 59, tzinfo=UTC),
+            datetime(2026, 10, 25, 17, 0, tzinfo=UTC),
+        ),
+    ],
+)
+def test_showroom_visit_window_on_dst_sunday_ends_at_19_local(
+    app_config: AppConfig, dst_sunday: date, last_in_window: datetime, first_after_window: datetime
+) -> None:
+    leads = frame(app_config, visit(1, last_in_window), visit(2, first_after_window))
+
+    visits = weekly_showroom_visits(leads, dst_sunday, app_config)
+
+    assert visits.day_total(dst_sunday) == 1
+    assert visits.total == 1
+
+
+def test_totals_by_showroom_day_and_reason_come_from_metrics(app_config: AppConfig) -> None:
+    old = at(date(2026, 8, 1), 11)
+    leads = frame(
+        app_config,
+        lead(1, at(MONDAY, 11), showroom="Cluj", source_name="Site"),
+        lead(2, at(MONDAY, 12), showroom="Cluj", source_name="Telefon"),
+        lead(3, at(MONDAY, 13), showroom="Brașov", source_name="Site"),
+        lost(4, old, "BUGET", status_changed_at=at(MONDAY, 11), showroom="Cluj"),
+        lost(5, old, "BUGET", status_changed_at=at(MONDAY, 12), showroom="Cluj"),
+        lost(6, old, "TIMP", status_changed_at=at(MONDAY, 13), showroom="Cluj"),
+        lost(7, old, "NU_RASPUNS", status_changed_at=at(MONDAY, 14), showroom=None),
+    )
+
+    tables = weekly_lead_tables(leads, SUNDAY, app_config)
+    losses = weekly_loss_reasons(leads, SUNDAY, app_config)
+
+    assert tables.showroom_total("Cluj") == 2
+    assert tables.day_showroom_total(MONDAY, "Cluj") == 2
+    assert tables.day_source_totals(MONDAY) == {"Site": 2, "Telefon": 1, None: 0}
+    assert losses.showroom_total("Cluj") == 3
+    assert losses.reasons_by_count[0] == "BUGET"
+    assert set(losses.reasons_by_count) == {"BUGET", "TIMP", "NU_RASPUNS"}

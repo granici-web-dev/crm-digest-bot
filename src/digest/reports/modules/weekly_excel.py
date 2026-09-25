@@ -4,6 +4,7 @@ from typing import Any
 import pandas as pd
 import xlsxwriter
 
+from digest.config import AppConfig
 from digest.metrics.weekly import (
     weekly_lead_rows,
     weekly_lead_tables,
@@ -21,17 +22,19 @@ from digest.reports.modules.weekly import (
 )
 from digest.reports.render import render
 
-LEAD_SHEET_HEADER = (
-    "ID",
-    "Creat",
-    "Zi lucrătoare",
-    "Showroom",
-    "Sursa",
-    "Status",
-    "Ofertat",
-    "Consilier",
+# Колонки листов «Lead-uri» и «Vizite»: имя колонки ячеек и подпись. Ячейки строятся только из
+# LEAD_ROW_COLUMNS metrics/weekly.py, где нет данных клиента (инвариант 7).
+LEAD_SHEET_COLUMNS = (
+    ("lead_id", "ID"),
+    ("created_at", "Creat"),
+    ("day", "Zi lucrătoare"),
+    ("showroom", "Showroom"),
+    ("source_name", "Sursa"),
+    ("status_name", "Status"),
+    ("ofertat", "Ofertat"),
+    ("consultant", "Consilier"),
 )
-LEAD_SHEET_TEXT_COLUMNS = ("showroom", "source_name", "status_name", "ofertat", "consultant")
+LEAD_SHEET_COLUMN_WIDTH = 16
 
 
 def write_table(worksheet: Any, first_row: int, table: list[TableRow]) -> None:
@@ -39,19 +42,43 @@ def write_table(worksheet: Any, first_row: int, table: list[TableRow]) -> None:
         worksheet.write_row(first_row + offset, 0, row)
 
 
-def write_lead_sheet(workbook: Any, name: str, day_header: str, rows: pd.DataFrame) -> None:
+def lead_sheet_cells(rows: pd.DataFrame, config: AppConfig) -> pd.DataFrame:
+    known_manager_ids = {manager.id for manager in config.managers.managers}
+    ofertat_field = config.status_mapping.custom_fields.ofertat
+    assigned_to_id = rows["assigned_to_id"]
+    consultant = rows["assigned_to_name"].where(
+        assigned_to_id.isin(known_manager_ids), "id " + assigned_to_id.astype("string")
+    )
+    ofertat = rows["ofertat"].map(
+        {True: ofertat_field.ofertat_yes, False: ofertat_field.ofertat_no}
+    )
+    cells = rows.assign(
+        # Excel не хранит таймзону: пишем время по Бухаресту.
+        created_at=rows["created_at"].dt.tz_localize(None),
+        ofertat=ofertat,
+        consultant=consultant,
+    )
+    return cells[[name for name, _ in LEAD_SHEET_COLUMNS]]
+
+
+def write_lead_sheet(
+    workbook: Any, name: str, day_header: str, rows: pd.DataFrame, config: AppConfig
+) -> None:
     worksheet = workbook.add_worksheet(name)
-    date_time_format = workbook.add_format({"num_format": "yyyy-mm-dd hh:mm"})
-    date_format = workbook.add_format({"num_format": "yyyy-mm-dd"})
-    worksheet.write_row(0, 0, (*LEAD_SHEET_HEADER[:2], day_header, *LEAD_SHEET_HEADER[3:]))
-    for index, row in enumerate(rows.to_dict("records"), start=1):
-        worksheet.write_number(index, 0, row["lead_id"])
-        worksheet.write_datetime(index, 1, row["created_at"].to_pydatetime(), date_time_format)
-        worksheet.write_datetime(index, 2, row["day"], date_format)
-        for column, name in enumerate(LEAD_SHEET_TEXT_COLUMNS, start=3):
-            value = row[name]
-            worksheet.write(index, column, None if pd.isna(value) else value)
-    worksheet.set_column(0, len(LEAD_SHEET_HEADER) - 1, 16)
+    cell_formats = {
+        "created_at": workbook.add_format({"num_format": "yyyy-mm-dd hh:mm"}),
+        "day": workbook.add_format({"num_format": "yyyy-mm-dd"}),
+    }
+    headers = {**dict(LEAD_SHEET_COLUMNS), "day": day_header}
+    worksheet.write_row(0, 0, list(headers.values()))
+    for row_index, row in enumerate(lead_sheet_cells(rows, config).to_dict("records"), start=1):
+        for column_index, (column, _) in enumerate(LEAD_SHEET_COLUMNS):
+            value = row[column]
+            if column in cell_formats:
+                worksheet.write_datetime(row_index, column_index, value, cell_formats[column])
+            else:
+                worksheet.write(row_index, column_index, None if pd.isna(value) else value)
+    worksheet.set_column(0, len(LEAD_SHEET_COLUMNS) - 1, LEAD_SHEET_COLUMN_WIDTH)
 
 
 def weekly_workbook(lead_frame: pd.DataFrame, context: ReportContext) -> bytes:
@@ -94,11 +121,19 @@ def weekly_workbook(lead_frame: pd.DataFrame, context: ReportContext) -> bytes:
     write_table(by_source, 2, showroom_source_table(tables))
 
     write_lead_sheet(
-        workbook, "Lead-uri", "Zi lucrătoare", weekly_lead_rows(lead_frame, report_date, config)
+        workbook,
+        "Lead-uri",
+        "Zi lucrătoare",
+        weekly_lead_rows(lead_frame, report_date, config),
+        config,
     )
     # День визита это день ежедневного окна 19:00 → 19:00, а не рабочий день лида.
     write_lead_sheet(
-        workbook, "Vizite", "Zi", weekly_showroom_visit_rows(lead_frame, report_date, config)
+        workbook,
+        "Vizite",
+        "Zi",
+        weekly_showroom_visit_rows(lead_frame, report_date, config),
+        config,
     )
     workbook.close()
     return output.getvalue()

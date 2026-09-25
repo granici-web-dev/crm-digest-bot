@@ -9,8 +9,8 @@ from digest.metrics.daily import PreviousSnapshot, daily_window, transition_flag
 from digest.metrics.kpi import Kpis, LeadCounts, Period, kpis_from, lead_counts, ratio
 
 DAYS_IN_WEEK = 7
-# Лист «Lead-uri» и «Vizite» в Excel: только эти колонки, без имени, телефона и e-mail клиента
-# (инвариант 7). Консультант это сотрудник, его имя выводить можно.
+# Строки лидов недели для вложения: только эти колонки, без имени, телефона, e-mail и заметок
+# клиента (инвариант 7). assigned_to_name это имя сотрудника, его выводить можно.
 LEAD_ROW_COLUMNS = (
     "lead_id",
     "created_at",
@@ -19,7 +19,8 @@ LEAD_ROW_COLUMNS = (
     "source_name",
     "status_name",
     "ofertat",
-    "consultant",
+    "assigned_to_id",
+    "assigned_to_name",
 )
 
 
@@ -50,6 +51,19 @@ class WeeklyLeadTables:
     def source_total(self, source: str | None) -> int:
         return sum(by_source[source] for by_source in self.by_showroom_source.values())
 
+    def showroom_total(self, showroom: str | None) -> int:
+        return sum(self.by_showroom_source[showroom].values())
+
+    def day_source_totals(self, day: date) -> dict[str | None, int]:
+        by_showroom = self.by_day_showroom_source[day]
+        return {
+            source: sum(by_source[source] for by_source in by_showroom.values())
+            for source in self.sources
+        }
+
+    def day_showroom_total(self, day: date, showroom: str | None) -> int:
+        return self.by_day_showroom.counts[day][showroom]
+
     @property
     def total(self) -> int:
         return self.by_day_showroom.total
@@ -68,6 +82,14 @@ class LossReasons:
 
     def reason_total(self, reason: str) -> int:
         return sum(by_reason[reason] for by_reason in self.by_showroom.values())
+
+    def showroom_total(self, showroom: str | None) -> int:
+        return sum(self.by_showroom[showroom].values())
+
+    @property
+    def reasons_by_count(self) -> tuple[str, ...]:
+        counted = [reason for reason in self.reasons if self.reason_total(reason)]
+        return tuple(sorted(counted, key=lambda reason: -self.reason_total(reason)))
 
     @property
     def total(self) -> int:
@@ -116,6 +138,8 @@ def working_days(created_at: pd.Series, time_settings: TimeSettings) -> pd.Serie
 
 
 def daily_window_days(created_at: pd.Series, time_settings: TimeSettings) -> pd.Series:
+    # День D = ежедневное окно daily_window(D) = [D−1 19:00, D 19:00): время до конца окна
+    # остаётся в своём дне. Совпадение с daily_window проверяет test_metrics_weekly.
     window_end: time = time_settings.daily_window_end
     return shifted_days(created_at, created_at.dt.time.lt(window_end))
 
@@ -139,8 +163,8 @@ def weekly_showroom_visit_leads(
     return visits.assign(day=daily_window_days(visits["created_at"], time_settings))
 
 
-def key_or_none(value: object) -> str | None:
-    return None if pd.isna(value) else str(value)  # type: ignore[call-overload]
+def key_or_none(value: str | float | None) -> str | None:
+    return None if value is None or pd.isna(value) else str(value)
 
 
 def showroom_keys(showroom: pd.Series, config: AppConfig) -> tuple[str | None, ...]:
@@ -248,14 +272,15 @@ def week_over_week(
     report_date: date,
     config: AppConfig,
 ) -> WeekOverWeek:
-    # Обе недели по одному воскресному снапшоту: created_at и converted_at не меняются.
-    # Оферты видны только как разница снапшотов (инвариант 3), и только с ровно недельным:
-    # более старый снапшот покрыл бы больше недели.
+    # Обе недели по одному воскресному снапшоту: created_at и converted_at не меняются. Удаление
+    # лида или смена источника между воскресеньями меняет прошлую неделю (docs/kpi-definitions.md,
+    # «Недельные окна»). Оферты видны только как разница снапшотов (инвариант 3); week_ago это
+    # снапшот ровно за прошлое воскресенье, раннер другой не передаёт.
     time_settings = config.status_mapping.time
     previous_date = report_date - timedelta(days=DAYS_IN_WEEK)
     window = weekly_window(report_date, time_settings)
     offers = None
-    if week_ago is not None and week_ago.snapshot_date == previous_date:
+    if week_ago is not None:
         offers = int(transition_flags(lead_frame, week_ago.frame, window, config)["offers"].sum())
     return WeekOverWeek(
         leads=len(weekly_leads(lead_frame, report_date, config)),
@@ -271,34 +296,22 @@ def week_over_week(
 
 
 def relative_change(current: int, previous: int) -> float | None:
+    # docs/kpi-definitions.md, «Недельные окна», w8: прошлое значение 0 даёт «—», в том числе
+    # 0 против 0.
     return ratio(current - previous, previous)
 
 
-def excel_rows(leads: pd.DataFrame, config: AppConfig) -> pd.DataFrame:
-    known_manager_ids = {manager.id for manager in config.managers.managers}
-    ofertat_field = config.status_mapping.custom_fields.ofertat
-    assigned_to_id = leads["assigned_to_id"]
-    consultant = leads["assigned_to_name"].where(
-        assigned_to_id.isin(known_manager_ids), "id " + assigned_to_id.astype("string")
-    )
-    ofertat = leads["ofertat"].map(
-        {True: ofertat_field.ofertat_yes, False: ofertat_field.ofertat_no}
-    )
-    rows = leads.assign(
-        created_at=leads["created_at"].dt.tz_localize(None),
-        consultant=consultant,
-        ofertat=ofertat,
-    )
-    return rows.sort_values(["day", "created_at"])[list(LEAD_ROW_COLUMNS)].reset_index(drop=True)
+def lead_rows(leads: pd.DataFrame) -> pd.DataFrame:
+    return leads.sort_values(["day", "created_at"])[list(LEAD_ROW_COLUMNS)].reset_index(drop=True)
 
 
 def weekly_lead_rows(
     lead_frame: pd.DataFrame, report_date: date, config: AppConfig
 ) -> pd.DataFrame:
-    return excel_rows(weekly_leads(lead_frame, report_date, config), config)
+    return lead_rows(weekly_leads(lead_frame, report_date, config))
 
 
 def weekly_showroom_visit_rows(
     lead_frame: pd.DataFrame, report_date: date, config: AppConfig
 ) -> pd.DataFrame:
-    return excel_rows(weekly_showroom_visit_leads(lead_frame, report_date, config), config)
+    return lead_rows(weekly_showroom_visit_leads(lead_frame, report_date, config))

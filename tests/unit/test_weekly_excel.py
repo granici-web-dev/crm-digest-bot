@@ -14,7 +14,14 @@ from factories import BUCHAREST, make_snapshot_row
 
 SUNDAY = date(2026, 9, 27)
 MONDAY = date(2026, 9, 21)
-PERSONAL_DATA_HEADERS = {"name", "phone", "email", "nume", "telefon", "e-mail", "client"}
+# Синтетические данные клиента: кадр их не несёт, тест подкладывает их, чтобы проверить, что
+# вложение берёт только разрешённые колонки.
+CLIENT_DATA = {
+    "name": "CLIENT_TEST_NUME",
+    "phone": "+40700000001",
+    "email": "client1@example.com",
+    "notes": "NOTA_CLIENT_TEST",
+}
 
 
 def at(day: date, hour: int) -> datetime:
@@ -31,10 +38,11 @@ def week_frame(app_config: AppConfig) -> pd.DataFrame:
         lead(2, at(MONDAY, 12), showroom="Brașov", source_name="WhatsApp"),
         lead(3, at(SUNDAY, 12), showroom="Cluj", source_name="Site"),
         lead(4, at(SUNDAY, 13), showroom=None, source_name=None, assigned_to_id=99),
+        lead(7, at(MONDAY, 15), ofertat=None, assigned_to_id=None, assigned_to_name=None),
         lead(5, at(MONDAY, 14), showroom="Cluj", source_name="Showroom"),
         lead(6, at(SUNDAY + timedelta(days=1), 11)),
     ]
-    return prepare_lead_frame(rows, app_config)
+    return prepare_lead_frame(rows, app_config).assign(**CLIENT_DATA)
 
 
 def workbook(app_config: AppConfig, tenant_id: str = "sofabelle") -> tuple[str, Workbook]:
@@ -79,18 +87,18 @@ def test_summary_sheets_have_manual_headers_and_totals(app_config: AppConfig) ->
         "(fără showroom)",
         "TOTAL",
     )
-    assert summary[-1] == ("TOTAL", 2, 0, 1, 1, 4)
+    assert summary[-1] == ("TOTAL", 2, 1, 1, 1, 5)
 
     by_source = sheet_rows(book, "Шоурум-источник итог")
     assert by_source[2] == ("Showroom", "Site", "WhatsApp", "(fără sursă)", "TOTAL")
-    assert by_source[-1] == ("TOTAL", 2, 1, 1, 4)
+    assert by_source[-1] == ("TOTAL", 3, 1, 1, 5)
 
     detail = sheet_rows(book, "По дням шоурум-источник")
     day_totals = [row[-1] for row in detail if str(row[0]).startswith("Total zi")]
-    assert sum(day_totals) == 4
+    assert sum(day_totals) == 5
 
 
-def test_lead_sheets_match_summary_and_carry_no_personal_data(app_config: AppConfig) -> None:
+def test_lead_sheets_match_summary_and_format_cells(app_config: AppConfig) -> None:
     _, book = workbook(app_config)
 
     leads = sheet_rows(book, "Lead-uri")
@@ -99,10 +107,25 @@ def test_lead_sheets_match_summary_and_carry_no_personal_data(app_config: AppCon
     header = ("ID", "Creat", "Zi lucrătoare", "Showroom", "Sursa", "Status", "Ofertat", "Consilier")
     assert leads[0] == header
     assert visits[0] == ("ID", "Creat", "Zi", *header[3:])
-    assert not {cell.lower() for cell in header} & PERSONAL_DATA_HEADERS
-    assert [row[0] for row in leads[1:]] == [1, 2, 3, 4]
+    assert [row[0] for row in leads[1:]] == [1, 2, 7, 3, 4]
     assert leads[1][1:3] == (datetime(2026, 9, 21, 11, 0), datetime(2026, 9, 21, 0, 0))
     assert leads[1][6:] == ("✅DA", "Dragoi Mihaela")
-    assert leads[4][3:5] == (None, None)
-    assert leads[4][7] == "id 99"
+    assert leads[2][6] == "❌NU"
+    assert leads[3][6:] == (None, None)
+    assert leads[5][3:5] == (None, None)
+    assert leads[5][7] == "id 99"
     assert [row[0] for row in visits[1:]] == [5]
+
+
+def test_client_data_reaches_no_cell_of_the_workbook(app_config: AppConfig) -> None:
+    _, book = workbook(app_config)
+
+    cells = {
+        str(cell)
+        for name in book.sheetnames
+        for row in sheet_rows(book, name)
+        for cell in row
+        if cell is not None
+    }
+
+    assert not {value for value in CLIENT_DATA.values() if any(value in cell for cell in cells)}

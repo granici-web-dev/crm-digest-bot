@@ -35,6 +35,7 @@ from digest.delivery.telegram import (
 from digest.metrics.daily import PreviousSnapshot
 from digest.metrics.frame import unknown_manager_ids
 from digest.metrics.kpi import Period
+from digest.metrics.weekly import DAYS_IN_WEEK
 from digest.reports.context import ReportContext, ReportDocument
 from digest.reports.modules import ReportModuleFunction
 from digest.reports.periods import ReportLevel, report_period
@@ -46,6 +47,7 @@ logger = logging.getLogger(__name__)
 # Процесс, упавший посреди отправки, оставляет running навсегда. Дубль в группе после
 # краха лучше, чем отчёт, которого нет до ручного UPDATE (shape 2026-09-25-delivery, вопрос 3).
 STALE_RUNNING_AFTER = timedelta(minutes=30)
+WEEK_OVER_WEEK_MODULE_ID = "w8"
 
 ReportRunOutcome = Literal["success", "partial", "failed", "already_sent", "in_progress"]
 
@@ -371,10 +373,12 @@ async def build_report(
         if previous_date is not None
         else None
     )
-    # w8 сравнивает оферты только со снапшотом ровно за прошлое воскресенье.
+    # w8 сравнивает оферты только со снапшотом ровно за прошлое воскресенье: более старый покрыл
+    # бы больше недели. Кадр нужен только w8, без него лишняя загрузка полного снапшота.
+    runs_week_over_week = any(module_id == WEEK_OVER_WEEK_MODULE_ID for module_id, _ in modules)
     week_ago = (
-        await snapshot_if_successful(deps, snapshot_date - timedelta(days=7))
-        if level == "weekly"
+        await snapshot_if_successful(deps, snapshot_date - timedelta(days=DAYS_IN_WEEK))
+        if runs_week_over_week
         else None
     )
     context = ReportContext(
@@ -495,5 +499,12 @@ async def run_report(level: ReportLevel, now: datetime, deps: ReportDeps) -> Rep
         )
         return "failed"
     await finish_report_run(deps, claim.run_id, report.status, report.snapshot_date)
-    logger.info("report sent", extra={**log_extra, "status": report.status, "parts": len(parts)})
+    logger.info(
+        "report sent",
+        extra={
+            **log_extra,
+            "status": report.status,
+            "parts": len(parts) + len(report.documents),
+        },
+    )
     return report.status

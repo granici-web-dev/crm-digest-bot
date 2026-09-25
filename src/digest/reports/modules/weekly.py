@@ -76,11 +76,7 @@ def day_showroom_table(counts: DayShowroomCounts, first_header: str) -> list[Tab
 def showroom_source_table(tables: WeeklyLeadTables) -> list[TableRow]:
     header: TableRow = ["Showroom", *map(source_label, tables.sources), "TOTAL"]
     rows: list[TableRow] = [
-        [
-            showroom_label(showroom),
-            *by_source.values(),
-            sum(by_source.values()),
-        ]
+        [showroom_label(showroom), *by_source.values(), tables.showroom_total(showroom)]
         for showroom, by_source in tables.by_showroom_source.items()
     ]
     total: TableRow = [
@@ -97,13 +93,19 @@ def day_detail_table(tables: WeeklyLeadTables) -> list[TableRow]:
         rows.append([long_day_label(day)])
         for showroom, by_source in by_showroom.items():
             rows.append(
-                [f"   {showroom_label(showroom)}", *by_source.values(), sum(by_source.values())]
+                [
+                    f"   {showroom_label(showroom)}",
+                    *by_source.values(),
+                    tables.day_showroom_total(day, showroom),
+                ]
             )
-        day_by_source = [
-            sum(by_source[source] for by_source in by_showroom.values())
-            for source in tables.sources
-        ]
-        rows.append([f"Total zi {day:%d-%m}", *day_by_source, sum(day_by_source)])
+        rows.append(
+            [
+                f"Total zi {day:%d-%m}",
+                *tables.day_source_totals(day).values(),
+                tables.by_day_showroom.day_total(day),
+            ]
+        )
     return rows
 
 
@@ -151,10 +153,6 @@ def weekly_funnel_report(lead_frame: pd.DataFrame, context: ReportContext) -> Mo
 
 def loss_reasons_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
     losses = weekly_loss_reasons(lead_frame, context.report_date, context.config)
-    reasons_by_count = sorted(
-        (reason for reason in losses.reasons if losses.reason_total(reason)),
-        key=lambda reason: -losses.reason_total(reason),
-    )
     reason_config = context.config.status_mapping.categories.LOST.reasons
     reason_labels = {
         key: reason.label_ro if context.language == "ro" else reason.label_ru
@@ -165,7 +163,6 @@ def loss_reasons_report(lead_frame: pd.DataFrame, context: ReportContext) -> Mod
             "loss_reasons",
             context.language,
             losses=losses,
-            reasons_by_count=reasons_by_count,
             reason_labels=reason_labels,
             without_showroom=WITHOUT_SHOWROOM,
         )

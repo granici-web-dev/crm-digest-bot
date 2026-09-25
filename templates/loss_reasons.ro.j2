@@ -1,9 +1,9 @@
-{% macro reasons(by_reason) %}{% for reason in reasons_by_count if by_reason[reason] %}{{ reason_labels[reason] }} {{ by_reason[reason] }}{% if not loop.last %} · {% endif %}{% endfor %}{% endmacro %}
+{% macro reasons(by_reason) %}{% for reason in losses.reasons_by_count if by_reason[reason] %}{{ reason_labels[reason] }} {{ by_reason[reason] }}{% if not loop.last %} · {% endif %}{% endfor %}{% endmacro %}
 {% if losses.total %}
-<b>Pierdute {{ losses.total }}</b>: {% for reason in reasons_by_count %}{{ reason_labels[reason] }} {{ losses.reason_total(reason) }}{% if not loop.last %} · {% endif %}{% endfor %}
+<b>Pierdute {{ losses.total }}</b>: {% for reason in losses.reasons_by_count %}{{ reason_labels[reason] }} {{ losses.reason_total(reason) }}{% if not loop.last %} · {% endif %}{% endfor %}
 
-{% for showroom, by_reason in losses.by_showroom.items() if by_reason.values() | sum %}
-{{ showroom or without_showroom }} {{ by_reason.values() | sum }}: {{ reasons(by_reason) }}
+{% for showroom, by_reason in losses.by_showroom.items() if losses.showroom_total(showroom) %}
+{{ showroom or without_showroom }} {{ losses.showroom_total(showroom) }}: {{ reasons(by_reason) }}
 {% endfor %}
 {% else %}
 <b>Pierdute: 0</b>
