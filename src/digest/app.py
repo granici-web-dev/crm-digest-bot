@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -10,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from digest.backup_check import stale_backup_alert
 from digest.config import AppConfig
 from digest.db.schema import schedules, settings
 from digest.delivery.ops import OpsChannel, notify_ops
@@ -95,13 +97,21 @@ async def snapshot_job(deps: ReportDeps, mefi_client: MefiClient) -> None:
         )
 
 
-async def report_job(deps: ReportDeps, level: ReportLevel) -> None:
+async def report_job(deps: ReportDeps, level: ReportLevel, backup_dir: Path | None) -> None:
     now = datetime.now(ZoneInfo(deps.config.status_mapping.time.timezone))
     try:
         await run_report(level, now, deps)
     except Exception as error:
         logger.error("report job failed", extra={"level": level, "error": describe_error(error)})
         await notify_ops(deps.ops, f"Прогон отчёта {level} упал: {describe_error(error)}.")
+    if level == "daily" and backup_dir is not None:
+        backup_alert = stale_backup_alert(backup_dir, now)
+        if backup_alert is not None:
+            await notify_ops(deps.ops, backup_alert)
+
+
+def startup_announcement(app_version: str, dry_run: bool) -> str:
+    return f"Бот запущен, версия {app_version}, DRY_RUN={int(dry_run)}."
 
 
 async def run_app(engine: AsyncEngine, config: AppConfig, app_settings: Settings) -> None:
@@ -126,7 +136,7 @@ async def run_app(engine: AsyncEngine, config: AppConfig, app_settings: Settings
         scheduler.add_job(
             report_job,
             CronTrigger.from_crontab(cron, timezone=timezone),
-            args=[deps, level],
+            args=[deps, level, app_settings.backup_dir],
             id=f"report_{level}",
         )
     scheduler.start()
@@ -134,4 +144,5 @@ async def run_app(engine: AsyncEngine, config: AppConfig, app_settings: Settings
         "scheduler started",
         extra={"jobs": [job.id for job in scheduler.get_jobs()], "dry_run": app_settings.dry_run},
     )
+    await notify_ops(deps.ops, startup_announcement(app_settings.app_version, app_settings.dry_run))
     await asyncio.Event().wait()

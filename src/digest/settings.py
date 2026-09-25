@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Self
 
 from pydantic import SecretStr, model_validator
@@ -26,6 +27,10 @@ class Settings(BaseSettings):
     telegram_ops_chat_id: int
     dry_run: bool = False
     log_level: str = "INFO"
+    # APP_VERSION задаёт образ (git sha из build-аргумента), вне образа версия "dev".
+    app_version: str = "dev"
+    # BACKUP_DIR задаёт только docker-compose.prod.yml: вне прода дампов нет и проверять нечего.
+    backup_dir: Path | None = None
 
     def report_chat_id(self, dry_run: bool) -> int:
         return self.telegram_test_chat_id if dry_run else self.telegram_group_chat_id
