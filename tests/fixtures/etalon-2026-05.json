@@ -4760,6 +4760,14 @@
       "utm_medium": null
     }
   ],
+  "managers": {
+    "Raileanu Leon": 13,
+    "Dragoi Mihaela": 12,
+    "Roibu Valeria": 8,
+    "Moaca Andreea": 9,
+    "Godja Adina Maria": 10,
+    "Doja Ovidiu": 999
+  },
   "expected_by_agent": {
     "Raileanu Leon": {
       "counts": {

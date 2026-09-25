@@ -22,9 +22,11 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import openpyxl
+import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "docs" / "reference" / "SB KPi.xlsx"
+MANAGERS = ROOT / "config" / "managers.yaml"
 TARGET = ROOT / "tests" / "fixtures" / "etalon-2026-05.json"
 TZ = ZoneInfo("Europe/Bucharest")
 
@@ -70,6 +72,8 @@ STATUS_PRODUS_NEPOTRIVIT = "PRODUS NEPOTRIVIT"
 SOURCE_SHOWROOM = "Showroom"
 OFERTAT_YES = "✅DA"
 ACTIVE_OFFER_STALE_DAYS = 14
+# Doja Ovidiu has leads in the workbook but no mefi user (docs/PLAN.md, «Ждём извне»).
+SYNTHETIC_MANAGER_IDS = {"Doja Ovidiu": 999}
 
 # Counted by hand from the fixture leads on 2026-09-25 (ADR-002). The build fails if the
 # computed values drift from this record.
@@ -167,6 +171,20 @@ def read_excel_reference(ws: Any) -> dict[str, dict[str, Any]]:
     return expected
 
 
+def collapse_spaces(name: str) -> str:
+    return " ".join(name.split())
+
+
+def manager_ids_by_name(agents: list[str]) -> dict[str, int]:
+    roster = yaml.safe_load(MANAGERS.read_text(encoding="utf-8"))["managers"]
+    by_name = {collapse_spaces(m["name"]): m["id"] for m in roster}
+    ids = {agent: by_name.get(agent, SYNTHETIC_MANAGER_IDS.get(agent)) for agent in agents}
+    unknown = [agent for agent, manager_id in ids.items() if manager_id is None]
+    if unknown:
+        raise SystemExit(f"no id in managers.yaml for {unknown}")
+    return {agent: manager_id for agent, manager_id in ids.items() if manager_id is not None}
+
+
 def ratio(numerator: int, denominator: int) -> float | None:
     return None if denominator == 0 else numerator / denominator
 
@@ -224,7 +242,7 @@ def expected_by_agent(
     expected: dict[str, dict[str, Any]] = {}
     for agent in agents:
         # 03_KPI_Agenti keys agents by TRIM(Desemnat); mefi keeps "Raileanu  Leon" with two spaces.
-        own = [lead for lead in leads if " ".join((lead["assigned_to"] or "").split()) == agent]
+        own = [lead for lead in leads if collapse_spaces(lead["assigned_to"] or "") == agent]
         counts = brief_counts(own, analysis_date)
         expected[agent] = {"counts": counts, "kpi": brief_kpis(counts)}
     return expected
@@ -280,6 +298,8 @@ def main() -> None:
         },
         "thresholds": thresholds,
         "leads": leads,
+        # Agent name as in 03_KPI_Agenti (spaces collapsed) -> mefi assigned_to.id.
+        "managers": manager_ids_by_name(list(excel_reference)),
         "expected_by_agent": expected,
         # SB KPi.xlsx 03_KPI_Agenti as-is, including the AC defect (ACR = 0 everywhere).
         # Comparison only; tests assert against expected_by_agent.

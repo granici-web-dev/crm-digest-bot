@@ -40,3 +40,38 @@ levels:
   - { name: Silver, min_spi: 70 }
   - { name: Bronze, min_spi: 60 }
   - { name: Coaching, min_spi: 0 }
+
+# Очки по ступеням, проверка сверху вниз, первая выполненная (docs/kpi-definitions.md, «Баллы»).
+# higher: KPI >= порога; lower: KPI <= порога. KPI = null → otherwise (нижняя ступень, ADR-002).
+scores:
+  scr: { direction: higher, steps: [[scr_elite, 30], [scr_bine, 24], [scr_minim, 18]], otherwise: 10 }
+  cdr: { direction: higher, steps: [[cdr_perfect, 20], [cdr_minim, 16], [cdr_contact_floor, 10]], otherwise: 5 }
+  plr: { direction: lower, steps: [[plr_perfect, 20], [plr_maxim, 16], [plr_problema, 10]], otherwise: 5 }
+  sc: { direction: higher, steps: [[sc_perfect, 15], [sc_bine, 12], [sc_minim, 8]], otherwise: 4 }
+  pfr: { direction: lower, steps: [[pfr_perfect, 10], [pfr_bine, 8], [pfr_maxim, 5]], otherwise: 2 }
+  acr: { direction: lower, steps: [[acr_perfect, 5], [acr_maxim, 3]], otherwise: 1 }
+
+irr_penalty: { direction: lower, steps: [[irr_acceptabil, 0], [irr_atentie, -5]], otherwise: -10 }
+
+# Главная рекомендация: первое сработавшее условие сверху вниз, сравнение строгое.
+# KPI = null условие не срабатывает; LEADS = 0 → рекомендации нет. Тексты RO/RU в templates/.
+recommendations:
+  - { key: irr_status_check,       kpi: irr, above: irr_atentie }
+  - { key: contact_discipline,     kpi: cdr, below: cdr_minim }
+  - { key: price_value,            kpi: plr, above: plr_maxim }
+  - { key: closing,                kpi: scr, below: scr_minim }
+  - { key: active_offers_followup, kpi: acr, above: acr_perfect }
+recommendation_otherwise: stable_performance
+
+# Цели для m5, показываются рядом с фактом. Выполнена: higher → KPI >= value, lower → KPI <= value.
+# Значения = первые ступени thresholds плюс L2O и O2C из брифа; provisional, как и пороги.
+targets:
+  scr: { direction: higher, value: 0.10 }
+  l2o: { direction: higher, value: 0.50 }
+  o2c: { direction: higher, value: 0.20 }
+  cdr: { direction: higher, value: 0.90 }
+  plr: { direction: lower, value: 0.25 }
+  sc: { direction: higher, value: 0.20 }
+  pfr: { direction: lower, value: 0.10 }
+  acr: { direction: lower, value: 0.20 }
+  irr: { direction: lower, value: 0.20 }

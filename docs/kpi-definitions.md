@@ -52,13 +52,17 @@
 | ACR | Active Control Rate | `ACTIVE_OFFERS_14 / LEADS` | < 20 % |
 | IRR | Irrelevant Rate | `IRR_LEADS / LEADS` | ≤ 20 % |
 
-Цели — первые ступени порогов `config/kpi.yaml` (`scr_elite`, `cdr_minim`, `plr_maxim`, `sc_perfect`, `pfr_perfect`, `acr_perfect`, `irr_acceptabil`); они тоже `provisional`, но показываются как ориентир рядом с фактом.
+Цели — секция `targets` в `config/kpi.yaml`: первые ступени порогов (`scr_elite`, `cdr_minim`, `plr_maxim`, `sc_perfect`, `pfr_perfect`, `acr_perfect`, `irr_acceptabil`) плюс L2O и O2C. Они тоже `provisional`, но показываются как ориентир рядом с фактом. Цель выполнена при ≥ (↑) или ≤ (↓) включительно, как ступени баллов; KPI = null → «—».
 
 Доли не округляются до вывода. **Деление на ноль:** метрика `null`, в отчёте и в ответе чата «—».
 
+**Период:** все счётчики фильтруются по `created_at` лида, полуинтервал `[start, end)`, Europe/Bucharest.
+
+`is_duplicate` в KPI v1 не учитывается; пересмотреть после оценки доли дублей в снапшотах.
+
 ## Предварительно, не показывать до калибровки (ADR-002)
 
-Механика ниже пришла из workbook и не согласована с владельцем. Функции в `metrics/` есть, пороги в `config/kpi.yaml` (`status: provisional`), но в отчёты MVP и в ответы чата SPI, баллы, уровни и рекомендации не выводятся. Калибровка — по 2–3 месяцам снапшотов плюс Excel 2024–2025, отдельным ADR. Как баллы обрабатывают `null`, решает тот же ADR.
+Механика ниже пришла из workbook и не согласована с владельцем. Функции в `metrics/` есть, пороги в `config/kpi.yaml` (`status: provisional`), но в отчёты MVP и в ответы чата SPI, баллы, уровни и рекомендации не выводятся. Калибровка — по 2–3 месяцам снапшотов плюс Excel 2024–2025, отдельным ADR. Ступени, очки и цепочка рекомендаций — секции `scores`, `irr_penalty`, `recommendations` в `config/kpi.yaml`. KPI = `null` → очки нижней ступени (штраф IRR −10), условие рекомендации не срабатывает; при `LEADS = 0` рекомендации нет.
 
 ### Баллы
 
@@ -105,7 +109,7 @@
 | Метрика | Формула |
 |---|---|
 | Speed-to-lead | Формула брифа недействительна: заметки через API недоступны, а `last_contact_at` и `status_changed_at` по одному снапшоту первое касание не дают (`docs/mefi-api-notes.md`, 24.09.2026). Переопределяется в ADR-003 перед включением w5. В MVP w5 выключен. |
-| Просроченные revenire | лиды с кастомным `Data revenire ≤ today` и без изменения статуса после этой даты |
+| Просроченные revenire | лиды с кастомным `Data revenire ≤ today` и без изменения статуса после этой даты (`status_changed_at` null или раньше `Data revenire`). Категории: ACTIVE, ACTIVE_FOLLOWUP, LOST · STAND BY, UNMAPPED; WON, PARTNERSHIP и остальные причины LOST не входят |
 | Когортная конверсия | `CLIENTI из лидов месяца M на дату D / USEFUL месяца M` — считается по снапшоту на D |
 | Дельта к периоду | `(X_now − X_prev) / X_prev`; при `X_prev = 0` → «n/a» |
 
