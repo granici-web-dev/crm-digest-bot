@@ -1,7 +1,8 @@
 import logging
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from functools import partial
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -476,26 +477,23 @@ async def run_report(level: ReportLevel, now: datetime, deps: ReportDeps) -> Rep
         )
         return "failed"
 
+    bot = deps.report_bot
+    # Порядок в чате: текст, фото, документы.
+    sends: list[Callable[[], Awaitable[int]]] = [
+        *(partial(send_message_with_retry, bot, chat_id, part) for part in parts),
+        *(
+            partial(send_photo_with_retry, bot, chat_id, photo.filename, photo.content)
+            for photo in report.photos
+        ),
+        *(
+            partial(send_document_with_retry, bot, chat_id, document.filename, document.content)
+            for document in report.documents
+        ),
+    ]
     message_ids: list[int] = []
     try:
-        for part in parts:
-            message_ids.append(await send_message_with_retry(deps.report_bot, chat_id, part))
-            await record_message_ids(
-                deps, claim.run_id, [*claim.previously_sent_message_ids, *message_ids]
-            )
-        for photo in report.photos:
-            message_ids.append(
-                await send_photo_with_retry(deps.report_bot, chat_id, photo.filename, photo.content)
-            )
-            await record_message_ids(
-                deps, claim.run_id, [*claim.previously_sent_message_ids, *message_ids]
-            )
-        for document in report.documents:
-            message_ids.append(
-                await send_document_with_retry(
-                    deps.report_bot, chat_id, document.filename, document.content
-                )
-            )
+        for send in sends:
+            message_ids.append(await send())
             await record_message_ids(
                 deps, claim.run_id, [*claim.previously_sent_message_ids, *message_ids]
             )
@@ -506,8 +504,7 @@ async def run_report(level: ReportLevel, now: datetime, deps: ReportDeps) -> Rep
         await notify_ops(
             deps.ops,
             f"Отправка отчёта {level} за {label} в чат {chat_id} не удалась: "
-            f"{describe_error(error)}. Отправлено частей: {len(message_ids)} "
-            f"из {len(parts) + len(report.photos) + len(report.documents)}.",
+            f"{describe_error(error)}. Отправлено частей: {len(message_ids)} из {len(sends)}.",
         )
         return "failed"
     await finish_report_run(deps, claim.run_id, report.status, report.snapshot_date)
@@ -516,7 +513,7 @@ async def run_report(level: ReportLevel, now: datetime, deps: ReportDeps) -> Rep
         extra={
             **log_extra,
             "status": report.status,
-            "parts": len(parts) + len(report.photos) + len(report.documents),
+            "parts": len(sends),
         },
     )
     return report.status

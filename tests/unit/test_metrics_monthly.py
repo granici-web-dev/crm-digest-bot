@@ -210,6 +210,42 @@ def test_monthly_loss_reasons_compare_with_previous_month(app_config: AppConfig)
     assert losses.total_share == pytest.approx(1.0)
 
 
+def test_monthly_loss_reason_share_and_order(app_config: AppConfig) -> None:
+    old = at(date(2026, 6, 1), 12)
+    leads = frame(
+        app_config,
+        lost(1, old, "NU_RASPUNS", status_changed_at=at(date(2026, 9, 3), 12)),
+        lost(2, old, "BUGET", status_changed_at=at(date(2026, 9, 4), 12)),
+        lost(3, old, "BUGET", status_changed_at=at(date(2026, 9, 5), 12)),
+        lost(4, old, "NU_RASPUNS", status_changed_at=at(date(2026, 9, 6), 12)),
+        lost(5, old, "BUGET", status_changed_at=at(date(2026, 8, 10), 12)),
+        lost(6, old, "TIMP", status_changed_at=at(date(2026, 8, 11), 12)),
+        lost(7, old, "TIMP", status_changed_at=at(date(2026, 8, 12), 12)),
+    )
+
+    losses = monthly_loss_reasons(leads, SEPTEMBER_END, app_config)
+
+    assert losses.reasons_by_count == ("BUGET", "NU_RASPUNS", "TIMP")
+    assert losses.reason_share("BUGET") == pytest.approx(0.5)
+    assert losses.reason_share("NU_RASPUNS") == pytest.approx(0.5)
+    assert losses.reason_share("TIMP") == pytest.approx(0.0)
+    assert losses.total_share == pytest.approx(1.0)
+
+
+def test_monthly_loss_shares_are_unknown_without_losses(app_config: AppConfig) -> None:
+    leads = frame(
+        app_config,
+        lost(1, at(date(2026, 6, 1), 12), "BUGET", status_changed_at=at(date(2026, 8, 10), 12)),
+    )
+
+    losses = monthly_loss_reasons(leads, SEPTEMBER_END, app_config)
+
+    assert losses.reasons_by_count == ("BUGET",)
+    assert losses.reason_share("BUGET") is None
+    assert losses.total_share is None
+    assert losses.reason_change("BUGET") == pytest.approx(-1.0)
+
+
 def test_monthly_lead_rows_are_company_leads_with_local_created_day(
     app_config: AppConfig,
 ) -> None:

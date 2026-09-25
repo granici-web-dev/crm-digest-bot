@@ -126,6 +126,7 @@ def manager_cockpit_report(lead_frame: pd.DataFrame, context: ReportContext) -> 
             "manager_cockpit",
             context.language,
             rows=manager_cockpit_rows(lead_frame, context),
+            kpi_count=len(KPI_NAMES),
             kpi_lines=COCKPIT_KPI_LINES,
             targets=target_labels(context.config),
             clienti_note=chart_labels(context.language).clienti_note,

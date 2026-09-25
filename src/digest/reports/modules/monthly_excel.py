@@ -36,6 +36,8 @@ FUNNEL_KPI_NAMES = ("scr", "l2o", "o2c")
 NAME_COLUMN_WIDTH = 22
 VALUE_COLUMN_WIDTH = 10
 MISSING_VALUE = "—"
+TARGET_MET_COLOR = "#008300"
+TARGET_MISSED_COLOR = "#c62828"
 
 
 def write_share(
@@ -179,8 +181,8 @@ def monthly_workbook(lead_frame: pd.DataFrame, context: ReportContext) -> bytes:
     workbook = xlsxwriter.Workbook(output, {"in_memory": True})
     formats = {
         "percent": workbook.add_format({"num_format": "0.0%"}),
-        "met": workbook.add_format({"num_format": "0.0%", "font_color": "#008300"}),
-        "missed": workbook.add_format({"num_format": "0.0%", "font_color": "#c62828"}),
+        "met": workbook.add_format({"num_format": "0.0%", "font_color": TARGET_MET_COLOR}),
+        "missed": workbook.add_format({"num_format": "0.0%", "font_color": TARGET_MISSED_COLOR}),
     }
     write_manager_sheet(workbook, lead_frame, context, formats)
     write_funnel_sheet(workbook, lead_frame, context, formats)

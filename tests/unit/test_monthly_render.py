@@ -188,11 +188,32 @@ def test_scr_text_shows_level_and_target(app_config: AppConfig) -> None:
     assert "Total 8,3% · Bine ✗" in text
 
 
-def test_cockpit_text_uses_code_lines_without_pre_or_spi(app_config: AppConfig) -> None:
+def spi_words(app_config: AppConfig) -> set[str]:
+    # ADR-002: SPI, его уровни и рекомендации не выводятся до калибровки.
+    return {
+        "SPI",
+        *(level.name for level in app_config.kpi.levels),
+        *(rule.key for rule in app_config.kpi.recommendations),
+    }
+
+
+@pytest.mark.parametrize("language", ["ro", "ru"])
+@pytest.mark.parametrize("module_id", ["m4", "m5"])
+def test_scr_and_cockpit_text_have_no_spi_levels_or_recommendations(
+    app_config: AppConfig, language: ReportLanguage, module_id: str
+) -> None:
+    text = IMPLEMENTED_MODULES[module_id](
+        month_frame(app_config), context(app_config, language)
+    ).text
+
+    for word in spi_words(app_config):
+        assert word not in text
+
+
+def test_cockpit_text_uses_code_lines_without_pre(app_config: AppConfig) -> None:
     text = module_text(app_config, "m5")
 
     assert "<pre>" not in text
-    assert "SPI" not in text
     assert "<b>Moaca Andreea</b> · Brașov" in text
     assert "<code>Lead-uri 2 · Utile 2 · Oferte 2 · Clienți 1</code>" in text
     assert "<i>Clienți: din lead-urile lunii, status la data raportului</i>" in text
@@ -330,3 +351,17 @@ def test_monthly_workbook_lead_sheet_matches_funnel_without_client_data(
     }
     for value in CLIENT_DATA.values():
         assert value not in cells
+
+
+def test_monthly_workbook_has_no_spi_levels_or_recommendations(app_config: AppConfig) -> None:
+    _, book = workbook(app_config)
+    cells = [
+        str(cell)
+        for sheet in book.worksheets
+        for row in sheet.iter_rows(values_only=True)
+        for cell in row
+        if cell is not None
+    ]
+
+    for word in spi_words(app_config):
+        assert not any(word in cell for cell in cells)

@@ -1,6 +1,6 @@
 {% macro mark(value) %}{% if value is true %} ✓{% elif value is false %} ✗{% endif %}{% endmacro %}
 {% macro kpi_line(row, names) %}{% for name in names %}{{ name | upper }} {{ row[name] | percent1 }}{{ mark(row[name ~ "_meets_target"]) }}{% if not loop.last %} · {% endif %}{% endfor %}{% endmacro %}
-<b>Manager Cockpit: 9 KPI по консультантам</b>
+<b>Manager Cockpit: {{ kpi_count }} KPI по консультантам</b>
 {% for names in kpi_lines %}
 <i>Цели: {% for name in names %}{{ name | upper }} {{ targets[name] }}{% if not loop.last %} · {% endif %}{% endfor %}</i>
 {% endfor %}

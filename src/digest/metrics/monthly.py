@@ -1,3 +1,4 @@
+from calendar import monthrange
 from dataclasses import dataclass
 from datetime import date, timedelta
 
@@ -116,7 +117,7 @@ def first_day_of_month(day: date) -> date:
 
 
 def last_day_of_month(day: date) -> date:
-    return (first_day_of_month(day) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+    return day.replace(day=monthrange(day.year, day.month)[1])
 
 
 def month_window(report_date: date, time_settings: TimeSettings) -> Period:
@@ -136,7 +137,8 @@ def trend_months(report_date: date) -> tuple[date, ...]:
 
 
 def monthly_funnel(lead_frame: pd.DataFrame, report_date: date, config: AppConfig) -> MonthlyFunnel:
-    # Когорта лидов месяца на дату снапшота, как недельная воронка w3.
+    # Когорта лидов месяца на дату снапшота, как недельная воронка w3 (docs/kpi-definitions.md,
+    # «Месячное окно», m2 и m4).
     window = month_window(report_date, config.status_mapping.time)
     return MonthlyFunnel(
         first_day_of_month(report_date),
@@ -187,8 +189,9 @@ def monthly_trend(lead_frame: pd.DataFrame, report_date: date, config: AppConfig
 def monthly_loss_reasons(
     lead_frame: pd.DataFrame, report_date: date, config: AppConfig
 ) -> MonthlyLossReasons:
-    # Прошлый месяц по тому же снапшоту: лид, у которого статус с тех пор сменился ещё раз,
-    # из прошлого месяца выпадает (status_changed_at хранит только последнее изменение).
+    # docs/kpi-definitions.md, «Месячное окно», m8. Прошлый месяц по тому же снапшоту: лид, у
+    # которого статус с тех пор сменился ещё раз, из прошлого месяца выпадает (status_changed_at
+    # хранит только последнее изменение, CLAUDE.md, «Ловушки mefi API»).
     time_settings = config.status_mapping.time
     previous_month = first_day_of_month(report_date) - timedelta(days=1)
     return MonthlyLossReasons(
@@ -202,6 +205,7 @@ def monthly_loss_reasons(
 def monthly_lead_rows(
     lead_frame: pd.DataFrame, report_date: date, config: AppConfig
 ) -> pd.DataFrame:
-    # Те же лиды, что LEADS компании в m2: строки листа сходятся с воронкой.
+    # Те же лиды, что LEADS компании в m2: строки листа сходятся с воронкой
+    # (docs/kpi-definitions.md, «Месячное окно», m19).
     leads = leads_in_period(lead_frame, month_window(report_date, config.status_mapping.time))
     return lead_rows(leads.assign(day=leads["created_at"].dt.tz_localize(None).dt.date))

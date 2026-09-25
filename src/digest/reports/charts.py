@@ -22,7 +22,20 @@ BASELINE = "#d9d8d4"
 LEADS_COLOR = "#2a78d6"
 CONTRACTS_COLOR = "#eb6834"
 DPI = 150
+FIGURE_WIDTH_INCHES = 10
+FUNNEL_TITLE_HEIGHT_INCHES = 0.6
+FUNNEL_PANEL_HEIGHT_INCHES = 2.2
 FUNNEL_PANEL_COLUMNS = 2
+FUNNEL_BAR_HEIGHT = 0.6
+TREND_FIGURE_HEIGHT_INCHES = 6
+TREND_BAR_WIDTH = 0.5
+# Запас над самым длинным столбцом под подпись значения.
+FUNNEL_VALUE_HEADROOM = 1.2
+TREND_VALUE_HEADROOM = 1.25
+TITLE_FONT_SIZE = 13
+PANEL_TITLE_FONT_SIZE = 11
+VALUE_FONT_SIZE = 9
+NOTE_FONT_SIZE = 8
 
 
 class ChartLabels(StrictConfigModel):
@@ -72,17 +85,17 @@ def style_axes(axes: Axes) -> None:
     axes.set_facecolor(SURFACE)
     for side in ("top", "right", "left", "bottom"):
         axes.spines[side].set_visible(False)
-    axes.tick_params(colors=TEXT_SECONDARY, length=0, labelsize=9)
+    axes.tick_params(colors=TEXT_SECONDARY, length=0, labelsize=VALUE_FONT_SIZE)
 
 
 def draw_funnel_panel(axes: Axes, title: str, counts: LeadCounts, labels: ChartLabels) -> None:
     values = [counts.leads, counts.useful, counts.offers, counts.clienti]
     positions = range(len(values))
-    axes.barh(positions, values, height=0.6, color=LEADS_COLOR)
+    axes.barh(positions, values, height=FUNNEL_BAR_HEIGHT, color=LEADS_COLOR)
     axes.invert_yaxis()
     axes.set_yticks(list(positions), labels.funnel_stages)
     axes.set_xticks([])
-    axes.set_xlim(0, max(values) * 1.2 or 1)
+    axes.set_xlim(0, max(values) * FUNNEL_VALUE_HEADROOM or 1)
     axes.axvline(0, color=BASELINE, linewidth=1)
     for position, value in zip(positions, values, strict=True):
         axes.annotate(
@@ -92,9 +105,9 @@ def draw_funnel_panel(axes: Axes, title: str, counts: LeadCounts, labels: ChartL
             textcoords="offset points",
             va="center",
             color=TEXT_PRIMARY,
-            fontsize=9,
+            fontsize=VALUE_FONT_SIZE,
         )
-    axes.set_title(title, loc="left", color=TEXT_PRIMARY, fontsize=11)
+    axes.set_title(title, loc="left", color=TEXT_PRIMARY, fontsize=PANEL_TITLE_FONT_SIZE)
     style_axes(axes)
 
 
@@ -105,11 +118,13 @@ def funnel_chart(funnel: MonthlyFunnel, labels: ChartLabels) -> bytes:
     ]
     panels.append((labels.company, funnel.company))
     rows = ceil(len(panels) / FUNNEL_PANEL_COLUMNS)
-    figure = new_figure(10, 0.6 + 2.2 * rows)
+    figure = new_figure(
+        FIGURE_WIDTH_INCHES, FUNNEL_TITLE_HEIGHT_INCHES + FUNNEL_PANEL_HEIGHT_INCHES * rows
+    )
     figure.suptitle(
         f"{labels.funnel_title} · {labels.month_label(funnel.month)}",
         color=TEXT_PRIMARY,
-        fontsize=13,
+        fontsize=TITLE_FONT_SIZE,
         x=0.01,
         ha="left",
     )
@@ -123,7 +138,7 @@ def funnel_chart(funnel: MonthlyFunnel, labels: ChartLabels) -> bytes:
     figure.supxlabel(
         "\n".join(note for note in notes if note),
         color=TEXT_SECONDARY,
-        fontsize=8,
+        fontsize=NOTE_FONT_SIZE,
         x=0.01,
         ha="left",
     )
@@ -134,10 +149,10 @@ def draw_trend_panel(
     axes: Axes, title: str, values: tuple[int, ...], color: str, month_labels: list[str]
 ) -> None:
     positions = range(len(values))
-    axes.bar(positions, values, width=0.5, color=color)
+    axes.bar(positions, values, width=TREND_BAR_WIDTH, color=color)
     axes.set_xticks(list(positions), month_labels)
     axes.set_yticks([])
-    axes.set_ylim(0, max(values) * 1.25 or 1)
+    axes.set_ylim(0, max(values) * TREND_VALUE_HEADROOM or 1)
     axes.axhline(0, color=BASELINE, linewidth=1)
     for position, value in zip(positions, values, strict=True):
         axes.annotate(
@@ -147,21 +162,25 @@ def draw_trend_panel(
             textcoords="offset points",
             ha="center",
             color=TEXT_PRIMARY,
-            fontsize=9,
+            fontsize=VALUE_FONT_SIZE,
         )
-    axes.set_title(title, loc="left", color=TEXT_PRIMARY, fontsize=11)
+    axes.set_title(title, loc="left", color=TEXT_PRIMARY, fontsize=PANEL_TITLE_FONT_SIZE)
     style_axes(axes)
 
 
 def trend_chart(trend: MonthlyTrend, labels: ChartLabels) -> bytes:
     # Лиды и контракты на двух панелях, не на двух осях Y одной: шкалы отличаются на порядок.
     month_labels = [labels.month_label(month) for month in trend.months]
-    figure = new_figure(10, 6)
-    figure.suptitle(labels.trend_title, color=TEXT_PRIMARY, fontsize=13, x=0.01, ha="left")
+    figure = new_figure(FIGURE_WIDTH_INCHES, TREND_FIGURE_HEIGHT_INCHES)
+    figure.suptitle(
+        labels.trend_title, color=TEXT_PRIMARY, fontsize=TITLE_FONT_SIZE, x=0.01, ha="left"
+    )
     leads_axes, contracts_axes = figure.subplots(2, 1)
     draw_trend_panel(leads_axes, labels.trend_leads, trend.leads, LEADS_COLOR, month_labels)
     draw_trend_panel(
         contracts_axes, labels.trend_contracts, trend.contracts, CONTRACTS_COLOR, month_labels
     )
-    figure.supxlabel(labels.trend_note, color=TEXT_SECONDARY, fontsize=8, x=0.01, ha="left")
+    figure.supxlabel(
+        labels.trend_note, color=TEXT_SECONDARY, fontsize=NOTE_FONT_SIZE, x=0.01, ha="left"
+    )
     return png_bytes(figure)
