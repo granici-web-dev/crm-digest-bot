@@ -2,10 +2,10 @@ from collections.abc import Hashable
 from datetime import date, datetime
 from typing import Any
 
-from digest.config import AppConfig
+from digest.config import KPI_NAMES, AppConfig
 from digest.metrics.cockpit import manager_cockpit_table
 from digest.metrics.frame import prepare_lead_frame
-from digest.metrics.kpi import Period
+from digest.metrics.kpi import COUNT_NAMES, Period
 from factories import BUCHAREST, make_snapshot_row
 
 SEPTEMBER = Period(
@@ -29,7 +29,9 @@ def test_table_has_no_provisional_columns(app_config: AppConfig) -> None:
         prepare_lead_frame([], app_config), SEPTEMBER, date(2026, 9, 30), app_config
     )
 
-    assert not {"spi", "level", "recommendation"} & set(table.columns)
+    allowed = {"manager_id", "name", "showroom", *COUNT_NAMES, *KPI_NAMES}
+    allowed |= {f"{kpi_name}_meets_target" for kpi_name in KPI_NAMES}
+    assert set(table.columns) == allowed
 
 
 def dragoi_row(rows: list[dict[str, Any]], config: AppConfig) -> dict[Hashable, Any]:

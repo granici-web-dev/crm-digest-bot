@@ -130,16 +130,27 @@ def test_showroom_conversion_counts_only_clients_among_visits(app_config: AppCon
 
 
 @pytest.mark.parametrize(
-    ("last_contact_day", "is_stale"),
-    [(date(2026, 9, 16), False), (date(2026, 9, 15), True)],
+    ("last_contact_at", "analysis_date", "is_stale"),
+    [
+        (datetime(2026, 9, 16, 23, 30, tzinfo=BUCHAREST), SEPTEMBER_END, False),
+        (datetime(2026, 9, 15, 23, 30, tzinfo=BUCHAREST), SEPTEMBER_END, True),
+        # 00:30 по Бухаресту = 21:30 UTC накануне: день контакта по Бухаресту, не по UTC.
+        (datetime(2026, 9, 16, 0, 30, tzinfo=BUCHAREST), SEPTEMBER_END, False),
+        # 14 дней через переход на зимнее время 25.10.2026.
+        (datetime(2026, 10, 18, 0, 30, tzinfo=BUCHAREST), date(2026, 11, 1), False),
+        (datetime(2026, 10, 17, 23, 30, tzinfo=BUCHAREST), date(2026, 11, 1), True),
+    ],
+    ids=["14_days", "15_days", "after_midnight", "dst_autumn_14", "dst_autumn_15"],
 )
 def test_offer_is_stale_after_more_than_14_days_without_contact(
-    app_config: AppConfig, last_contact_day: date, is_stale: bool
+    app_config: AppConfig, last_contact_at: datetime, analysis_date: date, is_stale: bool
 ) -> None:
-    last_contact_at = datetime.combine(last_contact_day, time(23, 30), tzinfo=BUCHAREST)
     row = make_snapshot_row(created_at=IN_SEPTEMBER, ofertat=True, last_contact_at=last_contact_at)
+    period = Period(start=SEPTEMBER.start, end=datetime(2026, 11, 1, tzinfo=BUCHAREST))
 
-    assert company_counts([row], app_config).active_offers_14 == int(is_stale)
+    counts = company_counts([row], app_config, period=period, analysis_date=analysis_date)
+
+    assert counts.active_offers_14 == int(is_stale)
 
 
 def test_offer_without_last_contact_is_not_stale(app_config: AppConfig) -> None:
@@ -243,3 +254,41 @@ def test_showroom_outside_config_list_gets_its_own_row(app_config: AppConfig) ->
 
     assert list(counts) == ["București", "Brașov", "Cluj", "Bucuresti", None]
     assert (counts["Bucuresti"].leads, counts["Cluj"].leads) == (1, 1)
+
+
+@pytest.mark.parametrize(
+    ("window_day", "included_utc", "excluded_utc"),
+    [
+        # 29.03.2026: переход на летнее время, начало окна 19:00 EET, конец 19:00 EEST.
+        (
+            date(2026, 3, 29),
+            [datetime(2026, 3, 28, 17, 0, tzinfo=UTC), datetime(2026, 3, 29, 15, 59, tzinfo=UTC)],
+            [datetime(2026, 3, 28, 16, 59, tzinfo=UTC), datetime(2026, 3, 29, 16, 0, tzinfo=UTC)],
+        ),
+        # 25.10.2026: переход на зимнее время, начало окна 19:00 EEST, конец 19:00 EET.
+        (
+            date(2026, 10, 25),
+            [datetime(2026, 10, 24, 16, 0, tzinfo=UTC), datetime(2026, 10, 25, 16, 59, tzinfo=UTC)],
+            [datetime(2026, 10, 24, 15, 59, tzinfo=UTC), datetime(2026, 10, 25, 17, 0, tzinfo=UTC)],
+        ),
+    ],
+    ids=["spring", "autumn"],
+)
+def test_daily_window_follows_bucharest_clock_across_dst(
+    app_config: AppConfig,
+    window_day: date,
+    included_utc: list[datetime],
+    excluded_utc: list[datetime],
+) -> None:
+    window = Period(
+        start=datetime.combine(window_day - timedelta(days=1), time(19, 0), tzinfo=BUCHAREST),
+        end=datetime.combine(window_day, time(19, 0), tzinfo=BUCHAREST),
+    )
+    rows = [
+        make_snapshot_row(lead_id=lead_id, created_at=created_at)
+        for lead_id, created_at in enumerate([*included_utc, *excluded_utc])
+    ]
+
+    counts = company_counts(rows, app_config, period=window, analysis_date=window_day)
+
+    assert counts.leads == len(included_utc)

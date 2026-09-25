@@ -33,6 +33,8 @@ def test_revenire_is_overdue_from_its_date(
     [
         (None, True),
         (datetime(2026, 9, 19, 23, 0, tzinfo=BUCHAREST), True),
+        # 00:30 по Бухаресту = 21:30 UTC накануне: день берётся по Бухаресту, не по UTC.
+        (datetime(2026, 9, 20, 0, 30, tzinfo=BUCHAREST), False),
         (datetime(2026, 9, 20, 9, 0, tzinfo=BUCHAREST), False),
     ],
 )
@@ -93,5 +95,7 @@ def test_cohort_conversion_counts_clients_among_useful_leads_of_the_month(
         (0.1, None, None),
     ],
 )
-def test_period_delta(current: float | None, previous: float | None, delta: float | None) -> None:
+def test_delta_is_relative_and_none_from_zero_or_null(
+    current: float | None, previous: float | None, delta: float | None
+) -> None:
     assert period_delta(current, previous) == pytest.approx(delta)

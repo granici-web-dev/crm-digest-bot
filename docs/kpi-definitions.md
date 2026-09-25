@@ -11,7 +11,9 @@
 | категория | по `status.name` из `config/status-mapping.yaml` (инвариант 4), не подстрокой |
 | `is_clienti` | категория `WON`: `status.name = Clienți`. `converted_at` в счёт не идёт, расхождение с ним — алерт снапшота |
 | `is_irelevant` | `LOST · IRELEVANT`: IRELEVANT, SPAM |
-| `is_partnership` | `PARTNERSHIP`: DESIGNER, INFLUENCER |
+| `is_excluded_from_useful` | причина LOST с `excluded_from_useful: true` в `status-mapping.yaml` (сейчас только IRELEVANT) |
+| `is_excluded_from_leads` | `PARTNERSHIP` (DESIGNER, INFLUENCER) при `excluded_from_leads: true` |
+| `is_unmapped` | категория `UNMAPPED` |
 | `is_nu_a_raspuns` | `LOST · NU RASPUNS` |
 | `is_buget` | `LOST · BUGET` |
 | `is_produs_nepotrivit` | `LOST · PRODUS NEPOTRIVIT` |
@@ -27,9 +29,9 @@
 
 | Обозначение | Определение |
 |---|---|
-| `LEADS` | лиды с `created_at` в периоде, **кроме** PARTNERSHIP и лидов тестовых аккаунтов (`test_account: true`) |
+| `LEADS` | лиды с `created_at` в периоде, **кроме** `is_excluded_from_leads` (PARTNERSHIP) и лидов тестовых аккаунтов (`test_account: true`) |
 | `IRR_LEADS` | `LEADS` с `is_irelevant` |
-| `USEFUL` | `LEADS − IRR_LEADS` (= все − IRELEVANT − PARTNERSHIP, бриф §3) |
+| `USEFUL` | `LEADS` без `is_excluded_from_useful`; при текущем конфиге `LEADS − IRR_LEADS` (= все − IRELEVANT − PARTNERSHIP, бриф §3) |
 | `CLIENTI` | `LEADS` с `is_clienti` |
 | `OFFERS` | `LEADS` с `is_ofertat` |
 | `NAR` | `LEADS` с `is_nu_a_raspuns` |

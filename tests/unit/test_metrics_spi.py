@@ -3,8 +3,8 @@ from typing import Any
 
 import pytest
 
-from digest.config import AppConfig, KpiSettings, RecommendationRule, ScoreSteps
-from digest.metrics.kpi import Kpis, LeadCounts
+from digest.config import AppConfig, KpiName, KpiSettings, RecommendationRule, ScoreSteps
+from digest.metrics.kpi import COUNT_NAMES, Kpis, LeadCounts
 from digest.metrics.spi import irr_penalty, kpi_scores, recommendation_key, spi, spi_level
 
 BEST_KPIS = Kpis(scr=0.2, l2o=0.6, o2c=0.3, cdr=1.0, plr=0.1, sc=0.3, pfr=0.05, acr=0.1, irr=0.1)
@@ -38,42 +38,59 @@ def healthy_counts(**overrides: int) -> LeadCounts:
         ("scr", 0.10, 30),
         ("scr", 0.0999, 24),
         ("scr", 0.07, 24),
+        ("scr", 0.0699, 18),
         ("scr", 0.05, 18),
         ("scr", 0.0499, 10),
         ("scr", None, 10),
         ("cdr", 0.95, 20),
+        ("cdr", 0.9499, 16),
         ("cdr", 0.90, 16),
+        ("cdr", 0.8999, 10),
         ("cdr", 0.80, 10),
         ("cdr", 0.7999, 5),
         ("cdr", None, 5),
         ("plr", 0.20, 20),
         ("plr", 0.2001, 16),
+        ("plr", 0.25, 16),
+        ("plr", 0.2501, 10),
         ("plr", 0.35, 10),
         ("plr", 0.3501, 5),
         ("plr", None, 5),
+        ("sc", 0.20, 15),
+        ("sc", 0.1999, 12),
         ("sc", 0.15, 12),
+        ("sc", 0.1499, 8),
+        ("sc", 0.10, 8),
         ("sc", 0.0999, 4),
         ("sc", None, 4),
+        ("pfr", 0.10, 10),
+        ("pfr", 0.1001, 8),
         ("pfr", 0.15, 8),
+        ("pfr", 0.1501, 5),
+        ("pfr", 0.20, 5),
         ("pfr", 0.2001, 2),
         ("pfr", None, 2),
+        ("acr", 0.20, 5),
+        ("acr", 0.2001, 3),
         ("acr", 0.30, 3),
         ("acr", 0.3001, 1),
         ("acr", None, 1),
     ],
 )
 def test_score_is_first_step_met_and_lowest_for_null(
-    app_config: AppConfig, kpi_name: str, value: float | None, points: int
+    app_config: AppConfig, kpi_name: KpiName, value: float | None, points: int
 ) -> None:
     kpis = replace(BEST_KPIS, **{kpi_name: value})
 
-    assert kpi_scores(kpis, app_config.kpi)[kpi_name] == points  # type: ignore[index]
+    assert kpi_scores(kpis, app_config.kpi)[kpi_name] == points
 
 
 @pytest.mark.parametrize(
     ("irr", "penalty"), [(0.20, 0), (0.2001, -5), (0.30, -5), (0.3001, -10), (None, -10)]
 )
-def test_irr_penalty_steps(app_config: AppConfig, irr: float | None, penalty: int) -> None:
+def test_irr_penalty_is_first_step_met_and_harshest_for_null(
+    app_config: AppConfig, irr: float | None, penalty: int
+) -> None:
     assert irr_penalty(replace(BEST_KPIS, irr=irr), app_config.kpi) == penalty
 
 
@@ -126,7 +143,7 @@ def test_recommendation_is_first_rule_met(
 
 
 def test_no_recommendation_without_leads(app_config: AppConfig) -> None:
-    zero = LeadCounts(**dict.fromkeys(healthy_counts().__dataclass_fields__, 0))
+    zero = LeadCounts(**dict.fromkeys(COUNT_NAMES, 0))
 
     assert recommendation_key(zero, app_config.kpi) is None
 

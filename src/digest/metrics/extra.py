@@ -19,7 +19,7 @@ def overdue_revenire(lead_frame: pd.DataFrame, today: date, config: AppConfig) -
     eligible = lead_frame["category"].isin(OPEN_CATEGORIES) | (
         lead_frame["category"].eq("LOST") & lead_frame["loss_reason"].isin(followup_reasons)
     )
-    revenire_day = pd.to_datetime(lead_frame["data_revenire"])
+    revenire_day = lead_frame["data_revenire"]
     status_change_day = lead_frame["status_changed_at"].dt.tz_localize(None).dt.normalize()
     # status_changed_at = null: статус задан при создании и с тех пор не менялся (CLAUDE.md).
     untouched_since_revenire = status_change_day.isna() | status_change_day.lt(revenire_day)
@@ -29,12 +29,16 @@ def overdue_revenire(lead_frame: pd.DataFrame, today: date, config: AppConfig) -
 
 
 def cohort_conversion(lead_frame: pd.DataFrame, cohort: Period, config: AppConfig) -> float | None:
-    # Когорта = SCR лидов, созданных в периоде cohort, по снапшоту, из которого взят lead_frame.
+    # docs/kpi-definitions.md, «Дополнительные метрики»: когорта = SCR лидов, созданных в периоде
+    # cohort, по снапшоту, из которого взят lead_frame. analysis_date влияет только на
+    # ACTIVE_OFFERS_14, в SCR не входит.
     counts = lead_counts(lead_frame, cohort, cohort.end.date(), config)
     return kpis_from(counts).scr
 
 
 def period_delta(current: float | None, previous: float | None) -> float | None:
+    # docs/kpi-definitions.md, «Дополнительные метрики»: относительное изменение,
+    # от нуля или от null не считается.
     if current is None or previous is None or previous == 0:
         return None
     return (current - previous) / previous

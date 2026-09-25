@@ -22,7 +22,7 @@ def repository_yaml(file_name: str) -> Any:
     return read_yaml(CONFIG_DIR / file_name)
 
 
-def test_repository_config_loads(app_config: AppConfig) -> None:
+def test_repository_config_maps_statuses_to_categories(app_config: AppConfig) -> None:
     category_by_status = app_config.status_mapping.category_by_status
     assert category_by_status["Clienți"] == LeadCategory("WON")
     assert category_by_status["Revenire 2"] == LeadCategory("ACTIVE_FOLLOWUP")
@@ -204,4 +204,15 @@ def test_target_direction_must_match_scores() -> None:
     raw_kpi["targets"]["plr"]["direction"] = "higher"
 
     with pytest.raises(ValidationError, match=r"targets\.plr"):
+        KpiSettings.model_validate(raw_kpi)
+
+
+@pytest.mark.parametrize(
+    "comparison", [{}, {"above": "irr_atentie", "below": "irr_acceptabil"}], ids=["none", "both"]
+)
+def test_recommendation_needs_exactly_one_comparison(comparison: dict[str, str]) -> None:
+    raw_kpi = repository_yaml("kpi.yaml")
+    raw_kpi["recommendations"][0] = {"key": "irr_status_check", "kpi": "irr", **comparison}
+
+    with pytest.raises(ValidationError, match="irr_status_check"):
         KpiSettings.model_validate(raw_kpi)

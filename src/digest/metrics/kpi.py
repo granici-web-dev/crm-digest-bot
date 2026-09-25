@@ -54,9 +54,14 @@ def count_flags(
     in_period = created_at.ge(period.start) & created_at.lt(period.end)
     leads = lead_frame[in_period & ~lead_frame["is_excluded_from_leads"]]
 
-    last_contact_day = leads["last_contact_at"].dt.tz_localize(None).dt.normalize()
+    # docs/kpi-definitions.md, «Базовые множества», ACTIVE_OFFERS_14: день контакта по Бухаресту,
+    # строго больше active_offer_stale_days; last_contact_at = null оферту висящей не делает.
+    last_contact_at = leads["last_contact_at"]
+    last_contact_day = last_contact_at.dt.tz_localize(None).dt.normalize()
     days_since_contact = (pd.Timestamp(analysis_date) - last_contact_day).dt.days
-    stale_contact = days_since_contact.gt(config.kpi.active_offer_stale_days)
+    stale_contact = last_contact_at.notna() & days_since_contact.gt(
+        config.kpi.active_offer_stale_days
+    )
 
     clienti, irelevant = leads["is_clienti"], leads["is_irelevant"]
     offers, showroom_visits = leads["is_ofertat"], leads["is_showroom_visit"]

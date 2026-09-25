@@ -17,13 +17,13 @@ def meets_target(value: float | None, target_value: float, direction: Direction)
 def manager_cockpit_table(
     lead_frame: pd.DataFrame, period: Period, analysis_date: date, config: AppConfig
 ) -> pd.DataFrame:
-    # m5: 9 KPI с целями, без SPI и баллов (ADR-002).
+    # m5: 9 KPI с целями, без SPI и баллов (ADR-002). Цель выполнена при >= или <= включительно,
+    # KPI = null → цель неизвестна (docs/kpi-definitions.md, «KPI»).
     counts_by_manager = lead_counts_by_manager(lead_frame, period, analysis_date, config)
+    managers_by_id = {manager.id: manager for manager in config.managers.managers}
     rows: list[dict[str, Any]] = []
-    for manager in config.managers.managers:
-        if manager.id not in counts_by_manager:
-            continue
-        counts = counts_by_manager[manager.id]
+    for manager_id, counts in counts_by_manager.items():
+        manager = managers_by_id[manager_id]
         kpis = asdict(kpis_from(counts))
         targets = {
             f"{kpi_name}_meets_target": meets_target(
@@ -33,7 +33,7 @@ def manager_cockpit_table(
         }
         rows.append(
             {
-                "manager_id": manager.id,
+                "manager_id": manager_id,
                 "name": manager.name,
                 "showroom": manager.showroom,
                 **asdict(counts),

@@ -1,12 +1,8 @@
-from datetime import date
 from typing import Any
 
 import pandas as pd
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.config import AppConfig
-from digest.db.schema import lead_snapshots, snapshot_runs
 
 LEAD_FRAME_COLUMNS = (
     "lead_id",
@@ -28,16 +24,12 @@ LEAD_FRAME_COLUMNS = (
 TIMESTAMP_COLUMNS = ("created_at", "status_changed_at", "last_contact_at", "converted_at")
 
 
-class SnapshotMissingError(Exception):
-    pass
-
-
 def prepare_lead_frame(rows: list[dict[str, Any]], config: AppConfig) -> pd.DataFrame:
     lead_frame = pd.DataFrame.from_records(rows, columns=list(LEAD_FRAME_COLUMNS))
     lead_frame["assigned_to_id"] = lead_frame["assigned_to_id"].astype("Int64")
     test_account_ids = [manager.id for manager in config.managers.managers if manager.test_account]
     # Лиды тестовых аккаунтов вне всех метрик (docs/kpi-definitions.md, «Базовые множества»).
-    lead_frame = lead_frame[~lead_frame["assigned_to_id"].isin(test_account_ids).fillna(False)]
+    lead_frame = lead_frame[~lead_frame["assigned_to_id"].isin(test_account_ids)]
     lead_frame = lead_frame.reset_index(drop=True)
 
     timezone = config.status_mapping.time.timezone
@@ -46,6 +38,8 @@ def prepare_lead_frame(rows: list[dict[str, Any]], config: AppConfig) -> pd.Data
         if any(value.tzinfo is None for value in lead_frame[column].dropna()):
             raise ValueError(f"{column}: время без таймзоны, окна отчётов посчитать нельзя")
         lead_frame[column] = pd.to_datetime(lead_frame[column], utc=True).dt.tz_convert(timezone)
+    # data_revenire в mefi дата без времени (date_picker): сравнивается с календарным днём.
+    lead_frame["data_revenire"] = pd.to_datetime(lead_frame["data_revenire"])
 
     # Флаги только из category, loss_reason и конфига: статусы mefi живут в status-mapping.yaml.
     categories = config.status_mapping.categories
@@ -76,31 +70,3 @@ def unknown_manager_ids(lead_frame: pd.DataFrame, config: AppConfig) -> set[int]
     known_ids = {manager.id for manager in config.managers.managers}
     assigned_ids = lead_frame["assigned_to_id"].dropna().unique()
     return {int(manager_id) for manager_id in assigned_ids if manager_id not in known_ids}
-
-
-async def load_lead_frame(
-    engine: AsyncEngine, tenant_id: str, snapshot_date: date, config: AppConfig
-) -> pd.DataFrame:
-    query = (
-        select(*(lead_snapshots.c[column] for column in LEAD_FRAME_COLUMNS))
-        .where(
-            lead_snapshots.c.tenant_id == tenant_id,
-            lead_snapshots.c.snapshot_date == snapshot_date,
-        )
-        .order_by(lead_snapshots.c.lead_id)
-    )
-    successful_run = select(snapshot_runs.c.id).where(
-        snapshot_runs.c.tenant_id == tenant_id,
-        snapshot_runs.c.snapshot_date == snapshot_date,
-        snapshot_runs.c.status == "success",
-    )
-    async with engine.connect() as connection:
-        has_successful_run = (await connection.execute(successful_run)).first() is not None
-        result = await connection.execute(query)
-        rows = [dict(row) for row in result.mappings()]
-    # Пустой фрейм дал бы нули во всех счётчиках: неверная цифра вместо «данные недоступны».
-    if not has_successful_run or not rows:
-        raise SnapshotMissingError(
-            f"снапшот {tenant_id} за {snapshot_date} отсутствует или неполный"
-        )
-    return prepare_lead_frame(rows, config)

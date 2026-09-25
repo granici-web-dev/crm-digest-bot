@@ -305,7 +305,12 @@ class KpiSettings(StrictConfigModel):
                 for score_steps in (*self.scores.values(), self.irr_penalty)
                 for threshold, _points in score_steps.steps
             ]
-            + [rule.above or rule.below or "" for rule in self.recommendations]
+            + [
+                threshold
+                for rule in self.recommendations
+                for threshold in (rule.above, rule.below)
+                if threshold is not None
+            ]
             + [target.threshold for target in self.targets.values()]
         )
         unknown = sorted({name for name in referenced if name not in self.thresholds})

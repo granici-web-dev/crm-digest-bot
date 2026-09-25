@@ -8,8 +8,9 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.config import AppConfig
+from digest.db.lead_frame import SnapshotMissingError, load_lead_frame
 from digest.db.schema import lead_snapshots, snapshot_runs, tenants
-from digest.metrics.frame import SnapshotMissingError, load_lead_frame, prepare_lead_frame
+from digest.metrics.frame import prepare_lead_frame
 from factories import make_snapshot_row
 
 SNAPSHOT_DATE = date(2026, 9, 24)

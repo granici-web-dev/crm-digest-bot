@@ -7,7 +7,7 @@ from digest.metrics.kpi import Kpis, LeadCounts, kpis_from
 
 
 def step_points(value: float | None, score_steps: ScoreSteps, settings: KpiSettings) -> int:
-    # KPI = null получает нижнюю ступень (docs/kpi-definitions.md, «Предварительно»).
+    # KPI = null получает нижнюю ступень (docs/kpi-definitions.md, «Баллы»).
     if value is None:
         return score_steps.otherwise
     for threshold_name, points in score_steps.steps:
@@ -31,14 +31,17 @@ def irr_penalty(kpis: Kpis, settings: KpiSettings) -> int:
 
 
 def spi(kpis: Kpis, settings: KpiSettings) -> int:
+    # docs/kpi-definitions.md, «Баллы»: сумма баллов плюс штраф IRR, не ниже нуля.
     return max(0, sum(kpi_scores(kpis, settings).values()) + irr_penalty(kpis, settings))
 
 
 def spi_level(spi_value: int, settings: KpiSettings) -> str:
+    # docs/kpi-definitions.md, «Уровни»: первый сверху уровень с min_spi <= SPI.
     return next(level.name for level in settings.levels if spi_value >= level.min_spi)
 
 
 def recommendation_key(counts: LeadCounts, settings: KpiSettings) -> str | None:
+    # docs/kpi-definitions.md, «Главная рекомендация»: первое правило сверху, сравнение строгое.
     if counts.leads == 0:
         return None
     values = asdict(kpis_from(counts))
