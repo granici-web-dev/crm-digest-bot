@@ -23,8 +23,15 @@ class ReportDocument:
 
 
 @dataclass(frozen=True)
+class ReportPhoto:
+    filename: str
+    content: bytes
+
+
+@dataclass(frozen=True)
 class ModuleResult:
     text: str
     alerts: tuple[str, ...] = ()
     unavailable_sources: tuple[SourceCode, ...] = ()
+    photo: ReportPhoto | None = None
     document: ReportDocument | None = None

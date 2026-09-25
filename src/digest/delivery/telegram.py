@@ -91,3 +91,15 @@ async def send_document_with_retry(
     return await with_flood_retry(
         chat_id, lambda: bot.send_document(chat_id, BufferedInputFile(content, filename)), sleep
     )
+
+
+async def send_photo_with_retry(
+    bot: Bot,
+    chat_id: int,
+    filename: str,
+    content: bytes,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+) -> int:
+    return await with_flood_retry(
+        chat_id, lambda: bot.send_photo(chat_id, BufferedInputFile(content, filename)), sleep
+    )

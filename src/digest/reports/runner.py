@@ -30,13 +30,14 @@ from digest.delivery.ops import OpsChannel, notify_ops
 from digest.delivery.telegram import (
     send_document_with_retry,
     send_message_with_retry,
+    send_photo_with_retry,
     split_message,
 )
 from digest.metrics.daily import PreviousSnapshot
 from digest.metrics.frame import unknown_manager_ids
 from digest.metrics.kpi import Period
 from digest.metrics.weekly import DAYS_IN_WEEK
-from digest.reports.context import ReportContext, ReportDocument
+from digest.reports.context import ReportContext, ReportDocument, ReportPhoto
 from digest.reports.modules import ReportModuleFunction
 from digest.reports.periods import ReportLevel, report_period
 from digest.reports.render import ReportLanguage, render
@@ -81,6 +82,7 @@ class BuiltReport:
     text: str
     status: Literal["success", "partial"]
     snapshot_date: date
+    photos: tuple[ReportPhoto, ...] = ()
     documents: tuple[ReportDocument, ...] = ()
 
 
@@ -385,6 +387,7 @@ async def build_report(
         snapshot_date, previous, week_ago, deps.config, deps.tenant_id, language
     )
     blocks: list[ModuleBlock] = []
+    photos: list[ReportPhoto] = []
     documents: list[ReportDocument] = []
     unavailable_sources: set[str] = set()
     for module_id, module_function in modules:
@@ -404,6 +407,8 @@ async def build_report(
             for alert in result.alerts:
                 await notify_ops(deps.ops, alert)
             unavailable_sources.update(result.unavailable_sources)
+            if result.photo is not None:
+                photos.append(result.photo)
             if result.document is not None:
                 documents.append(result.document)
             # Текст модуля уже отрендерен своим шаблоном с autoescape, второй раз не экранируем.
@@ -419,7 +424,7 @@ async def build_report(
     status: Literal["success", "partial"] = (
         "partial" if any(block.text is None for block in blocks) else "success"
     )
-    return BuiltReport(text, status, snapshot_date, tuple(documents))
+    return BuiltReport(text, status, snapshot_date, tuple(photos), tuple(documents))
 
 
 async def run_report(level: ReportLevel, now: datetime, deps: ReportDeps) -> ReportRunOutcome:
@@ -478,6 +483,13 @@ async def run_report(level: ReportLevel, now: datetime, deps: ReportDeps) -> Rep
             await record_message_ids(
                 deps, claim.run_id, [*claim.previously_sent_message_ids, *message_ids]
             )
+        for photo in report.photos:
+            message_ids.append(
+                await send_photo_with_retry(deps.report_bot, chat_id, photo.filename, photo.content)
+            )
+            await record_message_ids(
+                deps, claim.run_id, [*claim.previously_sent_message_ids, *message_ids]
+            )
         for document in report.documents:
             message_ids.append(
                 await send_document_with_retry(
@@ -495,7 +507,7 @@ async def run_report(level: ReportLevel, now: datetime, deps: ReportDeps) -> Rep
             deps.ops,
             f"Отправка отчёта {level} за {label} в чат {chat_id} не удалась: "
             f"{describe_error(error)}. Отправлено частей: {len(message_ids)} "
-            f"из {len(parts) + len(report.documents)}.",
+            f"из {len(parts) + len(report.photos) + len(report.documents)}.",
         )
         return "failed"
     await finish_report_run(deps, claim.run_id, report.status, report.snapshot_date)
@@ -504,7 +516,7 @@ async def run_report(level: ReportLevel, now: datetime, deps: ReportDeps) -> Rep
         extra={
             **log_extra,
             "status": report.status,
-            "parts": len(parts) + len(report.documents),
+            "parts": len(parts) + len(report.photos) + len(report.documents),
         },
     )
     return report.status

@@ -7,7 +7,7 @@ from typing import Any
 import pandas as pd
 import pytest
 from aiogram.exceptions import TelegramNetworkError
-from aiogram.methods import SendDocument, SendMessage
+from aiogram.methods import SendDocument, SendMessage, SendPhoto
 from sqlalchemy import insert, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -15,8 +15,8 @@ from digest.app import DEFAULT_SCHEDULES, report_job, seed_defaults
 from digest.config import AppConfig
 from digest.db.schema import lead_snapshots, module_settings, report_runs, schedules, snapshot_runs
 from digest.delivery.ops import OpsChannel
-from digest.reports.context import ModuleResult, ReportContext, ReportDocument
-from digest.reports.modules import IMPLEMENTED_MODULES
+from digest.reports.context import ModuleResult, ReportContext, ReportDocument, ReportPhoto
+from digest.reports.modules import IMPLEMENTED_MODULES, ReportModuleFunction
 from digest.reports.runner import ReportDeps, run_report
 from factories import BUCHAREST, lead_snapshots_row, make_snapshot_row
 from fakes import recording_bot
@@ -545,6 +545,59 @@ async def test_document_send_failure_marks_run_failed(harness: Harness) -> None:
     assert outcome == "failed"
     assert len(harness.group.sent) == text_parts_sent
     assert any(f"Отправлено частей: {text_parts_sent} из 2" in alert for alert in harness.ops_texts)
+    [run] = await report_run_rows(harness.deps.engine)
+    assert run["status"] == "failed"
+    assert run["message_ids"] == [message.message_id for message in harness.group.sent]
+
+
+MONTH_END = date(2026, 9, 30)
+FIRST_OF_OCTOBER_09 = datetime(2026, 10, 1, 9, 0, tzinfo=BUCHAREST)
+
+
+def photo_module(filename: str) -> ReportModuleFunction:
+    def module(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
+        return ModuleResult(filename, photo=ReportPhoto(filename, filename.encode()))
+
+    return module
+
+
+async def test_photos_are_sent_after_text_and_before_documents(harness: Harness) -> None:
+    deps = replace(
+        harness.deps,
+        modules={
+            "m2": photo_module("funnel.png"),
+            "m3": photo_module("trend.png"),
+            "m19": document_module,
+        },
+    )
+    await store_snapshot(harness.deps.engine, MONTH_END, [todays_lead(1)])
+
+    outcome = await run_report("monthly", FIRST_OF_OCTOBER_09, deps)
+
+    assert outcome == "success"
+    assert [photo.filename for photo in harness.group.photos] == ["funnel.png", "trend.png"]
+    [document] = harness.group.documents
+    text_ids = [message.message_id for message in harness.group.sent]
+    photo_ids = [photo.message_id for photo in harness.group.photos]
+    assert max(text_ids) < min(photo_ids)
+    assert max(photo_ids) < document.message_id
+    [run] = await report_run_rows(harness.deps.engine)
+    assert run["message_ids"] == [*text_ids, *photo_ids, document.message_id]
+
+
+async def test_photo_send_failure_marks_run_failed_and_keeps_text_ids(harness: Harness) -> None:
+    deps = replace(
+        harness.deps,
+        modules={"m2": photo_module("funnel.png"), "m3": photo_module("trend.png")},
+    )
+    await store_snapshot(harness.deps.engine, MONTH_END, [todays_lead(1)])
+    harness.group.fail_next_photo(TelegramNetworkError(SendPhoto(chat_id=1, photo="x"), "down"))
+
+    outcome = await run_report("monthly", FIRST_OF_OCTOBER_09, deps)
+
+    assert outcome == "failed"
+    assert harness.group.photos == []
+    assert any("Отправлено частей: 1 из 3" in alert for alert in harness.ops_texts)
     [run] = await report_run_rows(harness.deps.engine)
     assert run["status"] == "failed"
     assert run["message_ids"] == [message.message_id for message in harness.group.sent]

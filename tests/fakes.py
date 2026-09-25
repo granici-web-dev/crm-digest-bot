@@ -5,9 +5,9 @@ from typing import Any, cast
 
 from aiogram import Bot
 from aiogram.client.session.base import BaseSession
-from aiogram.methods import SendDocument, SendMessage, TelegramMethod
+from aiogram.methods import SendDocument, SendMessage, SendPhoto, TelegramMethod
 from aiogram.methods.base import TelegramType
-from aiogram.types import BufferedInputFile, Chat, Document, Message
+from aiogram.types import BufferedInputFile, Chat, Document, Message, PhotoSize
 
 from digest.delivery.telegram import create_bot
 
@@ -30,12 +30,22 @@ class SentDocument:
     message_id: int
 
 
+@dataclass(frozen=True)
+class SentPhoto:
+    chat_id: int
+    filename: str
+    content: bytes
+    message_id: int
+
+
 # Сигнатуры make_request и stream_content заданы BaseSession aiogram, timeout оттуда (ASYNC109).
 class RecordingSession(BaseSession):
     def __init__(self) -> None:
         super().__init__()
         self.sent: list[SentMessage] = []
         self.documents: list[SentDocument] = []
+        self.photos: list[SentPhoto] = []
+        self.photo_failures: list[Exception] = []
         self.document_failures: list[Exception] = []
         self.failures: list[Exception] = []
         self.next_message_id = 1
@@ -46,6 +56,9 @@ class RecordingSession(BaseSession):
     def fail_next_document(self, *errors: Exception) -> None:
         self.document_failures.extend(errors)
 
+    def fail_next_photo(self, *errors: Exception) -> None:
+        self.photo_failures.extend(errors)
+
     async def make_request(
         self,
         bot: Bot,
@@ -54,6 +67,22 @@ class RecordingSession(BaseSession):
     ) -> TelegramType:
         if self.failures:
             raise self.failures.pop(0)
+        if isinstance(method, SendPhoto):
+            if self.photo_failures:
+                raise self.photo_failures.pop(0)
+            assert isinstance(method.photo, BufferedInputFile)
+            chat_id = int(method.chat_id)
+            message_id = self.next_message_id
+            self.next_message_id += 1
+            filename = method.photo.filename or ""
+            self.photos.append(SentPhoto(chat_id, filename, method.photo.data, message_id))
+            photo_message = Message(
+                message_id=message_id,
+                date=datetime.now(UTC),
+                chat=Chat(id=chat_id, type="group"),
+                photo=[PhotoSize(file_id="test", file_unique_id="test", width=1, height=1)],
+            )
+            return cast(TelegramType, photo_message)
         if isinstance(method, SendDocument):
             if self.document_failures:
                 raise self.document_failures.pop(0)

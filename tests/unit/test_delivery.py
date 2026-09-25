@@ -7,6 +7,7 @@ from digest.delivery.telegram import (
     MAX_FLOOD_RETRIES,
     send_document_with_retry,
     send_message_with_retry,
+    send_photo_with_retry,
 )
 from fakes import recording_bot
 
@@ -61,6 +62,26 @@ async def test_document_is_sent_with_filename_after_flood_wait() -> None:
         42,
         "sofabelle_sapt39_2026.xlsx",
         b"xlsx",
+        message_id,
+    )
+
+
+async def test_photo_is_sent_after_flood_wait() -> None:
+    bot, session = recording_bot()
+    session.fail_next(flood_wait(2))
+    sleeps: list[float] = []
+
+    async def record_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    message_id = await send_photo_with_retry(bot, 42, "funnel.png", b"\x89PNG", sleep=record_sleep)
+
+    assert sleeps == [2]
+    [photo] = session.photos
+    assert (photo.chat_id, photo.filename, photo.content, photo.message_id) == (
+        42,
+        "funnel.png",
+        b"\x89PNG",
         message_id,
     )
 
