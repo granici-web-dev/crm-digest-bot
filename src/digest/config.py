@@ -270,6 +270,13 @@ class KpiSettings(StrictConfigModel):
             raise ValueError(f"пороги {unknown} не описаны в thresholds")
         return self
 
+    @model_validator(mode="after")
+    def levels_descend_to_zero(self) -> Self:
+        bounds = [level.min_spi for level in self.levels]
+        if not bounds or bounds != sorted(bounds, reverse=True) or bounds[-1] != 0:
+            raise ValueError("levels: min_spi по убыванию, последний уровень с min_spi 0")
+        return self
+
 
 class AppConfig(StrictConfigModel):
     status_mapping: StatusMapping

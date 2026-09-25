@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from digest.config import (
     AppConfig,
+    KpiSettings,
     LeadCategory,
     ManagerRoster,
     ModuleRegistry,
@@ -66,3 +67,19 @@ def test_manager_showroom_must_be_in_showrooms_list() -> None:
                 "kpi": repository_yaml("kpi.yaml"),
             }
         )
+
+
+def test_score_step_with_unknown_threshold_fails_config_load() -> None:
+    raw_kpi = repository_yaml("kpi.yaml")
+    raw_kpi["scores"]["scr"]["steps"][0][0] = "scr_elit"
+
+    with pytest.raises(ValidationError, match="scr_elit"):
+        KpiSettings.model_validate(raw_kpi)
+
+
+def test_spi_levels_must_descend_to_zero() -> None:
+    raw_kpi = repository_yaml("kpi.yaml")
+    raw_kpi["levels"] = raw_kpi["levels"][:-1]
+
+    with pytest.raises(ValidationError, match="levels"):
+        KpiSettings.model_validate(raw_kpi)
