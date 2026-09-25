@@ -6,7 +6,7 @@ from sqlalchemy.engine import Connection
 
 from digest.db.engine import create_database_engine
 from digest.db.schema import metadata
-from digest.settings import Settings
+from digest.settings import DatabaseSettings
 
 config = context.config
 if config.config_file_name is not None and config.attributes.get("configure_logging", True):
@@ -17,7 +17,7 @@ def database_url() -> str:
     url_from_caller = config.get_main_option("sqlalchemy.url")
     if url_from_caller:
         return url_from_caller
-    return Settings().database_url.get_secret_value()  # type: ignore[call-arg]
+    return DatabaseSettings().database_url.get_secret_value()
 
 
 def run_migrations(connection: Connection) -> None:

@@ -4,6 +4,13 @@ from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+class DatabaseSettings(BaseSettings):
+    # Миграциям нужен только DATABASE_URL: без токенов ботов alembic тоже должен работать.
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_ignore_empty=True)
+
+    database_url: SecretStr
+
+
 class Settings(BaseSettings):
     # env_ignore_empty: пустое DRY_RUN= из .env.example значит «не задано», а не ошибка bool.
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_ignore_empty=True)

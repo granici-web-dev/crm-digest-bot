@@ -9,8 +9,10 @@ from pydantic import (
     ConfigDict,
     Field,
     JsonValue,
+    PositiveFloat,
     PositiveInt,
     PrivateAttr,
+    ValidationError,
     model_validator,
 )
 
@@ -198,6 +200,23 @@ class ReportModule(StrictConfigModel):
     requires_kpi_status: Literal["calibrated"] | None = None
 
 
+class UntouchedLeadsParams(StrictConfigModel):
+    threshold_hours: PositiveInt
+    lookback_days: PositiveInt
+
+
+class AnomalyParams(StrictConfigModel):
+    site_zero_min_average: PositiveFloat
+    irelevant_spike_min: PositiveInt
+
+
+# Параметры проверяются при загрузке: опечатка в пороге роняет старт, а не отчёт в 19:30.
+PARAMS_MODEL_BY_MODULE_NAME: dict[str, type[StrictConfigModel]] = {
+    "untouched_leads": UntouchedLeadsParams,
+    "anomalies": AnomalyParams,
+}
+
+
 class ChatSettings(StrictConfigModel):
     enabled: bool
     tools: list[str]
@@ -216,6 +235,15 @@ class ModuleRegistry(StrictConfigModel):
     def all_modules(self) -> dict[str, ReportModule]:
         return {**self.daily, **self.weekly, **self.monthly, **self.yearly}
 
+    def module_named(self, name: str) -> ReportModule:
+        return next(module for module in self.all_modules.values() if module.name == name)
+
+    def untouched_leads_params(self) -> UntouchedLeadsParams:
+        return UntouchedLeadsParams.model_validate(self.module_named("untouched_leads").params)
+
+    def anomaly_params(self) -> AnomalyParams:
+        return AnomalyParams.model_validate(self.module_named("anomalies").params)
+
     @model_validator(mode="after")
     def enabled_modules_have_connected_sources(self) -> Self:
         all_modules = self.all_modules
@@ -233,6 +261,12 @@ class ModuleRegistry(StrictConfigModel):
                 raise ValueError(
                     f"модуль {module_id} включён, но источники {disconnected} не подключены"
                 )
+            params_model = PARAMS_MODEL_BY_MODULE_NAME.get(module.name)
+            if params_model is not None:
+                try:
+                    params_model.model_validate(module.params)
+                except ValidationError as error:
+                    raise ValueError(f"модуль {module_id}: неверные params: {error}") from error
         return self
 
 
@@ -242,6 +276,8 @@ class Manager(StrictConfigModel):
     showroom: str | None
     active: bool
     test_account: bool = False
+    # Лид на таком id никто не взял в работу (Desemnat по умолчанию в mefi), см. d2.
+    not_taken: bool = False
 
 
 class ManagerRoster(StrictConfigModel):
@@ -254,6 +290,17 @@ class ManagerRoster(StrictConfigModel):
         if duplicates:
             raise ValueError(f"id консультантов повторяются: {duplicates}")
         return self
+
+    @model_validator(mode="after")
+    def not_taken_managers_are_inactive(self) -> Self:
+        selling = [manager.id for manager in self.managers if manager.not_taken and manager.active]
+        if selling:
+            raise ValueError(f"консультанты {selling}: not_taken только при active: false")
+        return self
+
+    @property
+    def not_taken_ids(self) -> set[int]:
+        return {manager.id for manager in self.managers if manager.not_taken}
 
 
 KpiName = Literal["scr", "l2o", "o2c", "cdr", "plr", "sc", "pfr", "acr", "irr"]

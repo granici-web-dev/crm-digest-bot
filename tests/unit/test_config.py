@@ -224,3 +224,47 @@ def test_recommendation_needs_exactly_one_comparison(comparison: dict[str, str])
 
     with pytest.raises(ValidationError, match="irr_status_check"):
         KpiSettings.model_validate(raw_kpi)
+
+
+def test_not_taken_manager_must_be_inactive() -> None:
+    raw_managers = repository_yaml("managers.yaml")
+    marketing = next(manager for manager in raw_managers["managers"] if manager["id"] == 7)
+    marketing["active"] = True
+
+    with pytest.raises(ValidationError, match="not_taken"):
+        ManagerRoster.model_validate(raw_managers)
+
+
+def test_repository_marks_marketing_sofa_as_not_taken(app_config: AppConfig) -> None:
+    assert app_config.managers.not_taken_ids == {7}
+
+
+@pytest.mark.parametrize(
+    ("module_id", "params"),
+    [
+        ("d2", {"threshold_hours": 4}),
+        ("d2", {"threshold_hours": 0, "lookback_days": 3}),
+        ("d5", {"site_zero_min_average": 2, "irelevant_spike_min": "five"}),
+        ("d5", {"site_zero_min_average": 2, "irelevant_spike_min": 5, "web_zero": 1}),
+    ],
+)
+def test_module_params_are_validated_at_load(module_id: str, params: dict[str, Any]) -> None:
+    raw_modules = repository_yaml("modules.yaml")
+    raw_modules["daily"][module_id]["params"] = params
+
+    with pytest.raises(ValidationError, match=f"модуль {module_id}"):
+        ModuleRegistry.model_validate(raw_modules)
+
+
+def test_repository_module_params(app_config: AppConfig) -> None:
+    untouched = app_config.modules.untouched_leads_params()
+    anomalies = app_config.modules.anomaly_params()
+
+    assert (untouched.threshold_hours, untouched.lookback_days) == (4, 3)
+    assert (anomalies.site_zero_min_average, anomalies.irelevant_spike_min) == (2, 5)
+
+
+def test_new_sources_are_in_groups(app_config: AppConfig) -> None:
+    sources = app_config.status_mapping.sources
+    assert "FacebookMessanger" in sources.web
+    assert "BIFE 2026" in sources.other

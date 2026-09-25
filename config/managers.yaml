@@ -9,8 +9,8 @@ managers:
   - { id: 4,  name: "Potinga Dima",      showroom: null,        active: false, test_account: true }
   # Директор по продажам, не продаёт.
   - { id: 6,  name: "Iordache Razvan",   showroom: null,        active: false }
-  # Маркетинг, не продавец: в метриках по консультантам не участвует.
-  - { id: 7,  name: "Marketing Sofa",    showroom: null,        active: false }
+  # Маркетинг, не продавец. Desemnat по умолчанию в форме mefi: лид на нём никто не взял.
+  - { id: 7,  name: "Marketing Sofa",    showroom: null,        active: false, not_taken: true }
   # Продаёт и управляет Brașov.
   - { id: 8,  name: "Roibu Valeria",     showroom: "Brașov",    active: true }
   - { id: 9,  name: "Moaca Andreea",     showroom: "Brașov",    active: true }

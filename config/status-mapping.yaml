@@ -107,13 +107,15 @@ sources:
   showroom_visit: ["Showroom"]             # считается отдельно от входящих лидов
   # Статус визита: d1 считает «Vizita in showroom» по переходу в этот статус между снапшотами.
   showroom_visit_status: "SHOWROOM"
-  web: ["Site", "Mail", "Meta ADS"]        # строка «Leads Mail/FB/IG» в формате продавцов
+  # "FacebookMessanger" — написание mefi, не исправлять.
+  web: ["Site", "Mail", "Meta ADS", "FacebookMessanger"]   # строка «Leads Mail/FB/IG» в формате продавцов
   phone: ["Telefon"]
   whatsapp: ["WhatsApp"]
   partner: ["Colaborare"]
   # "Arhirtect" — опечатка в самой mefi (id 7), не исправлять.
   # Google (id 1) и Teren (id 4): лидов нет, имена из enums.md не проверены.
-  other: ["Recomandare", "Arhirtect", "Client Fidel", "Google", "Teren"]
+  # "BIFE 2026" встречается и как источник, и как статус (выставка BIFE-SIM 2026).
+  other: ["Recomandare", "Arhirtect", "Client Fidel", "Google", "Teren", "BIFE 2026"]
 
 # Порядок блоков в отчётах, как в ручном отчёте продавцов.
 showrooms: ["Brașov", "București", "Cluj"]

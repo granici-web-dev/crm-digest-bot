@@ -1,7 +1,11 @@
 import asyncio
+import os
+from pathlib import Path
 
+import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
+from alembic.config import Config
 from alembic.migration import MigrationContext
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
@@ -9,7 +13,7 @@ from sqlalchemy.engine.url import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 from testcontainers.community.postgres import PostgresContainer
 
-from conftest import alembic_config
+from conftest import REPOSITORY_ROOT, alembic_config
 from digest.db.schema import metadata
 
 
@@ -46,3 +50,26 @@ def test_migrations_upgrade_from_zero(postgres_container: PostgresContainer) -> 
     differences, tenant_ids = asyncio.run(schema_state(fresh_database_url))
     assert differences == []
     assert tenant_ids == ["sofabelle"]
+
+
+def test_alembic_upgrade_uses_only_database_url(
+    postgres_container: PostgresContainer, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    server_url = postgres_container.get_connection_url(driver="asyncpg")
+    fresh_database_url = (
+        make_url(server_url).set(database="env_only_check").render_as_string(hide_password=False)
+    )
+    asyncio.run(recreate_database(server_url, "env_only_check"))
+    # Без .env в рабочем каталоге и без токенов ботов: миграция видит только DATABASE_URL.
+    monkeypatch.chdir(tmp_path)
+    for name in list(os.environ):
+        if name.startswith(("TELEGRAM_", "MEFI_", "TENANT_", "ANTHROPIC_")):
+            monkeypatch.delenv(name)
+    monkeypatch.setenv("DATABASE_URL", fresh_database_url)
+    config = Config(REPOSITORY_ROOT / "alembic.ini")
+    config.attributes["configure_logging"] = False
+
+    command.upgrade(config, "head")
+
+    differences, _tenant_ids = asyncio.run(schema_state(fresh_database_url))
+    assert differences == []

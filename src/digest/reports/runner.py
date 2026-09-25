@@ -19,7 +19,13 @@ from digest.db.lead_frame import (
     load_lead_frame,
     previous_success_snapshot_date,
 )
-from digest.db.schema import module_settings, report_runs, settings, snapshot_runs
+from digest.db.schema import (
+    lead_snapshots,
+    module_settings,
+    report_runs,
+    settings,
+    snapshot_runs,
+)
 from digest.delivery.ops import OpsChannel, notify_ops
 from digest.delivery.telegram import send_message_with_retry, split_message
 from digest.metrics.daily import PreviousSnapshot
@@ -221,6 +227,7 @@ async def alert_snapshot_findings(
                 select(
                     snapshot_runs.c.new_unmapped_lead_ids,
                     snapshot_runs.c.won_converted_mismatch_ids,
+                    snapshot_runs.c.custom_field_mismatches,
                 ).where(
                     snapshot_runs.c.tenant_id == deps.tenant_id,
                     snapshot_runs.c.snapshot_date == snapshot_date,
@@ -228,12 +235,47 @@ async def alert_snapshot_findings(
                 )
             )
         ).one()
-    new_unmapped_ids, won_mismatch_ids = findings
-    if new_unmapped_ids:
+        new_unmapped_ids, won_mismatch_ids, custom_field_mismatches = findings
+        # Статус берётся из снапшота, а не из кадра: в кадре нет лидов тестового аккаунта.
+        unmapped_status_rows = (
+            await connection.execute(
+                select(lead_snapshots.c.lead_id, lead_snapshots.c.status_name).where(
+                    lead_snapshots.c.tenant_id == deps.tenant_id,
+                    lead_snapshots.c.snapshot_date == snapshot_date,
+                    lead_snapshots.c.lead_id.in_(new_unmapped_ids or []),
+                )
+            )
+        ).all()
+    ids_by_unknown_status: dict[str, list[int]] = {}
+    without_status_ids: list[int] = []
+    for lead_id, status_name in sorted(unmapped_status_rows):
+        if status_name is None:
+            without_status_ids.append(lead_id)
+        else:
+            ids_by_unknown_status.setdefault(status_name, []).append(lead_id)
+    if without_status_ids:
         await notify_ops(
             deps.ops,
-            f"Новые UNMAPPED лиды ({len(new_unmapped_ids)}), id: {sorted(new_unmapped_ids)}. "
-            "Добавьте статус в config/status-mapping.yaml.",
+            f"Новые лиды без статуса (Necompletat), UNMAPPED ({len(without_status_ids)}), "
+            f"id: {without_status_ids}.",
+        )
+    for status_name, lead_ids in sorted(ids_by_unknown_status.items()):
+        await notify_ops(
+            deps.ops,
+            f"Новые лиды с неизвестным статусом «{status_name}», UNMAPPED ({len(lead_ids)}), "
+            f"id: {lead_ids}. Добавьте статус в config/status-mapping.yaml.",
+        )
+    unknown_raw_keys = [
+        mismatch
+        for mismatch in custom_field_mismatches or []
+        if mismatch["problem"] == "unknown_raw_key"
+    ]
+    for mismatch in unknown_raw_keys:
+        await notify_ops(
+            deps.ops,
+            f"Незнакомый ключ лида «{mismatch['expected_name']}» в ответе mefi "
+            f"({mismatch['lead_count']} лидов), сохранён в raw. Проверьте, не контакт ли это, "
+            "и добавьте в raw_known_keys или raw_strip config/status-mapping.yaml.",
         )
     if won_mismatch_ids:
         await notify_ops(

@@ -244,14 +244,73 @@ async def test_snapshot_findings_are_alerted_as_ids_only(harness: Harness) -> No
     await run_report("daily", NOW, harness.deps)
 
     assert (
-        "Новые UNMAPPED лиды (1), id: [7]. Добавьте статус в config/status-mapping.yaml."
-        in harness.ops_texts
+        "Новые лиды с неизвестным статусом «STATUS NOU», UNMAPPED (1), id: [7]. "
+        "Добавьте статус в config/status-mapping.yaml." in harness.ops_texts
     )
     assert "Clienți и converted_at расходятся (1), id: [3]." in harness.ops_texts
     assert (
         "Лиды на консультантах вне config/managers.yaml, assigned_to.id: [999]."
         in harness.ops_texts
     )
+
+
+async def test_unmapped_alert_separates_missing_and_unknown_status(harness: Harness) -> None:
+    await store_snapshot(
+        harness.deps.engine,
+        REPORT_DATE,
+        [
+            todays_lead(1, category="UNMAPPED", status_name=None),
+            todays_lead(2, category="UNMAPPED", status_name="STATUS NOU"),
+            todays_lead(3, category="UNMAPPED", status_name=None),
+            # Лид тестового аккаунта не попадает в кадр, но алерт о нём обязателен.
+            todays_lead(4, category="UNMAPPED", status_name="ALT STATUS", assigned_to_id=4),
+        ],
+        new_unmapped_lead_ids=[1, 2, 3, 4],
+    )
+
+    await run_report("daily", NOW, harness.deps)
+
+    assert "Новые лиды без статуса (Necompletat), UNMAPPED (2), id: [1, 3]." in harness.ops_texts
+    assert (
+        "Новые лиды с неизвестным статусом «STATUS NOU», UNMAPPED (1), id: [2]. "
+        "Добавьте статус в config/status-mapping.yaml." in harness.ops_texts
+    )
+    assert any("«ALT STATUS»" in alert and "id: [4]" in alert for alert in harness.ops_texts)
+
+
+async def test_unknown_raw_key_is_alerted(harness: Harness) -> None:
+    await store_snapshot(
+        harness.deps.engine,
+        REPORT_DATE,
+        [todays_lead(1)],
+        custom_field_mismatches=[
+            {
+                "field_id": None,
+                "expected_name": "whatsapp_number",
+                "problem": "unknown_raw_key",
+                "actual": None,
+                "lead_count": 2,
+                "lead_ids": [1, 5],
+            },
+            {
+                "field_id": 20,
+                "expected_name": "Ofertat",
+                "problem": "unexpected_value",
+                "actual": "POATE",
+                "lead_count": 1,
+                "lead_ids": [1],
+            },
+        ],
+    )
+
+    await run_report("daily", NOW, harness.deps)
+
+    raw_key_alerts = [alert for alert in harness.ops_texts if "Незнакомый ключ" in alert]
+    assert raw_key_alerts == [
+        "Незнакомый ключ лида «whatsapp_number» в ответе mefi (2 лидов), сохранён в raw. "
+        "Проверьте, не контакт ли это, и добавьте в raw_known_keys или raw_strip "
+        "config/status-mapping.yaml."
+    ]
 
 
 async def test_yesterdays_snapshot_gives_transitions(harness: Harness) -> None:
