@@ -184,8 +184,21 @@ def test_scr_text_shows_level_and_target(app_config: AppConfig) -> None:
     assert "țintă ≥10,0%" in text
     assert "Brașov 10,0% · Elită ✓" in text
     assert "Cluj 0,0% · Sub minim ✗" in text
-    assert "(fără showroom) —\n" in text
+    assert "(fără showroom)" not in text
     assert "Total 8,3% · Bine ✗" in text
+
+
+def test_scr_text_shows_no_showroom_row_with_useful_leads(app_config: AppConfig) -> None:
+    frame = pd.concat(
+        [
+            month_frame(app_config),
+            prepare_lead_frame([lead(17, at(date(2026, 9, 21), 12), showroom=None)], app_config),
+        ]
+    )
+
+    text = IMPLEMENTED_MODULES["m4"](frame, context(app_config, "ro")).text
+
+    assert "(fără showroom) 0,0% · Sub minim ✗" in text
 
 
 def spi_words(app_config: AppConfig) -> set[str]:

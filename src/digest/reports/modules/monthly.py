@@ -99,7 +99,11 @@ def scr_with_targets_report(lead_frame: pd.DataFrame, context: ReportContext) ->
             "scr_with_targets",
             context.language,
             scr=monthly_scr(funnel, config),
-            showrooms=funnel.showrooms_with_leads,
+            # Строка без шоурума только с полезными лидами: у IRELEVANT-лидов SCR всегда «—».
+            showrooms=[
+                *funnel.named_showrooms_with_leads,
+                *([None] if funnel.without_showroom.useful else []),
+            ],
             levels=[
                 (level.threshold, config.kpi.thresholds[level.threshold])
                 for level in config.modules.scr_levels_params.levels
