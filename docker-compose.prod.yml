@@ -25,6 +25,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    init: true
     restart: unless-stopped
     logging: *logging
 
@@ -40,12 +41,13 @@ services:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       retries: 10
+    init: true
     restart: unless-stopped
     logging: *logging
 
   backup:
     image: postgres:16
-    entrypoint: ["sh", "/backup.sh", "loop"]
+    entrypoint: ["sh", "/deploy/backup.sh", "loop"]
     environment:
       PGHOST: postgres
       PGUSER: ${POSTGRES_USER:-digest}
@@ -53,11 +55,14 @@ services:
       PGDATABASE: ${POSTGRES_DB:-digest}
       BACKUP_DIR: /backups
     volumes:
-      - ./deploy/backup.sh:/backup.sh:ro
+      # Каталог, а не файл: bind-mount файла держит старый inode, и после git pull
+      # контейнер продолжал бы выполнять прежний backup.sh.
+      - ./deploy:/deploy:ro
       - ./backups:/backups
     depends_on:
       postgres:
         condition: service_healthy
+    init: true
     restart: unless-stopped
     logging: *logging
 

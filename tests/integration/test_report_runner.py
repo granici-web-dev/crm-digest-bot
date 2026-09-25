@@ -1,6 +1,7 @@
 import logging
 from dataclasses import replace
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -10,7 +11,7 @@ from aiogram.methods import SendMessage
 from sqlalchemy import insert, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from digest.app import DEFAULT_SCHEDULES, seed_defaults
+from digest.app import DEFAULT_SCHEDULES, report_job, seed_defaults
 from digest.config import AppConfig
 from digest.db.schema import lead_snapshots, module_settings, report_runs, schedules, snapshot_runs
 from digest.delivery.ops import OpsChannel
@@ -500,3 +501,27 @@ async def test_weekly_report_on_monday_reads_sundays_snapshot(harness: Harness) 
     assert "leads: 2" in harness.group_text
     [run] = await report_run_rows(harness.deps.engine)
     assert run["snapshot_date"] == sunday
+
+
+async def test_daily_report_job_alerts_when_backup_dir_has_no_dumps(
+    harness: Harness, tmp_path: Path
+) -> None:
+    await report_job(harness.deps, "daily", tmp_path)
+
+    assert any("нет ни одного дампа" in text for text in harness.ops_texts)
+
+
+async def test_non_daily_report_job_does_not_check_backups(
+    harness: Harness, tmp_path: Path
+) -> None:
+    await report_job(harness.deps, "weekly", tmp_path)
+
+    assert not any("Бэкап" in text for text in harness.ops_texts)
+
+
+async def test_failed_backup_check_is_reported_to_ops(harness: Harness, tmp_path: Path) -> None:
+    (tmp_path / "digest-2026-09-25.dump").symlink_to(tmp_path / "missing-target")
+
+    await report_job(harness.deps, "daily", tmp_path)
+
+    assert "Проверка бэкапа упала: FileNotFoundError." in harness.ops_texts

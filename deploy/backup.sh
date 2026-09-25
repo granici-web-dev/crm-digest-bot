@@ -1,5 +1,5 @@
 #!/bin/sh
-# Ежедневный pg_dump с хранением 30 дней. Работает в контейнере postgres:16
+# Ежедневный pg_dump; удаляются дампы старше 30 полных суток (find -mtime +30). Работает в контейнере postgres:16
 # (docker-compose.prod.yml), подключение через PGHOST, PGUSER, PGPASSWORD, PGDATABASE.
 set -eu
 
@@ -20,7 +20,9 @@ backup_once() {
         mv "$partial_dump" "$todays_dump"
         echo "backup written: $todays_dump"
     fi
-    find "$BACKUP_DIR" -maxdepth 1 -type f -name 'digest-*.dump' -mtime +"$RETENTION_DAYS" -delete
+    # .partial остаётся, только если контейнер убили посреди pg_dump; такие файлы тоже стареют и удаляются.
+    find "$BACKUP_DIR" -maxdepth 1 -type f \( -name 'digest-*.dump' -o -name 'digest-*.dump.partial' \) \
+        -mtime +"$RETENTION_DAYS" -delete
 }
 
 case "${1:-}" in

@@ -94,6 +94,16 @@ def test_dumps_older_than_30_days_are_deleted_and_newer_kept(
     assert kept_dump.exists()
 
 
+def test_partial_dumps_older_than_30_days_are_deleted(backup_dir: Path, fake_bin: Path) -> None:
+    expired_partial = backup_dir / "digest-2026-08-01.dump.partial"
+    make_file_aged(expired_partial, timedelta(days=31, hours=1))
+
+    result = run_backup_once(backup_dir, fake_bin)
+
+    assert result.returncode == 0
+    assert not expired_partial.exists()
+
+
 def test_foreign_files_are_not_deleted(backup_dir: Path, fake_bin: Path) -> None:
     foreign_files = [backup_dir / "local-before-migration.dump", backup_dir / "notes.txt"]
     for foreign_file in foreign_files:
