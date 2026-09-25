@@ -37,3 +37,7 @@ uv run python -m digest report daily --date YYYY-MM-DD --dry-run
 ```
 
 `snapshot` всегда снимает состояние mefi за сегодня по Бухаресту; строки Vizita, Oferta и Contract появятся в отчёте со второго дня подряд. `--dry-run` отправляет только в `TELEGRAM_TEST_CHAT_ID`.
+
+## Деплой
+
+VPS, Docker Compose, бэкапы, обновление и откат: `docs/deploy.md`. CI (`.github/workflows/ci.yml`) на каждый push и pull request: ruff, mypy, pytest с Postgres из testcontainers, сборка образа.
