@@ -1,31 +1,19 @@
 {% macro block(title, row) %}
 <b>{{ title }}:</b>
 {{ report_date.strftime("%d.%m.%Y") }}
-
 Leads Mail/FB/IG: {{ row.leads_web }}
-
 Leads Telefon: {{ row.leads_phone }}
-
 Leads WhatsApp: {{ row.leads_whatsapp }}
-
 Leads Designer/Colaboratori: {{ row.leads_partner }}
-
 Leads Alte/Showroom (revenire): {{ row.leads_other }}
-
 Vizita in showroom: {{ row.showroom_visits | dash }}
-
 Oferta: {{ row.offers | dash }}
-
 Reoferta: —
-
 Contract Cantitate: {{ row.contracts | dash }}
-
 Încasări: —
 {% endmacro %}
 {% for showroom, row in counts.by_showroom.items() %}
 {{ block("Sofabelle " ~ showroom, row) }}
-
-
 {% endfor %}
 {% if counts.without_showroom_lead_count > 0 %}
 Fără showroom: {{ counts.without_showroom_lead_count }}
