@@ -13,8 +13,7 @@ TODAY = date(2026, 9, 25)
 
 
 def overdue_ids(rows: list[dict[str, Any]], config: AppConfig) -> list[int]:
-    overdue = overdue_revenire(prepare_lead_frame(rows, config), TODAY, config)
-    return sorted(overdue["lead_id"].tolist())
+    return sorted(overdue_revenire(prepare_lead_frame(rows, config), TODAY, config))
 
 
 @pytest.mark.parametrize(

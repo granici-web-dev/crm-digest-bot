@@ -4,8 +4,8 @@ from typing import Any
 
 import pandas as pd
 
-from digest.config import AppConfig, Direction
-from digest.metrics.kpi import Period, kpis_from, lead_counts_by_manager
+from digest.config import KPI_NAMES, AppConfig, Direction
+from digest.metrics.kpi import COUNT_NAMES, Period, kpis_from, lead_counts_by_manager
 
 
 def meets_target(value: float | None, target_value: float, direction: Direction) -> bool | None:
@@ -41,5 +41,9 @@ def manager_cockpit_table(
                 **targets,
             }
         )
-    # dtype=object: иначе pandas превратит None в NaN, а «—» в отчёте держится на None.
-    return pd.DataFrame(rows, dtype=object)
+    table = pd.DataFrame(rows, columns=["manager_id", "name", "showroom", *COUNT_NAMES])
+    # object только для KPI и целей: иначе pandas превратит None в NaN, а «—» в отчёте держится
+    # на None; счётчики остаются int.
+    for column in [*KPI_NAMES, *(f"{kpi_name}_meets_target" for kpi_name in config.kpi.targets)]:
+        table[column] = pd.Series([row[column] for row in rows], dtype=object)
+    return table

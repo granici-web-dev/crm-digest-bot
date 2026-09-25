@@ -8,7 +8,7 @@ from digest.metrics.kpi import Period, kpis_from, lead_counts
 OPEN_CATEGORIES = ("ACTIVE", "ACTIVE_FOLLOWUP", "UNMAPPED")
 
 
-def overdue_revenire(lead_frame: pd.DataFrame, today: date, config: AppConfig) -> pd.DataFrame:
+def overdue_revenire(lead_frame: pd.DataFrame, today: date, config: AppConfig) -> list[int]:
     # docs/kpi-definitions.md, «Дополнительные метрики»: из LOST только причины с полем
     # followup_field в status-mapping.yaml (Stand BY, бриф §3).
     followup_reasons = [
@@ -24,8 +24,8 @@ def overdue_revenire(lead_frame: pd.DataFrame, today: date, config: AppConfig) -
     # status_changed_at = null: статус задан при создании и с тех пор не менялся (CLAUDE.md).
     untouched_since_revenire = status_change_day.isna() | status_change_day.lt(revenire_day)
     due = revenire_day.le(pd.Timestamp(today))
-    overdue: pd.DataFrame = lead_frame.loc[eligible & due & untouched_since_revenire]
-    return overdue
+    overdue = lead_frame.loc[eligible & due & untouched_since_revenire, "lead_id"]
+    return [int(lead_id) for lead_id in overdue]
 
 
 def cohort_conversion(lead_frame: pd.DataFrame, cohort: Period, config: AppConfig) -> float | None:

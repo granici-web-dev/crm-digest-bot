@@ -78,3 +78,14 @@ def test_target_is_unknown_for_null_kpi(app_config: AppConfig) -> None:
     row = dragoi_row([], app_config)
 
     assert (row["scr"], row["scr_meets_target"]) == (None, None)
+
+
+def test_counts_stay_integers_while_kpis_keep_none(app_config: AppConfig) -> None:
+    rows = [make_snapshot_row(lead_id=1, created_at=IN_SEPTEMBER)]
+
+    table = manager_cockpit_table(
+        prepare_lead_frame(rows, app_config), SEPTEMBER, date(2026, 9, 30), app_config
+    )
+
+    assert table["leads"].dtype == "int64"
+    assert table["scr"].dtype == object
