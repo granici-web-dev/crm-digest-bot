@@ -1,0 +1,5 @@
+{% macro by_month(values) %}{% for value in values %}{{ month_names[loop.index0] }} {{ value }}{% if not loop.last %} · {% endif %}{% endfor %}{% endmacro %}
+<b>Trend 6 luni</b>
+Lead-uri: {{ by_month(trend.leads) }}
+Contracte: {{ by_month(trend.contracts) }}
+<i>Lead-uri după data creării, contracte după data conversiei (converted_at).</i>

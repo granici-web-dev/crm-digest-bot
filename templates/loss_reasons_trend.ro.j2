@@ -1,0 +1,9 @@
+<b>Motive de pierdere: {{ month_name }} față de {{ previous_month_name }}</b>
+{% if losses.current.total or losses.previous.total %}
+Pierdute {{ losses.current.total }} ({{ previous_month_name }} {{ losses.previous.total }}) {{ losses.total_change | change }}
+{% for reason in losses.reasons_by_count %}
+{{ reason_labels[reason] }} {{ losses.current.reason_total(reason) }} · {{ losses.reason_share(reason) | percent }} ({{ previous_month_name }} {{ losses.previous.reason_total(reason) }}) {{ losses.reason_change(reason) | change }}
+{% endfor %}
+{% else %}
+Pierdute: 0
+{% endif %}

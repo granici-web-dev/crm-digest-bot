@@ -19,6 +19,12 @@ def percent(value: float | None) -> str:
     return "—" if value is None else f"{round(value * 100)}%"
 
 
+def percent_one_decimal(value: float | None) -> str:
+    # m4 и m5 рядом с порогами: целое округление показало бы 9,6 % как 10 %. Отметка цели
+    # считается по точному значению, а не по подписи.
+    return "—" if value is None else f"{value * 100:.1f}%".replace(".", ",")
+
+
 def change_label(value: float | None) -> str:
     if value is None:
         return "(—)"
@@ -39,6 +45,7 @@ def template_environment() -> Environment:
     )
     environment.filters["dash"] = dash_if_unknown
     environment.filters["percent"] = percent
+    environment.filters["percent1"] = percent_one_decimal
     environment.filters["change"] = change_label
     return environment
 

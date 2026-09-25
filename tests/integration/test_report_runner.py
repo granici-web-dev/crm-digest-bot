@@ -408,7 +408,7 @@ async def test_older_previous_snapshot_is_not_diffed(harness: Harness) -> None:
 async def test_report_without_implemented_modules_is_not_sent(harness: Harness) -> None:
     await store_snapshot(harness.deps.engine, REPORT_DATE, [todays_lead(1)])
 
-    outcome = await run_report("monthly", NOW, harness.deps)
+    outcome = await run_report("yearly", NOW, harness.deps)
 
     assert outcome == "failed"
     assert harness.group.sent == []
@@ -601,6 +601,47 @@ async def test_photo_send_failure_marks_run_failed_and_keeps_text_ids(harness: H
     [run] = await report_run_rows(harness.deps.engine)
     assert run["status"] == "failed"
     assert run["message_ids"] == [message.message_id for message in harness.group.sent]
+
+
+async def test_monthly_report_sends_text_two_photos_and_excel(harness: Harness) -> None:
+    september = datetime(2026, 9, 15, 12, 0, tzinfo=BUCHAREST)
+    await store_snapshot(
+        harness.deps.engine,
+        MONTH_END,
+        [
+            todays_lead(1, created_at=september, showroom="Brașov"),
+            todays_lead(
+                2,
+                created_at=september,
+                showroom="Cluj",
+                category="WON",
+                status_name="Clienți",
+                converted_at=september,
+            ),
+        ],
+    )
+
+    outcome = await run_report("monthly", FIRST_OF_OCTOBER_09, harness.deps)
+
+    assert outcome == "success"
+    text = harness.group_text
+    assert "Raport lunar" in text
+    assert "<b>Total: 2 → 2 → 0 → 1</b>" in text
+    assert "Manager Cockpit" in text
+    assert "Motive de pierdere" in text
+    assert "📎 sofabelle_2026-09.xlsx" in text
+    assert [photo.filename for photo in harness.group.photos] == [
+        "funnel_2026-09.png",
+        "trend_2026-09.png",
+    ]
+    [document] = harness.group.documents
+    assert document.filename == "sofabelle_2026-09.xlsx"
+    [run] = await report_run_rows(harness.deps.engine)
+    assert run["message_ids"] == [
+        *(message.message_id for message in harness.group.sent),
+        *(photo.message_id for photo in harness.group.photos),
+        document.message_id,
+    ]
 
 
 async def test_weekly_report_contains_implemented_modules_and_excel(harness: Harness) -> None:

@@ -6,7 +6,14 @@ import pandas as pd
 from digest.config import AppConfig, TimeSettings
 from digest.metrics.cockpit import meets_target
 from digest.metrics.daily import daily_window
-from digest.metrics.kpi import LeadCounts, Period, kpis_from, lead_counts, lead_counts_by_showroom
+from digest.metrics.kpi import (
+    LeadCounts,
+    Period,
+    kpis_from,
+    lead_counts,
+    lead_counts_by_showroom,
+    ratio,
+)
 from digest.metrics.weekly import (
     LossReasons,
     converted_count,
@@ -59,6 +66,28 @@ class MonthlyLossReasons:
     @property
     def total_change(self) -> float | None:
         return relative_change(self.current.total, self.previous.total)
+
+    def reason_share(self, reason: str) -> float | None:
+        return ratio(self.current.reason_total(reason), self.current.total)
+
+    @property
+    def reasons_by_count(self) -> tuple[str, ...]:
+        # Причина с нулём в этом месяце, но не в прошлом, остаётся в списке: её исчезновение
+        # тоже динамика.
+        counted = [
+            reason
+            for reason in self.current.reasons
+            if self.current.reason_total(reason) or self.previous.reason_total(reason)
+        ]
+        return tuple(
+            sorted(
+                counted,
+                key=lambda reason: (
+                    -self.current.reason_total(reason),
+                    -self.previous.reason_total(reason),
+                ),
+            )
+        )
 
 
 def first_day_of_month(day: date) -> date:

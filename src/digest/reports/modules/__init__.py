@@ -10,6 +10,14 @@ from digest.reports.modules.daily_checks import (
     stale_offers_report,
     untouched_leads_report,
 )
+from digest.reports.modules.monthly import (
+    funnel_by_showroom_report,
+    loss_reasons_trend_report,
+    manager_cockpit_report,
+    scr_with_targets_report,
+    trend_6m_report,
+)
+from digest.reports.modules.monthly_excel import monthly_excel_attachment_report
 from digest.reports.modules.seller_format import seller_format_report
 from digest.reports.modules.weekly import (
     loss_reasons_report,
@@ -35,4 +43,10 @@ IMPLEMENTED_MODULES: dict[str, ReportModuleFunction] = {
     "w4": loss_reasons_report,
     "w8": week_over_week_report,
     "w12": excel_attachment_report,
+    "m2": funnel_by_showroom_report,
+    "m3": trend_6m_report,
+    "m4": scr_with_targets_report,
+    "m5": manager_cockpit_report,
+    "m8": loss_reasons_trend_report,
+    "m19": monthly_excel_attachment_report,
 }
