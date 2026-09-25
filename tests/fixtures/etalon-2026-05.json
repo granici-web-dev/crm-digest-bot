@@ -12,7 +12,7 @@
     "manual_check": {
       "agent": "Moaca Andreea",
       "checked_on": "2026-09-25",
-      "note": "23 строки в Excel, 1 INFLUENCER исключён; клиентов нет, пересечение SC не проверено",
+      "note": "23 строки в Excel, 1 INFLUENCER исключён; клиентов нет, пересечение SC не проверено. active_offers_14 пересчитан 25.09.2026 по ADR-005: 6 висевших по старой формуле в статусах A REFUZAT (3) и BUGET (3), в работе висящих оферт нет",
       "counts": {
         "leads": 22,
         "irr_leads": 3,
@@ -24,7 +24,7 @@
         "pnp": 2,
         "showroom_visits": 10,
         "clienti_from_showroom": 0,
-        "active_offers_14": 6,
+        "active_offers_14": 0,
         "unmapped": 0
       }
     }
@@ -4782,7 +4782,7 @@
         "pnp": 9,
         "showroom_visits": 16,
         "clienti_from_showroom": 3,
-        "active_offers_14": 9,
+        "active_offers_14": 0,
         "unmapped": 0
       },
       "kpi": {
@@ -4793,7 +4793,7 @@
         "plr": 0.3170731707317073,
         "sc": 0.1875,
         "pfr": 0.1836734693877551,
-        "acr": 0.15254237288135594,
+        "acr": 0.0,
         "irr": 0.1694915254237288
       }
     },
@@ -4809,7 +4809,7 @@
         "pnp": 7,
         "showroom_visits": 36,
         "clienti_from_showroom": 2,
-        "active_offers_14": 16,
+        "active_offers_14": 0,
         "unmapped": 0
       },
       "kpi": {
@@ -4820,7 +4820,7 @@
         "plr": 0.5,
         "sc": 0.05555555555555555,
         "pfr": 0.1111111111111111,
-        "acr": 0.21052631578947367,
+        "acr": 0.0,
         "irr": 0.17105263157894737
       }
     },
@@ -4836,7 +4836,7 @@
         "pnp": 6,
         "showroom_visits": 20,
         "clienti_from_showroom": 0,
-        "active_offers_14": 13,
+        "active_offers_14": 0,
         "unmapped": 0
       },
       "kpi": {
@@ -4847,7 +4847,7 @@
         "plr": 0.23076923076923078,
         "sc": 0.0,
         "pfr": 0.10909090909090909,
-        "acr": 0.19402985074626866,
+        "acr": 0.0,
         "irr": 0.1791044776119403
       }
     },
@@ -4863,7 +4863,7 @@
         "pnp": 2,
         "showroom_visits": 10,
         "clienti_from_showroom": 0,
-        "active_offers_14": 6,
+        "active_offers_14": 0,
         "unmapped": 0
       },
       "kpi": {
@@ -4874,7 +4874,7 @@
         "plr": 0.2857142857142857,
         "sc": 0.0,
         "pfr": 0.10526315789473684,
-        "acr": 0.2727272727272727,
+        "acr": 0.0,
         "irr": 0.13636363636363635
       }
     },
@@ -4890,7 +4890,7 @@
         "pnp": 5,
         "showroom_visits": 30,
         "clienti_from_showroom": 1,
-        "active_offers_14": 14,
+        "active_offers_14": 0,
         "unmapped": 0
       },
       "kpi": {
@@ -4901,7 +4901,7 @@
         "plr": 0.14705882352941177,
         "sc": 0.03333333333333333,
         "pfr": 0.1388888888888889,
-        "acr": 0.2545454545454545,
+        "acr": 0.0,
         "irr": 0.34545454545454546
       }
     },
@@ -4917,7 +4917,7 @@
         "pnp": 4,
         "showroom_visits": 13,
         "clienti_from_showroom": 2,
-        "active_offers_14": 2,
+        "active_offers_14": 0,
         "unmapped": 0
       },
       "kpi": {
@@ -4928,7 +4928,7 @@
         "plr": 0.0,
         "sc": 0.15384615384615385,
         "pfr": 0.3076923076923077,
-        "acr": 0.11764705882352941,
+        "acr": 0.0,
         "irr": 0.23529411764705882
       }
     }
@@ -4945,7 +4945,7 @@
       "pnp": 33,
       "showroom_visits": 125,
       "clienti_from_showroom": 8,
-      "active_offers_14": 60,
+      "active_offers_14": 0,
       "unmapped": 0
     },
     "kpi": {
@@ -4956,7 +4956,7 @@
       "plr": 0.2931937172774869,
       "sc": 0.064,
       "pfr": 0.14042553191489363,
-      "acr": 0.19933554817275748,
+      "acr": 0.0,
       "irr": 0.21926910299003322
     }
   },
@@ -4974,7 +4974,7 @@
         "pnp": 8,
         "showroom_visits": 30,
         "clienti_from_showroom": 0,
-        "active_offers_14": 19,
+        "active_offers_14": 0,
         "unmapped": 0
       },
       "kpi": {
@@ -4985,7 +4985,7 @@
         "plr": 0.24528301886792453,
         "sc": 0.0,
         "pfr": 0.10810810810810811,
-        "acr": 0.21348314606741572,
+        "acr": 0.0,
         "irr": 0.16853932584269662
       }
     },
@@ -5002,7 +5002,7 @@
         "pnp": 16,
         "showroom_visits": 52,
         "clienti_from_showroom": 5,
-        "active_offers_14": 25,
+        "active_offers_14": 0,
         "unmapped": 0
       },
       "kpi": {
@@ -5013,7 +5013,7 @@
         "plr": 0.4175824175824176,
         "sc": 0.09615384615384616,
         "pfr": 0.14285714285714285,
-        "acr": 0.18518518518518517,
+        "acr": 0.0,
         "irr": 0.17037037037037037
       }
     },
@@ -5030,7 +5030,7 @@
         "pnp": 9,
         "showroom_visits": 43,
         "clienti_from_showroom": 3,
-        "active_offers_14": 16,
+        "active_offers_14": 0,
         "unmapped": 0
       },
       "kpi": {
@@ -5041,7 +5041,7 @@
         "plr": 0.10638297872340426,
         "sc": 0.06976744186046512,
         "pfr": 0.1836734693877551,
-        "acr": 0.22535211267605634,
+        "acr": 0.0,
         "irr": 0.30985915492957744
       }
     },

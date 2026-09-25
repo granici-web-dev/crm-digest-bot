@@ -39,7 +39,7 @@
 | `PNP` | `LEADS` с `is_produs_nepotrivit` |
 | `SHOWROOM_VISITS` | `LEADS` с `is_showroom_visit` |
 | `UNMAPPED` | `LEADS` с категорией `UNMAPPED` (инвариант 4); входят в `LEADS` и `USEFUL` и считаются отдельно |
-| `ACTIVE_OFFERS_14` | `OFFERS`, не `CLIENTI`, не `IRR_LEADS`, `analysis_date − date(last_contact_at) > 14` дней; `last_contact_at = null` → не входит |
+| `ACTIVE_OFFERS_14` | `OFFERS` с категорией `ACTIVE` или `ACTIVE_FOLLOWUP` (лид в работе), `analysis_date − date(last_contact_at) > 14` дней; `last_contact_at = null` → не входит. LOST, WON, UNMAPPED с офертой в истории не висят (ADR-005) |
 
 `analysis_date` — дата расчёта отчёта, дата `last_contact_at` берётся в Europe/Bucharest. Порог дней — `active_offer_stale_days`. `status_changed_at` не используется: в mefi он `null`, если статус задан при создании лида.
 
@@ -154,3 +154,4 @@
 | Консультант | `TRIM(Desemnat)` | `assigned_to.id` |
 | ACR | формула `01_Input_Leads!AC` ссылается на пустую `02_Setari_Targete!$B$2`, ACR = 0 у всех | по дате расчёта |
 | `cdr_contact_floor` | 80 % зашит в формулу `03_KPI_Agenti!W` | ключ в `config/kpi.yaml` |
+| Висящая оферта | `01_Input_Leads!AC`: оферта не Clienți и не IRELEVANT | оферта у лида в работе, `ACTIVE` или `ACTIVE_FOLLOWUP` (ADR-005) |

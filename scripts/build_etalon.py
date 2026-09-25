@@ -69,6 +69,16 @@ STATUSES_PARTNERSHIP = {"DESIGNER", "INFLUENCER"}
 STATUS_NU_A_RASPUNS = "NU A RASPUNS"
 STATUS_BUGET = "BUGET"
 STATUS_PRODUS_NEPOTRIVIT = "PRODUS NEPOTRIVIT"
+# ACTIVE and ACTIVE_FOLLOWUP: an offer hangs only while the lead is in work (ADR-005).
+STATUSES_IN_WORK = {
+    "IN PROCES",
+    "Ofertat",
+    "SHOWROOM",
+    "BIFE 2026",
+    "Revenire 1",
+    "Revenire 2",
+    "Revenire 3",
+}
 # Every status the mapping knows; anything else is UNMAPPED (invariant 4).
 KNOWN_STATUSES = {
     STATUS_CLIENTI,
@@ -77,13 +87,7 @@ KNOWN_STATUSES = {
     STATUS_NU_A_RASPUNS,
     STATUS_BUGET,
     STATUS_PRODUS_NEPOTRIVIT,
-    "IN PROCES",
-    "Ofertat",
-    "SHOWROOM",
-    "BIFE 2026",
-    "Revenire 1",
-    "Revenire 2",
-    "Revenire 3",
+    *STATUSES_IN_WORK,
     "Stand BY",
     "A REFUZAT",
     "CONCURENTA",
@@ -100,7 +104,11 @@ SYNTHETIC_MANAGER_IDS = {"Doja Ovidiu": 999}
 MANUAL_CHECK: dict[str, Any] = {
     "agent": "Moaca Andreea",
     "checked_on": "2026-09-25",
-    "note": "23 строки в Excel, 1 INFLUENCER исключён; клиентов нет, пересечение SC не проверено",
+    "note": (
+        "23 строки в Excel, 1 INFLUENCER исключён; клиентов нет, пересечение SC не проверено. "
+        "active_offers_14 пересчитан 25.09.2026 по ADR-005: 6 висевших по старой формуле "
+        "в статусах A REFUZAT (3) и BUGET (3), в работе висящих оферт нет"
+    ),
     "counts": {
         "leads": 22,
         "irr_leads": 3,
@@ -112,7 +120,7 @@ MANUAL_CHECK: dict[str, Any] = {
         "pnp": 2,
         "showroom_visits": 10,
         "clienti_from_showroom": 0,
-        "active_offers_14": 6,
+        "active_offers_14": 0,
         "unmapped": 0,
     },
 }
@@ -237,7 +245,7 @@ def brief_counts(leads: list[dict[str, Any]], analysis_date: date) -> dict[str, 
         counts["showroom_visits"] += showroom
         counts["clienti_from_showroom"] += clienti and showroom
         counts["active_offers_14"] += (
-            offer and not clienti and not irelevant and is_stale_offer(lead, analysis_date)
+            offer and status in STATUSES_IN_WORK and is_stale_offer(lead, analysis_date)
         )
         counts["unmapped"] += status not in KNOWN_STATUSES
     counts["useful"] = counts["leads"] - counts["irr_leads"]

@@ -160,14 +160,21 @@ def test_offer_without_last_contact_is_not_stale(app_config: AppConfig) -> None:
 
 
 @pytest.mark.parametrize(
-    "overrides",
+    ("overrides", "is_stale"),
     [
-        {"category": "WON", "status_name": "Clienți"},
-        {"category": "LOST", "loss_reason": "IRELEVANT", "status_name": "IRELEVANT"},
+        ({"category": "ACTIVE", "status_name": "Ofertat"}, True),
+        ({"category": "ACTIVE_FOLLOWUP", "status_name": "Revenire 2"}, True),
+        ({"category": "WON", "status_name": "Clienți"}, False),
+        ({"category": "LOST", "loss_reason": "IRELEVANT", "status_name": "IRELEVANT"}, False),
+        ({"category": "LOST", "loss_reason": "BUGET", "status_name": "BUGET"}, False),
+        ({"category": "LOST", "loss_reason": "A_REFUZAT", "status_name": "A REFUZAT"}, False),
+        ({"category": "LOST", "loss_reason": "STAND_BY", "status_name": "Stand BY"}, False),
+        ({"category": "UNMAPPED", "status_name": None}, False),
     ],
+    ids=["active", "followup", "won", "irelevant", "buget", "refuzat", "stand_by", "unmapped"],
 )
-def test_won_or_irrelevant_offer_is_not_stale(
-    app_config: AppConfig, overrides: dict[str, Any]
+def test_only_offer_of_lead_in_work_is_stale(
+    app_config: AppConfig, overrides: dict[str, Any], is_stale: bool
 ) -> None:
     row = make_snapshot_row(
         created_at=IN_SEPTEMBER,
@@ -176,7 +183,7 @@ def test_won_or_irrelevant_offer_is_not_stale(
         **overrides,
     )
 
-    assert company_counts([row], app_config).active_offers_14 == 0
+    assert company_counts([row], app_config).active_offers_14 == int(is_stale)
 
 
 def test_every_kpi_is_none_without_leads(app_config: AppConfig) -> None:

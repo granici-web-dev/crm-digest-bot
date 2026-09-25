@@ -54,8 +54,9 @@ def count_flags(
     in_period = created_at.ge(period.start) & created_at.lt(period.end)
     leads = lead_frame[in_period & ~lead_frame["is_excluded_from_leads"]]
 
-    # docs/kpi-definitions.md, «Базовые множества», ACTIVE_OFFERS_14: день контакта по Бухаресту,
-    # строго больше active_offer_stale_days; last_contact_at = null оферту висящей не делает.
+    # docs/kpi-definitions.md, «Базовые множества», ACTIVE_OFFERS_14 (ADR-005): оферта у лида в
+    # работе, день контакта по Бухаресту строго больше active_offer_stale_days назад;
+    # last_contact_at = null оферту висящей не делает. LOST с офертой в истории не висит.
     last_contact_at = leads["last_contact_at"]
     last_contact_day = last_contact_at.dt.tz_localize(None).dt.normalize()
     days_since_contact = (pd.Timestamp(analysis_date) - last_contact_day).dt.days
@@ -64,6 +65,7 @@ def count_flags(
     )
 
     clienti, irelevant = leads["is_clienti"], leads["is_irelevant"]
+    in_work = leads["category"].isin(["ACTIVE", "ACTIVE_FOLLOWUP"])
     offers, showroom_visits = leads["is_ofertat"], leads["is_showroom_visit"]
     flags = pd.DataFrame(
         {
@@ -77,7 +79,7 @@ def count_flags(
             "pnp": leads["is_produs_nepotrivit"],
             "showroom_visits": showroom_visits,
             "clienti_from_showroom": clienti & showroom_visits,
-            "active_offers_14": offers & ~clienti & ~irelevant & stale_contact,
+            "active_offers_14": offers & in_work & stale_contact,
             # Инвариант 4: UNMAPPED входит в LEADS и USEFUL и отдельно считается здесь.
             "unmapped": leads["is_unmapped"],
         },
