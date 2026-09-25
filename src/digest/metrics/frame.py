@@ -1,8 +1,12 @@
+from datetime import date
 from typing import Any
 
 import pandas as pd
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.config import AppConfig
+from digest.db.schema import lead_snapshots
 
 LEAD_FRAME_COLUMNS = (
     "lead_id",
@@ -55,3 +59,20 @@ def unknown_manager_ids(lead_frame: pd.DataFrame, config: AppConfig) -> set[int]
     known_ids = {manager.id for manager in config.managers.managers}
     assigned_ids = lead_frame["assigned_to_id"].dropna().unique()
     return {int(manager_id) for manager_id in assigned_ids if manager_id not in known_ids}
+
+
+async def load_lead_frame(
+    engine: AsyncEngine, tenant_id: str, snapshot_date: date, config: AppConfig
+) -> pd.DataFrame:
+    query = (
+        select(*(lead_snapshots.c[column] for column in LEAD_FRAME_COLUMNS))
+        .where(
+            lead_snapshots.c.tenant_id == tenant_id,
+            lead_snapshots.c.snapshot_date == snapshot_date,
+        )
+        .order_by(lead_snapshots.c.lead_id)
+    )
+    async with engine.connect() as connection:
+        result = await connection.execute(query)
+        rows = [dict(row) for row in result.mappings()]
+    return prepare_lead_frame(rows, config)
