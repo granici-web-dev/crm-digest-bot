@@ -49,3 +49,9 @@ def prepare_lead_frame(rows: list[dict[str, Any]], config: AppConfig) -> pd.Data
     showroom_visit_sources = config.status_mapping.sources["showroom_visit"]
     lead_frame["is_showroom_visit"] = lead_frame["source_name"].isin(showroom_visit_sources)
     return lead_frame
+
+
+def unknown_manager_ids(lead_frame: pd.DataFrame, config: AppConfig) -> set[int]:
+    known_ids = {manager.id for manager in config.managers.managers}
+    assigned_ids = lead_frame["assigned_to_id"].dropna().unique()
+    return {int(manager_id) for manager_id in assigned_ids if manager_id not in known_ids}
