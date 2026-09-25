@@ -1,0 +1,10 @@
+# Подписи графиков месячного отчёта (m2, m3), румынский.
+months: [Ian, Feb, Mar, Apr, Mai, Iun, Iul, Aug, Sep, Oct, Noi, Dec]
+funnel_title: "Pâlnia lunii pe showroom"
+funnel_stages: [Lead-uri, Utile, Oferte, Contracte]
+company: Total
+without_showroom: "(fără showroom)"
+trend_title: "Trend 6 luni"
+trend_leads: Lead-uri
+trend_contracts: Contracte
+trend_note: "Lead-uri după data creării, contracte după data conversiei (converted_at)"

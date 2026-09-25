@@ -146,6 +146,34 @@ def test_non_positive_stale_days_fails_config_load(days: int) -> None:
         KpiSettings.model_validate(raw_kpi)
 
 
+def test_repository_scr_levels_reference_kpi_thresholds(app_config: AppConfig) -> None:
+    assert app_config.modules.scr_levels_params.levels == ["scr_elite", "scr_bine", "scr_minim"]
+
+
+@pytest.mark.parametrize(
+    ("levels", "message"),
+    [
+        (["scr_elite", "scr_top"], "scr_top"),
+        (["scr_bine", "scr_elite"], "строго убывать"),
+        (["scr_elite", "scr_elite"], "строго убывать"),
+    ],
+)
+def test_scr_levels_must_be_known_descending_thresholds(levels: list[str], message: str) -> None:
+    raw_config = raw_repository_config()
+    raw_config["modules"]["monthly"]["m4"]["params"] = {"levels": levels}
+
+    with pytest.raises(ValidationError, match=message):
+        AppConfig.model_validate(raw_config)
+
+
+def test_scr_levels_must_not_be_empty() -> None:
+    raw_modules = repository_yaml("modules.yaml")
+    raw_modules["monthly"]["m4"]["params"] = {"levels": []}
+
+    with pytest.raises(ValidationError, match="модуль m4"):
+        ModuleRegistry.model_validate(raw_modules)
+
+
 def test_spi_module_cannot_be_enabled_while_kpi_is_provisional() -> None:
     raw_config = raw_repository_config()
     raw_config["modules"]["monthly"]["m6"]["enabled"] = True

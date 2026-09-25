@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import time
+from itertools import pairwise
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self, get_args
 
@@ -224,6 +225,10 @@ class AnomalyParams(StrictConfigModel):
     irelevant_spike_min: PositiveInt
 
 
+class ScrLevelsParams(StrictConfigModel):
+    levels: list[str] = Field(min_length=1)
+
+
 class ChatSettings(StrictConfigModel):
     enabled: bool
     tools: list[str]
@@ -244,6 +249,7 @@ class ModuleRegistry(StrictConfigModel):
 
     _untouched_leads_params: UntouchedLeadsParams = PrivateAttr()
     _anomaly_params: AnomalyParams = PrivateAttr()
+    _scr_levels_params: ScrLevelsParams = PrivateAttr()
 
     @property
     def untouched_leads_params(self) -> UntouchedLeadsParams:
@@ -252,6 +258,10 @@ class ModuleRegistry(StrictConfigModel):
     @property
     def anomaly_params(self) -> AnomalyParams:
         return self._anomaly_params
+
+    @property
+    def scr_levels_params(self) -> ScrLevelsParams:
+        return self._scr_levels_params
 
     def module_named(self, name: str) -> tuple[str, ReportModule]:
         for module_id, module in self.all_modules.items():
@@ -295,6 +305,7 @@ class ModuleRegistry(StrictConfigModel):
         # Один разбор при загрузке: опечатка в пороге роняет старт, а не отчёт в 19:30.
         self._untouched_leads_params = self.parsed_params("untouched_leads", UntouchedLeadsParams)
         self._anomaly_params = self.parsed_params("anomalies", AnomalyParams)
+        self._scr_levels_params = self.parsed_params("scr_with_targets", ScrLevelsParams)
         return self
 
 
@@ -469,6 +480,20 @@ class AppConfig(StrictConfigModel):
         if blocked:
             raise ValueError(
                 f"модули {blocked} требуют kpi.yaml status: calibrated, сейчас {self.kpi.status}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def scr_levels_are_descending_thresholds(self) -> Self:
+        # Ступени m4 ссылаются на пороги kpi.yaml по имени: число живёт только в thresholds.
+        levels = self.modules.scr_levels_params.levels
+        unknown = [name for name in levels if name not in self.kpi.thresholds]
+        if unknown:
+            raise ValueError(f"модуль scr_with_targets: пороги {unknown} не найдены в kpi.yaml")
+        values = [self.kpi.thresholds[name] for name in levels]
+        if any(higher <= lower for higher, lower in pairwise(values)):
+            raise ValueError(
+                f"модуль scr_with_targets: levels {levels} должны строго убывать, сейчас {values}"
             )
         return self
 

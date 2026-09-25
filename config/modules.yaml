@@ -43,7 +43,8 @@ monthly:          # 1-е число 09:00
   m1:  { name: month_summary_image,   sources: [B],    enabled: false }
   m2:  { name: funnel_by_showroom_image, sources: [A], enabled: true }
   m3:  { name: trend_6m_image,        sources: [A],    enabled: true }
-  m4:  { name: scr_with_targets,      sources: [A],    enabled: true }
+  # Ступени уровня SCR сверху вниз, имена порогов из kpi.yaml thresholds.
+  m4:  { name: scr_with_targets,      sources: [A],    enabled: true,  params: { levels: [scr_elite, scr_bine, scr_minim] } }
   # Таблица 9 KPI по консультантам (docs/kpi-definitions.md) с целями, без SPI, баллов и уровней.
   m5:  { name: manager_cockpit,       sources: [A],    enabled: true }
   # Баллы и SPI предварительные (ADR-002): включить можно только при kpi.yaml status: calibrated.
