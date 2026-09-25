@@ -152,3 +152,56 @@ def test_unknown_kpi_status_fails_config_load() -> None:
 
     with pytest.raises(ValidationError, match="status"):
         KpiSettings.model_validate(raw_kpi)
+
+
+def test_target_with_unknown_threshold_fails_config_load() -> None:
+    raw_kpi = repository_yaml("kpi.yaml")
+    raw_kpi["targets"]["l2o"]["threshold"] = "l2o_tinta"
+
+    with pytest.raises(ValidationError, match="l2o_tinta"):
+        KpiSettings.model_validate(raw_kpi)
+
+
+def test_target_value_comes_from_thresholds(app_config: AppConfig) -> None:
+    assert app_config.kpi.target_value("plr") == app_config.kpi.thresholds["plr_maxim"]
+
+
+def test_missing_target_fails_config_load() -> None:
+    raw_kpi = repository_yaml("kpi.yaml")
+    del raw_kpi["targets"]["o2c"]
+
+    with pytest.raises(ValidationError, match="o2c"):
+        KpiSettings.model_validate(raw_kpi)
+
+
+def test_missing_score_steps_fail_config_load() -> None:
+    raw_kpi = repository_yaml("kpi.yaml")
+    del raw_kpi["scores"]["acr"]
+
+    with pytest.raises(ValidationError, match="scores"):
+        KpiSettings.model_validate(raw_kpi)
+
+
+@pytest.mark.parametrize(
+    ("kpi_name", "steps"),
+    [
+        ("scr", [["scr_minim", 30], ["scr_bine", 24], ["scr_elite", 18]]),
+        ("plr", [["plr_problema", 20], ["plr_maxim", 16], ["plr_perfect", 10]]),
+        ("scr", [["scr_elite", 18], ["scr_bine", 24], ["scr_minim", 30]]),
+    ],
+    ids=["higher_ascending", "lower_descending", "points_ascending"],
+)
+def test_non_monotonic_score_steps_fail_config_load(kpi_name: str, steps: list[Any]) -> None:
+    raw_kpi = repository_yaml("kpi.yaml")
+    raw_kpi["scores"][kpi_name]["steps"] = steps
+
+    with pytest.raises(ValidationError, match=kpi_name):
+        KpiSettings.model_validate(raw_kpi)
+
+
+def test_target_direction_must_match_scores() -> None:
+    raw_kpi = repository_yaml("kpi.yaml")
+    raw_kpi["targets"]["plr"]["direction"] = "higher"
+
+    with pytest.raises(ValidationError, match=r"targets\.plr"):
+        KpiSettings.model_validate(raw_kpi)

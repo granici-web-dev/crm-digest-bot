@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import time
 from pathlib import Path
-from typing import Annotated, Any, Literal, Self
+from typing import Annotated, Any, Literal, Self, get_args
 
 import yaml
 from pydantic import (
@@ -42,7 +42,6 @@ class WonCategory(StrictConfigModel):
 
 class ActiveCategory(StrictConfigModel):
     statuses: list[str]
-    stale_after_days: int
 
 
 class ActiveFollowupCategory(StrictConfigModel):
@@ -252,6 +251,9 @@ class ManagerRoster(StrictConfigModel):
 
 
 KpiName = Literal["scr", "l2o", "o2c", "cdr", "plr", "sc", "pfr", "acr", "irr"]
+KPI_NAMES: tuple[KpiName, ...] = get_args(KpiName)
+# docs/kpi-definitions.md, «Баллы»: IRR даёт штраф irr_penalty, L2O и O2C баллов не дают.
+SCORED_KPI_NAMES: tuple[KpiName, ...] = ("scr", "cdr", "plr", "sc", "pfr", "acr")
 Direction = Literal["higher", "lower"]
 
 
@@ -276,7 +278,7 @@ class RecommendationRule(StrictConfigModel):
 
 class KpiTarget(StrictConfigModel):
     direction: Direction
-    value: Share
+    threshold: str
 
 
 class SpiLevel(StrictConfigModel):
@@ -297,15 +299,61 @@ class KpiSettings(StrictConfigModel):
 
     @model_validator(mode="after")
     def referenced_thresholds_exist(self) -> Self:
-        referenced = [
-            threshold
-            for score_steps in (*self.scores.values(), self.irr_penalty)
-            for threshold, _points in score_steps.steps
-        ] + [rule.above or rule.below or "" for rule in self.recommendations]
+        referenced = (
+            [
+                threshold
+                for score_steps in (*self.scores.values(), self.irr_penalty)
+                for threshold, _points in score_steps.steps
+            ]
+            + [rule.above or rule.below or "" for rule in self.recommendations]
+            + [target.threshold for target in self.targets.values()]
+        )
         unknown = sorted({name for name in referenced if name not in self.thresholds})
         if unknown:
             raise ValueError(f"пороги {unknown} не описаны в thresholds")
         return self
+
+    @model_validator(mode="after")
+    def every_kpi_has_target_and_scores(self) -> Self:
+        missing_targets = [name for name in KPI_NAMES if name not in self.targets]
+        if missing_targets:
+            raise ValueError(f"targets: нет целей для {missing_targets}")
+        if sorted(self.scores) != sorted(SCORED_KPI_NAMES):
+            raise ValueError(
+                f"scores: нужны ровно {list(SCORED_KPI_NAMES)}, есть {list(self.scores)}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def score_steps_are_monotonic(self) -> Self:
+        # Ступени проверяются сверху вниз до первой выполненной (docs/kpi-definitions.md,
+        # «Баллы»): при перепутанном порядке KPI молча получает не свою ступень.
+        named_steps: list[tuple[str, ScoreSteps]] = [
+            *self.scores.items(),
+            ("irr_penalty", self.irr_penalty),
+        ]
+        for name, score_steps in named_steps:
+            values = [self.thresholds[threshold] for threshold, _points in score_steps.steps]
+            expected = sorted(values, reverse=score_steps.direction == "higher")
+            points = [points for _threshold, points in score_steps.steps] + [score_steps.otherwise]
+            if values != expected or len(set(values)) != len(values):
+                raise ValueError(
+                    f"{name}: пороги ступеней не монотонны для {score_steps.direction}"
+                )
+            if points != sorted(points, reverse=True):
+                raise ValueError(f"{name}: баллы ступеней должны убывать сверху вниз")
+        return self
+
+    @model_validator(mode="after")
+    def target_direction_matches_scores(self) -> Self:
+        for name, target in self.targets.items():
+            score_steps = self.irr_penalty if name == "irr" else self.scores.get(name)
+            if score_steps is not None and score_steps.direction != target.direction:
+                raise ValueError(f"targets.{name}: направление расходится со scores")
+        return self
+
+    def target_value(self, kpi_name: KpiName) -> float:
+        return self.thresholds[self.targets[kpi_name].threshold]
 
     @model_validator(mode="after")
     def levels_descend_to_zero(self) -> Self:

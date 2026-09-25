@@ -2,7 +2,8 @@
 # provisional: значения из SB KPi.xlsx v2.0 (02_Setari_Targete), составлен через ИИ и с владельцем
 # не согласован. Баллы, SPI, уровни и рекомендации в отчёты MVP не выводятся; первые ступени
 # показываются в m5 только как цели. Калибровка после 2–3 месяцев снапшотов, отдельным ADR.
-# Ключи совпадают с thresholds в tests/fixtures/etalon-2026-05.json.
+# Ключи из 02_Setari_Targete совпадают с thresholds в tests/fixtures/etalon-2026-05.json;
+# l2o_target и o2c_target добавлены из брифа.
 # Изменение порога = ADR + обновление эталона (docs/kpi-definitions.md).
 
 # provisional | calibrated. Модули с requires_kpi_status: calibrated при provisional не включаются.
@@ -30,6 +31,9 @@ thresholds:
   acr_maxim: 0.30
   irr_acceptabil: 0.20
   irr_atentie: 0.30
+  # Нет в 02_Setari_Targete: цели L2O > 50 % и O2C > 20 % из docs/brief.md §3, только для m5.
+  l2o_target: 0.50
+  o2c_target: 0.20
 
 # Оферта «висит», если с последнего контакта прошло строго больше N дней (01_Input_Leads!AC).
 active_offer_stale_days: 14
@@ -64,15 +68,16 @@ recommendations:
   - { key: active_offers_followup, kpi: acr, above: acr_perfect }
 recommendation_otherwise: stable_performance
 
-# Цели для m5, показываются рядом с фактом. Выполнена: higher → KPI >= value, lower → KPI <= value.
-# Значения = первые ступени thresholds плюс L2O и O2C из брифа; provisional, как и пороги.
+# Цели для m5, показываются рядом с фактом. Выполнена: higher → KPI >= порога, lower → KPI <= порога.
+# Числа только в thresholds, здесь имена (docs/kpi-definitions.md, «KPI»); provisional, как и пороги.
+# Направление совпадает со scores и irr_penalty, проверяется при загрузке.
 targets:
-  scr: { direction: higher, value: 0.10 }
-  l2o: { direction: higher, value: 0.50 }
-  o2c: { direction: higher, value: 0.20 }
-  cdr: { direction: higher, value: 0.90 }
-  plr: { direction: lower, value: 0.25 }
-  sc: { direction: higher, value: 0.20 }
-  pfr: { direction: lower, value: 0.10 }
-  acr: { direction: lower, value: 0.20 }
-  irr: { direction: lower, value: 0.20 }
+  scr: { direction: higher, threshold: scr_elite }
+  l2o: { direction: higher, threshold: l2o_target }
+  o2c: { direction: higher, threshold: o2c_target }
+  cdr: { direction: higher, threshold: cdr_minim }
+  plr: { direction: lower, threshold: plr_maxim }
+  sc: { direction: higher, threshold: sc_perfect }
+  pfr: { direction: lower, threshold: pfr_perfect }
+  acr: { direction: lower, threshold: acr_perfect }
+  irr: { direction: lower, threshold: irr_acceptabil }

@@ -13,7 +13,7 @@ categories:
   ACTIVE:
     # "BIFE 2026": лиды с выставки BIFE-SIM 2026; метка через статус, при смене статуса теряется.
     statuses: ["IN PROCES", "Ofertat", "SHOWROOM", "BIFE 2026"]
-    stale_after_days: 14                   # алерт «без движения» по status_changed_at
+    # Срок алерта «без движения» один на проект: kpi.yaml active_offer_stale_days.
   ACTIVE_FOLLOWUP:
     statuses: ["Revenire 1", "Revenire 2", "Revenire 3"]
     counts_as: ACTIVE

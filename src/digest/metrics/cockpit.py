@@ -4,14 +4,14 @@ from typing import Any
 
 import pandas as pd
 
-from digest.config import AppConfig, KpiTarget
+from digest.config import AppConfig, Direction
 from digest.metrics.kpi import Period, kpis_from, lead_counts_by_manager
 
 
-def meets_target(value: float | None, target: KpiTarget) -> bool | None:
+def meets_target(value: float | None, target_value: float, direction: Direction) -> bool | None:
     if value is None:
         return None
-    return value >= target.value if target.direction == "higher" else value <= target.value
+    return value >= target_value if direction == "higher" else value <= target_value
 
 
 def manager_cockpit_table(
@@ -26,7 +26,9 @@ def manager_cockpit_table(
         counts = counts_by_manager[manager.id]
         kpis = asdict(kpis_from(counts))
         targets = {
-            f"{kpi_name}_meets_target": meets_target(kpis[kpi_name], target)
+            f"{kpi_name}_meets_target": meets_target(
+                kpis[kpi_name], config.kpi.target_value(kpi_name), target.direction
+            )
             for kpi_name, target in config.kpi.targets.items()
         }
         rows.append(
