@@ -315,3 +315,16 @@ async def test_send_failure_marks_run_failed_and_next_run_resends(harness: Harne
     assert (first_outcome, second_outcome) == ("failed", "success")
     assert any("не удалась: TelegramNetworkError" in alert for alert in harness.ops_texts)
     assert harness.group.sent
+
+
+async def test_module_alerts_are_sent_to_ops(harness: Harness) -> None:
+    await store_snapshot(
+        harness.deps.engine, REPORT_DATE, [todays_lead(4, source_name="Sursa noua")]
+    )
+
+    await run_report("daily", NOW, harness.deps)
+
+    assert any(
+        alert.startswith("d1: лиды с источником вне групп") and "id: [4]" in alert
+        for alert in harness.ops_texts
+    )

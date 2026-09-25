@@ -1,20 +1,15 @@
 from dataclasses import dataclass
 from datetime import date
 
-import pandas as pd
-
 from digest.config import AppConfig
-from digest.metrics.kpi import Period
-from digest.reports.periods import ReportLevel
+from digest.metrics.daily import PreviousSnapshot
 from digest.reports.render import ReportLanguage
 
 
 @dataclass(frozen=True)
 class ReportContext:
-    level: ReportLevel
-    period: Period
     report_date: date
-    previous_frame: pd.DataFrame | None
+    previous: PreviousSnapshot | None
     config: AppConfig
     language: ReportLanguage
 
@@ -22,5 +17,4 @@ class ReportContext:
 @dataclass(frozen=True)
 class ModuleResult:
     text: str
-    photo: bytes | None = None
-    document: bytes | None = None
+    alerts: tuple[str, ...] = ()

@@ -25,6 +25,8 @@ def fixed_counts(has_previous_snapshot: bool, without_showroom: int) -> SellerFo
         without_showroom_lead_count=without_showroom,
         total=row(2, 2, 2, 0, 0, 6, 3, 0),
         has_previous_snapshot=has_previous_snapshot,
+        unknown_source_lead_ids=(),
+        missing_from_previous_lead_ids=(),
     )
 
 

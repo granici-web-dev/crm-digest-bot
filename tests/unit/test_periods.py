@@ -1,13 +1,13 @@
-from datetime import datetime, time
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import pytest
 
+from digest.config import AppConfig
 from digest.metrics.kpi import Period
 from digest.reports.periods import ReportLevel, report_period
 
 BUCHAREST = ZoneInfo("Europe/Bucharest")
-DAILY_END = time(19, 0)
 
 
 def at(year: int, month: int, day: int, hour: int = 0, minute: int = 0) -> datetime:
@@ -28,13 +28,13 @@ def at(year: int, month: int, day: int, hour: int = 0, minute: int = 0) -> datet
     ],
 )
 def test_period_is_last_complete_one_before_now(
-    level: ReportLevel, now: datetime, expected: Period
+    app_config: AppConfig, level: ReportLevel, now: datetime, expected: Period
 ) -> None:
-    assert report_period(level, now, BUCHAREST, DAILY_END) == expected
+    assert report_period(level, now, app_config.status_mapping.time) == expected
 
 
-def test_daily_window_across_dst_end_is_25_hours() -> None:
-    period = report_period("daily", at(2026, 10, 25, 19, 30), BUCHAREST, DAILY_END)
+def test_daily_window_across_dst_end_is_25_hours(app_config: AppConfig) -> None:
+    period = report_period("daily", at(2026, 10, 25, 19, 30), app_config.status_mapping.time)
 
     assert period == Period(at(2026, 10, 24, 19), at(2026, 10, 25, 19))
     utc = ZoneInfo("UTC")
@@ -42,9 +42,9 @@ def test_daily_window_across_dst_end_is_25_hours() -> None:
     assert duration.total_seconds() == 25 * 3600
 
 
-def test_utc_now_is_read_in_bucharest_time() -> None:
+def test_utc_now_is_read_in_bucharest_time(app_config: AppConfig) -> None:
     utc_now = datetime(2026, 9, 25, 16, 30, tzinfo=ZoneInfo("UTC"))
 
-    period = report_period("daily", utc_now, BUCHAREST, DAILY_END)
+    period = report_period("daily", utc_now, app_config.status_mapping.time)
 
     assert period == Period(at(2026, 9, 24, 19), at(2026, 9, 25, 19))

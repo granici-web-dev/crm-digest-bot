@@ -21,6 +21,7 @@ from digest.db.lead_frame import (
 from digest.db.schema import module_settings, report_runs, settings, snapshot_runs
 from digest.delivery.ops import OpsChannel, notify_ops
 from digest.delivery.telegram import send_message_with_retry, split_message
+from digest.metrics.daily import PreviousSnapshot
 from digest.metrics.frame import unknown_manager_ids
 from digest.metrics.kpi import Period
 from digest.reports.context import ReportContext
@@ -263,13 +264,15 @@ async def build_report(
 
     await alert_snapshot_findings(deps, snapshot_date, lead_frame)
     previous_date = await previous_success_snapshot_date(deps.engine, deps.tenant_id, snapshot_date)
-    # Разница с более старым снапшотом покрыла бы несколько дней под подписью одного.
-    previous_frame = (
-        await load_lead_frame(deps.engine, deps.tenant_id, previous_date, deps.config)
-        if previous_date == snapshot_date - timedelta(days=1)
+    previous = (
+        PreviousSnapshot(
+            previous_date,
+            await load_lead_frame(deps.engine, deps.tenant_id, previous_date, deps.config),
+        )
+        if previous_date is not None
         else None
     )
-    context = ReportContext(level, period, snapshot_date, previous_frame, deps.config, language)
+    context = ReportContext(snapshot_date, previous, deps.config, language)
     blocks: list[ModuleBlock] = []
     for module_id, module_function in modules:
         try:
@@ -285,6 +288,8 @@ async def build_report(
             )
             blocks.append(ModuleBlock(module_id, None))
         else:
+            for alert in result.alerts:
+                await notify_ops(deps.ops, alert)
             # Текст модуля уже отрендерен своим шаблоном с autoescape, второй раз не экранируем.
             blocks.append(ModuleBlock(module_id, Markup(result.text)))
     text = render("report", language, blocks=blocks, snapshot_missing=False, **render_values)
@@ -298,7 +303,7 @@ async def run_report(level: ReportLevel, now: datetime, deps: ReportDeps) -> Rep
     chat_id = deps.report_chat_id
     time_settings = deps.config.status_mapping.time
     timezone = ZoneInfo(time_settings.timezone)
-    period = report_period(level, now, timezone, time_settings.daily_window_end)
+    period = report_period(level, now, time_settings)
     snapshot_date = now.astimezone(timezone).date()
     label = period_label(level, period)
     log_extra = {"level": level, "period_start": period.start.isoformat(), "chat_id": chat_id}

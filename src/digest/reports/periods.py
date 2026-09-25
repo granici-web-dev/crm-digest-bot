@@ -2,20 +2,21 @@ from datetime import datetime, time, timedelta
 from typing import Literal, get_args
 from zoneinfo import ZoneInfo
 
+from digest.config import TimeSettings
+from digest.metrics.daily import daily_window
 from digest.metrics.kpi import Period
 
 ReportLevel = Literal["daily", "weekly", "monthly", "yearly"]
 REPORT_LEVELS: tuple[ReportLevel, ...] = get_args(ReportLevel)
 
 
-def report_period(level: ReportLevel, now: datetime, timezone: ZoneInfo, daily_end: time) -> Period:
+def report_period(level: ReportLevel, now: datetime, time_settings: TimeSettings) -> Period:
+    timezone = ZoneInfo(time_settings.timezone)
     local_now = now.astimezone(timezone)
     today = local_now.date()
     if level == "daily":
-        end_date = today if local_now.time() >= daily_end else today - timedelta(days=1)
-        end = datetime.combine(end_date, daily_end, tzinfo=timezone)
-        start = datetime.combine(end_date - timedelta(days=1), daily_end, tzinfo=timezone)
-        return Period(start, end)
+        after_window_end = local_now.time() >= time_settings.daily_window_end
+        return daily_window(today if after_window_end else today - timedelta(days=1), time_settings)
     if level == "weekly":
         this_monday = today - timedelta(days=today.weekday())
         return Period(
