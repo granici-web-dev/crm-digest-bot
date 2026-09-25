@@ -68,7 +68,12 @@ class MonthlyLossReasons:
         return relative_change(self.current.total, self.previous.total)
 
     def reason_share(self, reason: str) -> float | None:
+        # Доля причины = причина / все потери месяца (docs/kpi-definitions.md, «Месячное окно», m8).
         return ratio(self.current.reason_total(reason), self.current.total)
+
+    @property
+    def total_share(self) -> float | None:
+        return ratio(self.current.total, self.current.total)
 
     @property
     def reasons_by_count(self) -> tuple[str, ...]:
@@ -128,9 +133,9 @@ def scr_level(scr: float | None, config: AppConfig) -> str | None:
     # Первая ступень сверху, порог включительно, как цели m5 (docs/kpi-definitions.md, «KPI»).
     if scr is None:
         return None
-    for threshold_name in config.modules.scr_levels_params.levels:
-        if scr >= config.kpi.thresholds[threshold_name]:
-            return threshold_name
+    for level in config.modules.scr_levels_params.levels:
+        if scr >= config.kpi.thresholds[level.threshold]:
+            return level.threshold
     return BELOW_ALL_LEVELS
 
 

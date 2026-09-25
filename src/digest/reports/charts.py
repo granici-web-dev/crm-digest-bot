@@ -29,6 +29,7 @@ class ChartLabels(StrictConfigModel):
     months: Annotated[list[str], Field(min_length=12, max_length=12)]
     funnel_title: str
     funnel_stages: Annotated[list[str], Field(min_length=4, max_length=4)]
+    clienti_note: str
     company: str
     without_showroom: str
     trend_title: str
@@ -111,6 +112,7 @@ def funnel_chart(funnel: MonthlyFunnel, labels: ChartLabels) -> bytes:
         draw_funnel_panel(axes, title, counts, labels)
     for axes in cells[len(panels) :]:
         axes.set_visible(False)
+    figure.supxlabel(labels.clienti_note, color=TEXT_SECONDARY, fontsize=8, x=0.01, ha="left")
     return png_bytes(figure)
 
 

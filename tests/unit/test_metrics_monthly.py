@@ -202,6 +202,7 @@ def test_monthly_loss_reasons_compare_with_previous_month(app_config: AppConfig)
     assert losses.reason_change("TIMP") == pytest.approx(-1.0)
     assert losses.reason_change("NU_RASPUNS") is None
     assert losses.total_change == pytest.approx(1.0)
+    assert losses.total_share == pytest.approx(1.0)
 
 
 def test_monthly_lead_rows_are_company_leads_with_local_created_day(

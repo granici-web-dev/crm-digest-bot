@@ -225,8 +225,16 @@ class AnomalyParams(StrictConfigModel):
     irelevant_spike_min: PositiveInt
 
 
+class ScrLevel(StrictConfigModel):
+    threshold: str
+    label_ro: str
+    label_ru: str
+
+
 class ScrLevelsParams(StrictConfigModel):
-    levels: list[str] = Field(min_length=1)
+    levels: list[ScrLevel] = Field(min_length=1)
+    below_label_ro: str
+    below_label_ru: str
 
 
 class ChatSettings(StrictConfigModel):
@@ -486,7 +494,7 @@ class AppConfig(StrictConfigModel):
     @model_validator(mode="after")
     def scr_levels_are_descending_thresholds(self) -> Self:
         # Ступени m4 ссылаются на пороги kpi.yaml по имени: число живёт только в thresholds.
-        levels = self.modules.scr_levels_params.levels
+        levels = [level.threshold for level in self.modules.scr_levels_params.levels]
         unknown = [name for name in levels if name not in self.kpi.thresholds]
         if unknown:
             raise ValueError(f"модуль scr_with_targets: пороги {unknown} не найдены в kpi.yaml")
@@ -494,6 +502,24 @@ class AppConfig(StrictConfigModel):
         if any(higher <= lower for higher, lower in pairwise(values)):
             raise ValueError(
                 f"модуль scr_with_targets: levels {levels} должны строго убывать, сейчас {values}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def scr_level_labels_differ_from_spi_levels(self) -> Self:
+        # Уровни SPI в отчётах запрещены до калибровки (ADR-002): ступень SCR в m4 не должна
+        # читаться как уровень SPI.
+        params = self.modules.scr_levels_params
+        labels = [
+            *(label for level in params.levels for label in (level.label_ro, level.label_ru)),
+            params.below_label_ro,
+            params.below_label_ru,
+        ]
+        spi_level_names = {level.name.casefold() for level in self.kpi.levels}
+        clashing = [label for label in labels if label.casefold() in spi_level_names]
+        if clashing:
+            raise ValueError(
+                f"модуль scr_with_targets: подписи {clashing} совпадают с уровнями SPI kpi.yaml"
             )
         return self
 

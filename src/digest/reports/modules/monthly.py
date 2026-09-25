@@ -7,6 +7,7 @@ import pandas as pd
 from digest.config import KPI_NAMES, AppConfig
 from digest.metrics.cockpit import manager_cockpit_table
 from digest.metrics.monthly import (
+    BELOW_ALL_LEVELS,
     MonthlyFunnel,
     month_window,
     monthly_funnel,
@@ -33,6 +34,7 @@ def showrooms_with_leads(funnel: MonthlyFunnel) -> list[str | None]:
 
 def funnel_by_showroom_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
     funnel = monthly_funnel(lead_frame, context.report_date, context.config)
+    labels = chart_labels(context.language)
     return ModuleResult(
         render(
             "funnel_by_showroom",
@@ -40,10 +42,10 @@ def funnel_by_showroom_report(lead_frame: pd.DataFrame, context: ReportContext) 
             funnel=funnel,
             showrooms=showrooms_with_leads(funnel),
             without_showroom=WITHOUT_SHOWROOM,
+            clienti_note=labels.clienti_note,
         ),
         photo=ReportPhoto(
-            f"funnel_{month_file_suffix(context.report_date)}.png",
-            funnel_chart(funnel, chart_labels(context.language)),
+            f"funnel_{month_file_suffix(context.report_date)}.png", funnel_chart(funnel, labels)
         ),
     )
 
@@ -74,6 +76,18 @@ def target_labels(config: AppConfig) -> dict[str, str]:
     }
 
 
+def scr_level_labels(context: ReportContext) -> dict[str, str]:
+    params = context.config.modules.scr_levels_params
+    romanian = context.language == "ro"
+    return {
+        **{
+            level.threshold: level.label_ro if romanian else level.label_ru
+            for level in params.levels
+        },
+        BELOW_ALL_LEVELS: params.below_label_ro if romanian else params.below_label_ru,
+    }
+
+
 def scr_with_targets_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
     config = context.config
     funnel = monthly_funnel(lead_frame, context.report_date, config)
@@ -84,9 +98,10 @@ def scr_with_targets_report(lead_frame: pd.DataFrame, context: ReportContext) ->
             scr=monthly_scr(funnel, config),
             showrooms=showrooms_with_leads(funnel),
             levels=[
-                (name, config.kpi.thresholds[name])
-                for name in config.modules.scr_levels_params.levels
+                (level.threshold, config.kpi.thresholds[level.threshold])
+                for level in config.modules.scr_levels_params.levels
             ],
+            level_labels=scr_level_labels(context),
             scr_target=target_labels(config)["scr"],
             without_showroom=WITHOUT_SHOWROOM,
         )
@@ -110,6 +125,7 @@ def manager_cockpit_report(lead_frame: pd.DataFrame, context: ReportContext) -> 
             rows=manager_cockpit_rows(lead_frame, context),
             kpi_lines=COCKPIT_KPI_LINES,
             targets=target_labels(context.config),
+            clienti_note=chart_labels(context.language).clienti_note,
         )
     )
 

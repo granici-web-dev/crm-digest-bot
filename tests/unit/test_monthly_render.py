@@ -137,6 +137,9 @@ def test_funnel_text_and_photo(app_config: AppConfig) -> None:
     assert "(fără showroom): 1 → 0 → 0 → 0" in result.text
     assert "București" not in result.text
     assert "Total: 13 → 12 → 3 → 1" in result.text
+    assert "Lead-uri → utile → oferte → Clienți" in result.text
+    assert "Clienți: din lead-urile lunii, status la data raportului." in result.text
+    assert "Contracte" not in result.text
     assert result.photo is not None
     assert result.photo.filename == "funnel_2026-09.png"
     assert result.photo.content.startswith(PNG_SIGNATURE)
@@ -168,7 +171,9 @@ def test_cockpit_text_uses_code_lines_without_pre_or_spi(app_config: AppConfig) 
     assert "<pre>" not in text
     assert "SPI" not in text
     assert "<b>Moaca Andreea</b> · Brașov" in text
-    assert "<code>Lead-uri 2 · Utile 2 · Oferte 2 · Contracte 1</code>" in text
+    assert "<code>Lead-uri 2 · Utile 2 · Oferte 2 · Clienți 1</code>" in text
+    assert "<i>Clienți: din lead-urile lunii, status la data raportului</i>" in text
+    assert "Contracte" not in text
     assert "<code>SCR 50,0% ✓ · L2O 100,0% ✓ · O2C 50,0% ✓" in text
     assert text.count("<code>") == 6 * 3
 
@@ -193,6 +198,13 @@ def sheet_rows(book: Workbook, name: str) -> list[tuple[Any, ...]]:
     return list(book[name].iter_rows(values_only=True))
 
 
+def row_labelled(rows: list[tuple[Any, ...]], label: str) -> tuple[Any, ...]:
+    return next(row for row in rows if row[0] == label)
+
+
+CLIENTI_NOTE = "Clienți: din lead-urile lunii, status la data raportului"
+
+
 def test_monthly_workbook_sheets_and_filename(app_config: AppConfig) -> None:
     filename, book = workbook(app_config)
 
@@ -215,7 +227,7 @@ def test_monthly_workbook_manager_sheet(app_config: AppConfig) -> None:
         "Lead-uri",
         "Utile",
         "Oferte",
-        "Contracte",
+        "Clienți",
         "SCR",
     )
     assert rows[1][0] == "Țintă"
@@ -228,7 +240,8 @@ def test_monthly_workbook_manager_sheet(app_config: AppConfig) -> None:
     raileanu = next(row for row in rows if row[0] == "Raileanu  Leon")
     assert raileanu[2] == 0
     assert raileanu[6] == "—"
-    assert len(rows) == 2 + 6
+    assert len(rows) == 2 + 6 + 2
+    assert rows[-1][0] == CLIENTI_NOTE
 
 
 def test_monthly_workbook_funnel_and_loss_sheets(app_config: AppConfig) -> None:
@@ -240,14 +253,16 @@ def test_monthly_workbook_funnel_and_loss_sheets(app_config: AppConfig) -> None:
         "Lead-uri",
         "Utile",
         "Oferte",
-        "Contracte",
+        "Clienți",
         "SCR",
         "L2O",
         "O2C",
     )
     assert funnel[1][:5] == ("Brașov", 10, 10, 2, 1)
-    assert funnel[-1][:5] == ("Total", 13, 12, 3, 1)
-    assert funnel[-1][5] == pytest.approx(1 / 12)
+    total = row_labelled(funnel, "Total")
+    assert total[:5] == ("Total", 13, 12, 3, 1)
+    assert total[5] == pytest.approx(1 / 12)
+    assert funnel[-1][0] == CLIENTI_NOTE
 
     losses = sheet_rows(book, "Motive pierdere")
     assert losses[0] == ("Motiv", "Sep", "Pondere", "Aug", "Variație")

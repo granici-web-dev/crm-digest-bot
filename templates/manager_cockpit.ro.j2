@@ -4,11 +4,12 @@
 {% for names in kpi_lines %}
 <i>Ținte: {% for name in names %}{{ name | upper }} {{ targets[name] }}{% if not loop.last %} · {% endif %}{% endfor %}</i>
 {% endfor %}
+<i>{{ clienti_note }}</i>
 {% for row in rows %}
 
 <b>{{ row.name }}</b>{% if row.showroom %} · {{ row.showroom }}{% endif %}
 
-<code>Lead-uri {{ row.leads }} · Utile {{ row.useful }} · Oferte {{ row.offers }} · Contracte {{ row.clienti }}</code>
+<code>Lead-uri {{ row.leads }} · Utile {{ row.useful }} · Oferte {{ row.offers }} · Clienți {{ row.clienti }}</code>
 {% for names in kpi_lines %}
 <code>{{ kpi_line(row, names) }}</code>
 {% endfor %}

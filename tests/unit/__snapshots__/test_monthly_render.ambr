@@ -8,23 +8,23 @@
 # name: test_monthly_module_text[m2-ro]
   '''
   <b>Pâlnia lunii pe showroom</b> (lead-uri create în lună)
-  Lead-uri → utile → oferte → contracte
+  Lead-uri → utile → oferte → Clienți
   Brașov: 10 → 10 → 2 → 1
   Cluj: 2 → 2 → 1 → 0
   (fără showroom): 1 → 0 → 0 → 0
   <b>Total: 13 → 12 → 3 → 1</b>
-  <i>Ofertele și contractele pentru aceste lead-uri vor mai crește.</i>
+  <i>Clienți: din lead-urile lunii, status la data raportului. Ofertele și clienții din aceste lead-uri vor mai crește.</i>
   '''
 # ---
 # name: test_monthly_module_text[m2-ru]
   '''
   <b>Воронка месяца по шоурумам</b> (лиды, созданные в месяце)
-  Лиды → полезные → оферты → контракты
+  Лиды → полезные → оферты → клиенты (Clienți)
   Brașov: 10 → 10 → 2 → 1
   Cluj: 2 → 2 → 1 → 0
   (fără showroom): 1 → 0 → 0 → 0
   <b>Итого: 13 → 12 → 3 → 1</b>
-  <i>Оферты и контракты по этим лидам ещё будут расти.</i>
+  <i>Клиенты (Clienți): из лидов месяца, статус на дату отчёта. Оферты и клиенты из этих лидов ещё будут расти.</i>
   '''
 # ---
 # name: test_monthly_module_text[m3-ro]
@@ -68,34 +68,35 @@
   <b>Manager Cockpit: 9 KPI pe consilier</b>
   <i>Ținte: SCR ≥10% · L2O ≥50% · O2C ≥20% · CDR ≥90% · PLR ≤25%</i>
   <i>Ținte: SC ≥20% · PFR ≤10% · ACR ≤20% · IRR ≤20%</i>
+  <i>Clienți: din lead-urile lunii, status la data raportului</i>
   
   <b>Roibu Valeria</b> · Brașov
-  <code>Lead-uri 8 · Utile 8 · Oferte 0 · Contracte 0</code>
+  <code>Lead-uri 8 · Utile 8 · Oferte 0 · Clienți 0</code>
   <code>SCR 0,0% ✗ · L2O 0,0% ✗ · O2C — · CDR 100,0% ✓ · PLR 0,0% ✓</code>
   <code>SC — · PFR 0,0% ✓ · ACR 0,0% ✓ · IRR 0,0% ✓</code>
   
   <b>Moaca Andreea</b> · Brașov
-  <code>Lead-uri 2 · Utile 2 · Oferte 2 · Contracte 1</code>
+  <code>Lead-uri 2 · Utile 2 · Oferte 2 · Clienți 1</code>
   <code>SCR 50,0% ✓ · L2O 100,0% ✓ · O2C 50,0% ✓ · CDR 100,0% ✓ · PLR 0,0% ✓</code>
   <code>SC — · PFR 0,0% ✓ · ACR 50,0% ✗ · IRR 0,0% ✓</code>
   
   <b>Godja Adina Maria</b> · Cluj
-  <code>Lead-uri 2 · Utile 2 · Oferte 1 · Contracte 0</code>
+  <code>Lead-uri 2 · Utile 2 · Oferte 1 · Clienți 0</code>
   <code>SCR 0,0% ✗ · L2O 50,0% ✓ · O2C 0,0% ✗ · CDR 100,0% ✓ · PLR 50,0% ✗</code>
   <code>SC — · PFR 0,0% ✓ · ACR 50,0% ✗ · IRR 0,0% ✓</code>
   
   <b>Marc Andra</b> · Cluj
-  <code>Lead-uri 0 · Utile 0 · Oferte 0 · Contracte 0</code>
+  <code>Lead-uri 0 · Utile 0 · Oferte 0 · Clienți 0</code>
   <code>SCR — · L2O — · O2C — · CDR — · PLR —</code>
   <code>SC — · PFR — · ACR — · IRR —</code>
   
   <b>Dragoi Mihaela</b> · București
-  <code>Lead-uri 1 · Utile 0 · Oferte 0 · Contracte 0</code>
+  <code>Lead-uri 1 · Utile 0 · Oferte 0 · Clienți 0</code>
   <code>SCR — · L2O — · O2C — · CDR 100,0% ✓ · PLR —</code>
   <code>SC — · PFR — · ACR 0,0% ✓ · IRR 100,0% ✗</code>
   
   <b>Raileanu  Leon</b> · București
-  <code>Lead-uri 0 · Utile 0 · Oferte 0 · Contracte 0</code>
+  <code>Lead-uri 0 · Utile 0 · Oferte 0 · Clienți 0</code>
   <code>SCR — · L2O — · O2C — · CDR — · PLR —</code>
   <code>SC — · PFR — · ACR — · IRR —</code>
   '''
@@ -105,34 +106,35 @@
   <b>Manager Cockpit: 9 KPI по консультантам</b>
   <i>Цели: SCR ≥10% · L2O ≥50% · O2C ≥20% · CDR ≥90% · PLR ≤25%</i>
   <i>Цели: SC ≥20% · PFR ≤10% · ACR ≤20% · IRR ≤20%</i>
+  <i>Клиенты (Clienți): из лидов месяца, статус на дату отчёта</i>
   
   <b>Roibu Valeria</b> · Brașov
-  <code>Лиды 8 · Полезные 8 · Оферты 0 · Контракты 0</code>
+  <code>Лиды 8 · Полезные 8 · Оферты 0 · Клиенты 0</code>
   <code>SCR 0,0% ✗ · L2O 0,0% ✗ · O2C — · CDR 100,0% ✓ · PLR 0,0% ✓</code>
   <code>SC — · PFR 0,0% ✓ · ACR 0,0% ✓ · IRR 0,0% ✓</code>
   
   <b>Moaca Andreea</b> · Brașov
-  <code>Лиды 2 · Полезные 2 · Оферты 2 · Контракты 1</code>
+  <code>Лиды 2 · Полезные 2 · Оферты 2 · Клиенты 1</code>
   <code>SCR 50,0% ✓ · L2O 100,0% ✓ · O2C 50,0% ✓ · CDR 100,0% ✓ · PLR 0,0% ✓</code>
   <code>SC — · PFR 0,0% ✓ · ACR 50,0% ✗ · IRR 0,0% ✓</code>
   
   <b>Godja Adina Maria</b> · Cluj
-  <code>Лиды 2 · Полезные 2 · Оферты 1 · Контракты 0</code>
+  <code>Лиды 2 · Полезные 2 · Оферты 1 · Клиенты 0</code>
   <code>SCR 0,0% ✗ · L2O 50,0% ✓ · O2C 0,0% ✗ · CDR 100,0% ✓ · PLR 50,0% ✗</code>
   <code>SC — · PFR 0,0% ✓ · ACR 50,0% ✗ · IRR 0,0% ✓</code>
   
   <b>Marc Andra</b> · Cluj
-  <code>Лиды 0 · Полезные 0 · Оферты 0 · Контракты 0</code>
+  <code>Лиды 0 · Полезные 0 · Оферты 0 · Клиенты 0</code>
   <code>SCR — · L2O — · O2C — · CDR — · PLR —</code>
   <code>SC — · PFR — · ACR — · IRR —</code>
   
   <b>Dragoi Mihaela</b> · București
-  <code>Лиды 1 · Полезные 0 · Оферты 0 · Контракты 0</code>
+  <code>Лиды 1 · Полезные 0 · Оферты 0 · Клиенты 0</code>
   <code>SCR — · L2O — · O2C — · CDR 100,0% ✓ · PLR —</code>
   <code>SC — · PFR — · ACR 0,0% ✓ · IRR 100,0% ✗</code>
   
   <b>Raileanu  Leon</b> · București
-  <code>Лиды 0 · Полезные 0 · Оферты 0 · Контракты 0</code>
+  <code>Лиды 0 · Полезные 0 · Оферты 0 · Клиенты 0</code>
   <code>SCR — · L2O — · O2C — · CDR — · PLR —</code>
   <code>SC — · PFR — · ACR — · IRR —</code>
   '''

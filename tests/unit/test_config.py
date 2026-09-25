@@ -147,28 +147,49 @@ def test_non_positive_stale_days_fails_config_load(days: int) -> None:
 
 
 def test_repository_scr_levels_reference_kpi_thresholds(app_config: AppConfig) -> None:
-    assert app_config.modules.scr_levels_params.levels == ["scr_elite", "scr_bine", "scr_minim"]
+    levels = app_config.modules.scr_levels_params.levels
+
+    assert [level.threshold for level in levels] == ["scr_elite", "scr_bine", "scr_minim"]
+    assert [level.label_ro for level in levels] == ["Elită", "Bine", "Minim"]
+
+
+def scr_levels(*thresholds: str) -> list[dict[str, str]]:
+    return [
+        {"threshold": threshold, "label_ro": f"ro {threshold}", "label_ru": f"ru {threshold}"}
+        for threshold in thresholds
+    ]
 
 
 @pytest.mark.parametrize(
     ("levels", "message"),
     [
-        (["scr_elite", "scr_top"], "scr_top"),
-        (["scr_bine", "scr_elite"], "строго убывать"),
-        (["scr_elite", "scr_elite"], "строго убывать"),
+        (scr_levels("scr_elite", "scr_top"), "scr_top"),
+        (scr_levels("scr_bine", "scr_elite"), "строго убывать"),
+        (scr_levels("scr_elite", "scr_elite"), "строго убывать"),
     ],
 )
-def test_scr_levels_must_be_known_descending_thresholds(levels: list[str], message: str) -> None:
+def test_scr_levels_must_be_known_descending_thresholds(
+    levels: list[dict[str, str]], message: str
+) -> None:
     raw_config = raw_repository_config()
-    raw_config["modules"]["monthly"]["m4"]["params"] = {"levels": levels}
+    raw_config["modules"]["monthly"]["m4"]["params"]["levels"] = levels
 
     with pytest.raises(ValidationError, match=message):
         AppConfig.model_validate(raw_config)
 
 
+@pytest.mark.parametrize("label", ["Elite", "gold", "COACHING"])
+def test_scr_level_label_cannot_repeat_spi_level_name(label: str) -> None:
+    raw_config = raw_repository_config()
+    raw_config["modules"]["monthly"]["m4"]["params"]["levels"][0]["label_ru"] = label
+
+    with pytest.raises(ValidationError, match="уровнями SPI"):
+        AppConfig.model_validate(raw_config)
+
+
 def test_scr_levels_must_not_be_empty() -> None:
     raw_modules = repository_yaml("modules.yaml")
-    raw_modules["monthly"]["m4"]["params"] = {"levels": []}
+    raw_modules["monthly"]["m4"]["params"]["levels"] = []
 
     with pytest.raises(ValidationError, match="модуль m4"):
         ModuleRegistry.model_validate(raw_modules)

@@ -1,8 +1,8 @@
 {% macro stages(counts) %}{{ counts.leads }} → {{ counts.useful }} → {{ counts.offers }} → {{ counts.clienti }}{% endmacro %}
 <b>Pâlnia lunii pe showroom</b> (lead-uri create în lună)
-Lead-uri → utile → oferte → contracte
+Lead-uri → utile → oferte → Clienți
 {% for showroom in showrooms %}
 {{ showroom or without_showroom }}: {{ stages(funnel.by_showroom[showroom]) }}
 {% endfor %}
 <b>Total: {{ stages(funnel.company) }}</b>
-<i>Ofertele și contractele pentru aceste lead-uri vor mai crește.</i>
+<i>{{ clienti_note }}. Ofertele și clienții din aceste lead-uri vor mai crește.</i>

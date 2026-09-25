@@ -24,7 +24,7 @@ COUNT_HEADERS = (
     ("leads", "Lead-uri"),
     ("useful", "Utile"),
     ("offers", "Oferte"),
-    ("clienti", "Contracte"),
+    ("clienti", "Clienți"),
 )
 FUNNEL_KPI_NAMES = ("scr", "l2o", "o2c")
 NAME_COLUMN_WIDTH = 22
@@ -39,6 +39,10 @@ def write_share(
         worksheet.write_string(row, column, MISSING_VALUE)
     else:
         worksheet.write_number(row, column, value, cell_format)
+
+
+def write_clienti_note(worksheet: Any, last_table_row: int) -> None:
+    worksheet.write(last_table_row + 2, 0, chart_labels("ro").clienti_note)
 
 
 def write_manager_sheet(
@@ -59,7 +63,8 @@ def write_manager_sheet(
     )
     worksheet.write(1, 0, "Țintă")
     worksheet.write_row(1, first_kpi_column, [targets[name] for name in KPI_NAMES])
-    for row_index, row in enumerate(manager_cockpit_rows(lead_frame, context), start=2):
+    rows = manager_cockpit_rows(lead_frame, context)
+    for row_index, row in enumerate(rows, start=2):
         worksheet.write_row(
             row_index,
             0,
@@ -71,6 +76,7 @@ def write_manager_sheet(
                 meets_target, formats["percent"]
             )
             write_share(worksheet, row_index, first_kpi_column + offset, row[kpi_name], cell_format)
+    write_clienti_note(worksheet, 1 + len(rows))
     worksheet.set_column(0, 0, NAME_COLUMN_WIDTH)
     worksheet.set_column(1, first_kpi_column + len(KPI_NAMES) - 1, VALUE_COLUMN_WIDTH)
 
@@ -107,6 +113,7 @@ def write_funnel_sheet(
                 getattr(kpis, kpi_name),
                 formats["percent"],
             )
+    write_clienti_note(worksheet, len(rows))
     worksheet.set_column(0, 0, NAME_COLUMN_WIDTH)
     worksheet.set_column(1, len(COUNT_HEADERS) + len(FUNNEL_KPI_NAMES), VALUE_COLUMN_WIDTH)
 
@@ -136,7 +143,7 @@ def write_loss_sheet(
         (
             "Total",
             losses.current.total,
-            1.0 if losses.current.total else None,
+            losses.total_share,
             losses.previous.total,
             losses.total_change,
         )

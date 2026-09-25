@@ -1,8 +1,8 @@
 {% macro stages(counts) %}{{ counts.leads }} → {{ counts.useful }} → {{ counts.offers }} → {{ counts.clienti }}{% endmacro %}
 <b>Воронка месяца по шоурумам</b> (лиды, созданные в месяце)
-Лиды → полезные → оферты → контракты
+Лиды → полезные → оферты → клиенты (Clienți)
 {% for showroom in showrooms %}
 {{ showroom or without_showroom }}: {{ stages(funnel.by_showroom[showroom]) }}
 {% endfor %}
 <b>Итого: {{ stages(funnel.company) }}</b>
-<i>Оферты и контракты по этим лидам ещё будут расти.</i>
+<i>{{ clienti_note }}. Оферты и клиенты из этих лидов ещё будут расти.</i>

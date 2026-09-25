@@ -1,7 +1,6 @@
-{% set level_names = {"scr_elite": "Элита", "scr_bine": "Хорошо", "scr_minim": "Минимум", "below_levels": "Ниже минимума"} %}
-{% macro row(label, scr_row) %}{{ label }} {{ scr_row.scr | percent1 }}{% if scr_row.level %} · {{ level_names[scr_row.level] }}{% endif %}{% if scr_row.meets_target is true %} ✓{% elif scr_row.meets_target is false %} ✗{% endif %}{% endmacro %}
+{% macro row(label, scr_row) %}{{ label }} {{ scr_row.scr | percent1 }}{% if scr_row.level %} · {{ level_labels[scr_row.level] }}{% endif %}{% if scr_row.meets_target is true %} ✓{% elif scr_row.meets_target is false %} ✗{% endif %}{% endmacro %}
 <b>Конверсия (SCR) по шоурумам</b>, цель {{ scr_target }}
-<i>{% for name, value in levels %}{{ level_names[name] }} ≥{{ value | percent1 }}{% if not loop.last %} · {% endif %}{% endfor %}</i>
+<i>{% for name, value in levels %}{{ level_labels[name] }} ≥{{ value | percent1 }}{% if not loop.last %} · {% endif %}{% endfor %}</i>
 {% for showroom in showrooms %}
 {{ row(showroom or without_showroom, scr.by_showroom[showroom]) }}
 {% endfor %}
