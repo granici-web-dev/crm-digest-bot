@@ -1,0 +1,6 @@
+{% if findings %}
+⚠ Lead-uri neatinse: {{ findings | sum(attribute="lead_count") }} · {% for finding in findings %}{{ finding.manager_name or "Nepreluate" }} {{ finding.lead_count }} ({% if loop.first %}cel mai vechi: {% endif %}{{ finding.oldest }}h){% if not loop.last %}, {% endif %}{% endfor %}
+
+{% else %}
+Lead-uri neatinse: nu
+{% endif %}

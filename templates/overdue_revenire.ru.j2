@@ -1,0 +1,6 @@
+{% if findings %}
+⏰ Просроченные возвраты: {{ findings | sum(attribute="lead_count") }} · {% for finding in findings %}{{ finding.manager_name or "Не взяты" }} {{ finding.lead_count }} ({% if loop.first %}самый старый: {% endif %}{{ finding.oldest }} дн.){% if not loop.last %}, {% endif %}{% endfor %}
+
+{% else %}
+Просроченные возвраты: нет
+{% endif %}

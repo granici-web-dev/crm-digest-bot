@@ -1,0 +1,2 @@
+{% set last_weekday = ["lunea trecută", "marțea trecută", "miercurea trecută", "joia trecută", "vinerea trecută", "sâmbăta trecută", "duminica trecută"] %}
+Lead-uri azi: {{ comparison.leads }} ({{ last_weekday[comparison.week_ago_date.weekday()] }}: {{ comparison.leads_week_ago }}) · Contracte: {{ comparison.contracts }} ({{ comparison.contracts_week_ago }})

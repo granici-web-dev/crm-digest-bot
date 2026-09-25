@@ -130,6 +130,41 @@ async def test_daily_report_is_sent_to_group_and_recorded(harness: Harness) -> N
     assert run["message_ids"] == [message.message_id for message in harness.group.sent]
 
 
+async def test_daily_report_contains_d1_to_d6_in_order(harness: Harness) -> None:
+    created_at = datetime(2026, 9, 25, 10, 0, tzinfo=BUCHAREST)
+    await store_snapshot(
+        harness.deps.engine,
+        REPORT_DATE,
+        [
+            todays_lead(1, created_at=created_at, last_contact_at=created_at),
+            todays_lead(
+                2,
+                source_name="Telefon",
+                created_at=created_at,
+                last_contact_at=created_at,
+                data_revenire=date(2026, 9, 22),
+            ),
+        ],
+    )
+
+    await run_report("daily", NOW, harness.deps)
+
+    text = harness.group_text
+    block_starts = [
+        text.index(marker)
+        for marker in (
+            "<b>TOTAL</b>",
+            "⚠ Lead-uri neatinse: 2 · Dragoi Mihaela 2 (cel mai vechi: 9h)",
+            "⏰ Reveniri restante: 1 · Dragoi Mihaela 1 (cea mai veche: 3 zile)",
+            "Oferte blocate >14 zile: nu",
+            "Anomalii: nu",
+            "Lead-uri azi: 2 (vinerea trecută: 0) · Contracte: 0 (0)",
+        )
+    ]
+    assert block_starts == sorted(block_starts)
+    assert not any("не реализованы" in alert for alert in harness.ops_texts)
+
+
 async def test_second_run_for_same_period_sends_nothing(harness: Harness) -> None:
     await store_snapshot(harness.deps.engine, REPORT_DATE, [todays_lead(1)])
     await run_report("daily", NOW, harness.deps)
@@ -353,8 +388,9 @@ async def test_module_disabled_in_module_settings_is_skipped(harness: Harness) -
 
     outcome = await run_report("daily", NOW, harness.deps)
 
-    assert outcome == "failed"
-    assert harness.group.sent == []
+    assert outcome == "success"
+    assert "<b>TOTAL</b>" not in harness.group_text
+    assert "Lead-uri azi:" in harness.group_text
 
 
 async def test_seed_defaults_keeps_existing_values(engine: AsyncEngine) -> None:

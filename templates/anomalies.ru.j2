@@ -1,0 +1,10 @@
+{% if anomalies.site_zero_previous_average is not none %}
+🔴 0 лидов с сайта сегодня (среднее за 7 дней: {{ "%.1f" | format(anomalies.site_zero_previous_average) | replace(".", ",") }}), проверьте форму
+{% endif %}
+{% if anomalies.irelevant_spikes %}
+🔴 Всплеск IRELEVANT: {% for spike in anomalies.irelevant_spikes %}{{ spike.manager_name or "Не взяты" }} {{ spike.lead_count }}{% if not loop.last %}, {% endif %}{% endfor %}
+
+{% endif %}
+{% if anomalies.site_zero_previous_average is none and not anomalies.irelevant_spikes %}
+Аномалии: нет
+{% endif %}

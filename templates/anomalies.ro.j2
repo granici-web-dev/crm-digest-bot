@@ -1,0 +1,10 @@
+{% if anomalies.site_zero_previous_average is not none %}
+🔴 0 lead-uri de pe site azi (media ultimelor 7 zile: {{ "%.1f" | format(anomalies.site_zero_previous_average) | replace(".", ",") }}), verificați formularul
+{% endif %}
+{% if anomalies.irelevant_spikes %}
+🔴 Val de IRELEVANT: {% for spike in anomalies.irelevant_spikes %}{{ spike.manager_name or "Nepreluate" }} {{ spike.lead_count }}{% if not loop.last %}, {% endif %}{% endfor %}
+
+{% endif %}
+{% if anomalies.site_zero_previous_average is none and not anomalies.irelevant_spikes %}
+Anomalii: nu
+{% endif %}
