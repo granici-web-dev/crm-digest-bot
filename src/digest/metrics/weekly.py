@@ -241,9 +241,16 @@ def weekly_funnel(lead_frame: pd.DataFrame, report_date: date, config: AppConfig
 def weekly_loss_reasons(
     lead_frame: pd.DataFrame, report_date: date, config: AppConfig
 ) -> LossReasons:
-    # Потеря недели: статус сменился в окне; лид, созданный сразу со статусом потери, имеет
+    return loss_reasons_in_window(
+        lead_frame, weekly_window(report_date, config.status_mapping.time), config
+    )
+
+
+def loss_reasons_in_window(
+    lead_frame: pd.DataFrame, window: Period, config: AppConfig
+) -> LossReasons:
+    # Потеря окна: статус сменился в окне; лид, созданный сразу со статусом потери, имеет
     # status_changed_at = null (CLAUDE.md, ловушки mefi) и считается по created_at.
-    window = weekly_window(report_date, config.status_mapping.time)
     changed_at, created_at = lead_frame["status_changed_at"], lead_frame["created_at"]
     changed_in_window = changed_at.ge(window.start) & changed_at.lt(window.end)
     created_lost_in_window = (
