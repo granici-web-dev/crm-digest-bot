@@ -271,8 +271,6 @@ def week_over_week(
 
 
 def relative_change(current: int, previous: int) -> float | None:
-    if current == previous:
-        return 0.0
     return ratio(current - previous, previous)
 
 

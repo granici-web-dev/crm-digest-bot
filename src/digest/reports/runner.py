@@ -341,6 +341,7 @@ async def build_report(
         "level": level,
         "period_label": period_label(level, period),
         "snapshot_date": snapshot_date,
+        "tenant_display_name": deps.config.status_mapping.tenant_display_name,
     }
     try:
         lead_frame = await load_lead_frame(deps.engine, deps.tenant_id, snapshot_date, deps.config)
@@ -376,7 +377,9 @@ async def build_report(
         if level == "weekly"
         else None
     )
-    context = ReportContext(snapshot_date, previous, week_ago, deps.config, language)
+    context = ReportContext(
+        snapshot_date, previous, week_ago, deps.config, deps.tenant_id, language
+    )
     blocks: list[ModuleBlock] = []
     documents: list[ReportDocument] = []
     unavailable_sources: set[str] = set()

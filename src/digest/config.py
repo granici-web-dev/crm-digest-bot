@@ -56,6 +56,8 @@ class LossReason(StrictConfigModel):
     followup_field: str | None = None
     note: str | None = None
     excluded_from_useful: bool = False
+    label_ro: str
+    label_ru: str
 
 
 class LostCategory(StrictConfigModel):
@@ -148,6 +150,7 @@ class StatusMapping(StrictConfigModel):
     custom_fields: CustomFields
     sources: SourceGroups
     showrooms: list[str]
+    tenant_display_name: str
     time: TimeSettings
     raw_strip: list[str]
     raw_known_keys: frozenset[str]

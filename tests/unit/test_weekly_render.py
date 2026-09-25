@@ -1,8 +1,10 @@
 from datetime import date, datetime, timedelta
+from io import BytesIO
 from typing import Any
 
 import pandas as pd
 import pytest
+from openpyxl import load_workbook
 from syrupy.assertion import SnapshotAssertion
 
 from digest.config import AppConfig
@@ -18,7 +20,7 @@ from digest.reports.modules.weekly import (
     week_range_label,
 )
 from digest.reports.render import ReportLanguage, change_label, percent
-from factories import BUCHAREST, make_snapshot_row
+from factories import BUCHAREST, make_snapshot_row, raw_repository_config
 
 SUNDAY = date(2026, 9, 27)
 MONDAY = date(2026, 9, 21)
@@ -76,7 +78,7 @@ def context(
     app_config: AppConfig, language: ReportLanguage, lead_frame: pd.DataFrame
 ) -> ReportContext:
     week_ago = PreviousSnapshot(SUNDAY - timedelta(days=7), lead_frame[lead_frame["lead_id"].eq(6)])
-    return ReportContext(SUNDAY, None, week_ago, app_config, language)
+    return ReportContext(SUNDAY, None, week_ago, app_config, "sofabelle", language)
 
 
 @pytest.mark.parametrize("language", ["ro", "ru"])
@@ -136,7 +138,7 @@ def test_week_range_label_spans_months() -> None:
 
 @pytest.mark.parametrize(
     ("value", "expected"),
-    [(None, "(—)"), (0.0, "(=)"), (0.12, "(+12%)"), (-0.08, "(–8%)")],
+    [(None, "(—)"), (0.0, "(=)"), (0.12, "(+12%)"), (-0.08, "(−8%)")],
 )
 def test_change_label(value: float | None, expected: str) -> None:
     assert change_label(value) == expected
@@ -144,3 +146,25 @@ def test_change_label(value: float | None, expected: str) -> None:
 
 def test_percent_of_unknown_ratio_is_dash() -> None:
     assert (percent(None), percent(0.456)) == ("—", "46%")
+
+
+def test_weekly_texts_follow_working_hours_sources_and_reason_labels_from_config() -> None:
+    raw = raw_repository_config()
+    raw["status_mapping"]["time"]["working_hours"] = {"start": "09:00", "end": "18:00"}
+    raw["status_mapping"]["sources"]["showroom_visit"] = ["Showroom", "Vizita"]
+    raw["status_mapping"]["categories"]["LOST"]["reasons"]["BUGET"]["label_ro"] = "Preț"
+    config = AppConfig.model_validate(raw)
+    lead_frame = week_frame(config)
+    report_context = context(config, "ro", lead_frame)
+
+    leads_text = IMPLEMENTED_MODULES["w1"](lead_frame, report_context).text
+    losses_text = IMPLEMENTED_MODULES["w4"](lead_frame, report_context).text
+    document = IMPLEMENTED_MODULES["w12"](lead_frame, report_context).document
+
+    assert "Ore de lucru 09:00–18:00" in leads_text
+    assert "fără Showroom, Vizita:" in leads_text
+    assert "Preț 1" in losses_text
+    assert document is not None
+    summary = load_workbook(BytesIO(document.content))["Свод день-шоурум"]
+    assert "(БЕЗ Sursa=Showroom, Vizita)" in str(summary["A1"].value)
+    assert "рабочие часы 09:00–18:00" in str(summary["A2"].value)

@@ -13,7 +13,7 @@ Contract Cantitate: {{ row.contracts | dash }}
 Încasări: —
 {% endmacro %}
 {% for showroom, row in counts.by_showroom.items() %}
-{{ block("Sofabelle " ~ showroom, row) }}
+{{ block(tenant_display_name ~ " " ~ showroom, row) }}
 {% endfor %}
 {% if counts.without_showroom_lead_count > 0 %}
 Fără showroom: {{ counts.without_showroom_lead_count }}

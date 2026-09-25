@@ -289,7 +289,7 @@ def test_week_over_week_offers_come_from_snapshot_exactly_a_week_old(
 
 @pytest.mark.parametrize(
     ("current", "previous", "expected"),
-    [(12, 10, 0.2), (8, 10, -0.2), (4, 4, 0.0), (0, 0, 0.0), (3, 0, None)],
+    [(12, 10, 0.2), (8, 10, -0.2), (4, 4, 0.0), (0, 0, None), (3, 0, None)],
 )
 def test_relative_change(current: int, previous: int, expected: float | None) -> None:
     assert relative_change(current, previous) == pytest.approx(expected)

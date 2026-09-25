@@ -1,5 +1,5 @@
-<b>Săpt. {{ week_number }} ({{ week_range }}) · Lead-uri fără Showroom: {{ tables.total }}</b>
-<i>Ore de lucru 10:00–19:00: lead-urile din afara lor trec pe ziua următoare.</i>
+<b>Săpt. {{ week_number }} ({{ week_range }}) · Lead-uri fără {{ excluded_sources }}: {{ tables.total }}</b>
+<i>Ore de lucru {{ working_hours }}: lead-urile din afara lor trec pe ziua următoare.</i>
 {% for row in day_showroom_rows %}
 <code>{{ row }}</code>
 {% endfor %}

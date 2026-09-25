@@ -37,7 +37,14 @@ def test_seller_format_matches_seller_whatsapp_layout(
     counts = fixed_counts(has_previous_snapshot=True, without_showroom=1)
 
     assert (
-        render("seller_format_report", language, counts=counts, report_date=REPORT_DATE) == snapshot
+        render(
+            "seller_format_report",
+            language,
+            counts=counts,
+            report_date=REPORT_DATE,
+            tenant_display_name="Sofabelle",
+        )
+        == snapshot
     )
 
 
@@ -48,5 +55,12 @@ def test_seller_format_without_previous_snapshot_shows_dashes(
     counts = fixed_counts(has_previous_snapshot=False, without_showroom=0)
 
     assert (
-        render("seller_format_report", language, counts=counts, report_date=REPORT_DATE) == snapshot
+        render(
+            "seller_format_report",
+            language,
+            counts=counts,
+            report_date=REPORT_DATE,
+            tenant_display_name="Sofabelle",
+        )
+        == snapshot
     )

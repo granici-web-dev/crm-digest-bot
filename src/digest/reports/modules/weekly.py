@@ -2,6 +2,7 @@ from datetime import date
 
 import pandas as pd
 
+from digest.config import AppConfig
 from digest.metrics.weekly import (
     DayShowroomCounts,
     WeeklyLeadTables,
@@ -35,6 +36,15 @@ def short_day_label(day: date) -> str:
 
 def long_day_label(day: date) -> str:
     return f"{day:%d-%m-%Y}  {RO_WEEKDAYS[day.weekday()]}"
+
+
+def working_hours_label(config: AppConfig) -> str:
+    hours = config.status_mapping.time.working_hours
+    return f"{hours.start:%H:%M}–{hours.end:%H:%M}"
+
+
+def excluded_sources_label(config: AppConfig) -> str:
+    return ", ".join(config.status_mapping.sources.showroom_visit)
 
 
 def week_range_label(days: tuple[date, ...]) -> str:
@@ -115,6 +125,8 @@ def weekly_leads_report(lead_frame: pd.DataFrame, context: ReportContext) -> Mod
                 day_showroom_table(tables.by_day_showroom, "Zi lucrătoare")
             ),
             showroom_source_rows=text_rows(showroom_source_table(tables)),
+            working_hours=working_hours_label(context.config),
+            excluded_sources=excluded_sources_label(context.config),
         )
     )
 
@@ -127,6 +139,7 @@ def showroom_visits_report(lead_frame: pd.DataFrame, context: ReportContext) -> 
             context.language,
             visits=visits,
             day_showroom_rows=text_rows(day_showroom_table(visits, "Zi")),
+            without_showroom=WITHOUT_SHOWROOM,
         )
     )
 
@@ -142,8 +155,20 @@ def loss_reasons_report(lead_frame: pd.DataFrame, context: ReportContext) -> Mod
         (reason for reason in losses.reasons if losses.reason_total(reason)),
         key=lambda reason: -losses.reason_total(reason),
     )
+    reason_config = context.config.status_mapping.categories.LOST.reasons
+    reason_labels = {
+        key: reason.label_ro if context.language == "ro" else reason.label_ru
+        for key, reason in reason_config.items()
+    }
     return ModuleResult(
-        render("loss_reasons", context.language, losses=losses, reasons_by_count=reasons_by_count)
+        render(
+            "loss_reasons",
+            context.language,
+            losses=losses,
+            reasons_by_count=reasons_by_count,
+            reason_labels=reason_labels,
+            without_showroom=WITHOUT_SHOWROOM,
+        )
     )
 
 

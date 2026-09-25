@@ -20,15 +20,16 @@ categories:
   LOST:
     reasons:
       # В mefi Stand BY — lifecycle active; LOST — наша категория по брифу §3.
-      STAND_BY:          { statuses: ["Stand BY"], followup_field: "Data revenire" }
-      NU_RASPUNS:        { statuses: ["NU A RASPUNS"] }
-      A_REFUZAT:         { statuses: ["A REFUZAT"] }
-      PRODUS_NEPOTRIVIT: { statuses: ["PRODUS NEPOTRIVIT"] }
-      BUGET:             { statuses: ["BUGET"] }
-      CONCURENT:         { statuses: ["CONCURENTA"] }
-      TIMP:              { statuses: ["TIMP"], note: "отказ из-за срока производства 1–2 мес." }
+      # label_ro, label_ru: подписи причины в отчётах (w4), по docs/report-menu.md.
+      STAND_BY:          { statuses: ["Stand BY"], followup_field: "Data revenire", label_ro: "Stand BY", label_ru: "Stand BY" }
+      NU_RASPUNS:        { statuses: ["NU A RASPUNS"], label_ro: "Nu a răspuns", label_ru: "Не ответил" }
+      A_REFUZAT:         { statuses: ["A REFUZAT"], label_ro: "A refuzat", label_ru: "Отказ" }
+      PRODUS_NEPOTRIVIT: { statuses: ["PRODUS NEPOTRIVIT"], label_ro: "Produs nepotrivit", label_ru: "Продукт не подошёл" }
+      BUGET:             { statuses: ["BUGET"], label_ro: "Buget", label_ru: "Бюджет" }
+      CONCURENT:         { statuses: ["CONCURENTA"], label_ro: "Concurență", label_ru: "Конкурент" }
+      TIMP:              { statuses: ["TIMP"], note: "отказ из-за срока производства 1–2 мес.", label_ro: "Termen producție", label_ru: "Срок производства" }
       # SPAM есть в списке статусов mefi, в API-выборке 24.09.2026 не встречался.
-      IRELEVANT:         { statuses: ["IRELEVANT", "SPAM"], excluded_from_useful: true }
+      IRELEVANT:         { statuses: ["IRELEVANT", "SPAM"], excluded_from_useful: true, label_ro: "Irelevant", label_ru: "Нерелевантный" }
   PARTNERSHIP:
     statuses: ["DESIGNER", "INFLUENCER"]
     # Бриф §3: партнёрства не лиды, исключаются из LEADS и всех KPI (ADR-002).
@@ -120,6 +121,8 @@ sources:
 
 # Порядок блоков в отчётах, как в ручном отчёте продавцов.
 showrooms: ["Brașov", "București", "Cluj"]
+# Название тенанта в шапке отчётов и в блоках d1 («Sofabelle Brașov»).
+tenant_display_name: "Sofabelle"
 
 # success значит «снапшот полный»: отчёты читают только success. Выше порога прогон failed,
 # отчёт уходит с пометкой «данные mefi недоступны»; ниже порога расхождение идёт в алерт.

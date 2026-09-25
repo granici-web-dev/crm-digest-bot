@@ -97,6 +97,14 @@ def test_missing_loss_reason_used_by_metrics_fails_config_load(reason_name: str)
         StatusMapping.model_validate(raw_mapping)
 
 
+def test_loss_reason_without_label_fails_config_load() -> None:
+    raw_mapping = repository_yaml("status-mapping.yaml")
+    del raw_mapping["categories"]["LOST"]["reasons"]["TIMP"]["label_ru"]
+
+    with pytest.raises(ValidationError, match="label_ru"):
+        StatusMapping.model_validate(raw_mapping)
+
+
 def test_missing_partnership_category_fails_config_load() -> None:
     raw_mapping = repository_yaml("status-mapping.yaml")
     del raw_mapping["categories"]["PARTNERSHIP"]

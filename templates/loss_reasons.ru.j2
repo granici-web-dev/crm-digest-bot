@@ -1,10 +1,9 @@
-{% set labels = {"STAND_BY": "Stand BY", "NU_RASPUNS": "Не ответил", "A_REFUZAT": "Отказ", "PRODUS_NEPOTRIVIT": "Продукт не подошёл", "BUGET": "Бюджет", "CONCURENT": "Конкурент", "TIMP": "Срок производства", "IRELEVANT": "Нерелевантный"} %}
-{% macro reasons(by_reason) %}{% for reason in reasons_by_count if by_reason[reason] %}{{ labels.get(reason, reason) }} {{ by_reason[reason] }}{% if not loop.last %} · {% endif %}{% endfor %}{% endmacro %}
+{% macro reasons(by_reason) %}{% for reason in reasons_by_count if by_reason[reason] %}{{ reason_labels[reason] }} {{ by_reason[reason] }}{% if not loop.last %} · {% endif %}{% endfor %}{% endmacro %}
 {% if losses.total %}
-<b>Потеряно {{ losses.total }}</b>: {% for reason in reasons_by_count %}{{ labels.get(reason, reason) }} {{ losses.reason_total(reason) }}{% if not loop.last %} · {% endif %}{% endfor %}
+<b>Потеряно {{ losses.total }}</b>: {% for reason in reasons_by_count %}{{ reason_labels[reason] }} {{ losses.reason_total(reason) }}{% if not loop.last %} · {% endif %}{% endfor %}
 
 {% for showroom, by_reason in losses.by_showroom.items() if by_reason.values() | sum %}
-{{ showroom or "без шоурума" }} {{ by_reason.values() | sum }}: {{ reasons(by_reason) }}
+{{ showroom or without_showroom }} {{ by_reason.values() | sum }}: {{ reasons(by_reason) }}
 {% endfor %}
 {% else %}
 <b>Потеряно: 0</b>

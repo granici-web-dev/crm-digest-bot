@@ -21,7 +21,11 @@ def seller_format_report(lead_frame: pd.DataFrame, context: ReportContext) -> Mo
             f"id: {list(counts.missing_from_previous_lead_ids)}."
         )
     text = render(
-        "seller_format_report", context.language, counts=counts, report_date=context.report_date
+        "seller_format_report",
+        context.language,
+        counts=counts,
+        report_date=context.report_date,
+        tenant_display_name=context.config.status_mapping.tenant_display_name,
     )
     # Reoferta и Încasări берутся только из Oferte/Contracte (источник B, CLAUDE.md).
     return ModuleResult(text, tuple(alerts), unavailable_sources=("B",))

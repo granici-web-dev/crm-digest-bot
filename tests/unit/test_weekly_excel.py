@@ -37,8 +37,8 @@ def week_frame(app_config: AppConfig) -> pd.DataFrame:
     return prepare_lead_frame(rows, app_config)
 
 
-def workbook(app_config: AppConfig) -> tuple[str, Workbook]:
-    context = ReportContext(SUNDAY, None, None, app_config, "ro")
+def workbook(app_config: AppConfig, tenant_id: str = "sofabelle") -> tuple[str, Workbook]:
+    context = ReportContext(SUNDAY, None, None, app_config, tenant_id, "ro")
     result = excel_attachment_report(week_frame(app_config), context)
     assert result.document is not None
     return result.document.filename, load_workbook(BytesIO(result.document.content))
@@ -59,6 +59,12 @@ def test_workbook_has_manual_report_sheets_plus_leads_and_visits(app_config: App
         "Lead-uri",
         "Vizite",
     ]
+
+
+def test_filename_takes_tenant_id(app_config: AppConfig) -> None:
+    filename, _ = workbook(app_config, tenant_id="alt_tenant")
+
+    assert filename == "alt_tenant_sapt39_2026.xlsx"
 
 
 def test_summary_sheets_have_manual_headers_and_totals(app_config: AppConfig) -> None:
@@ -91,7 +97,8 @@ def test_lead_sheets_match_summary_and_carry_no_personal_data(app_config: AppCon
     visits = sheet_rows(book, "Vizite")
 
     header = ("ID", "Creat", "Zi lucrătoare", "Showroom", "Sursa", "Status", "Ofertat", "Consilier")
-    assert leads[0] == visits[0] == header
+    assert leads[0] == header
+    assert visits[0] == ("ID", "Creat", "Zi", *header[3:])
     assert not {cell.lower() for cell in header} & PERSONAL_DATA_HEADERS
     assert [row[0] for row in leads[1:]] == [1, 2, 3, 4]
     assert leads[1][1:3] == (datetime(2026, 9, 21, 11, 0), datetime(2026, 9, 21, 0, 0))

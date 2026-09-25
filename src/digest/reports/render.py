@@ -24,7 +24,7 @@ def change_label(value: float | None) -> str:
         return "(—)"
     if value == 0:
         return "(=)"
-    sign = "+" if value > 0 else "–"
+    sign = "+" if value > 0 else "−"
     return f"({sign}{round(abs(value) * 100)}%)"
 
 

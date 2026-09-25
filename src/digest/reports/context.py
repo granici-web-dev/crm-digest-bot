@@ -12,6 +12,7 @@ class ReportContext:
     previous: PreviousSnapshot | None
     week_ago: PreviousSnapshot | None
     config: AppConfig
+    tenant_id: str
     language: ReportLanguage
 
 
