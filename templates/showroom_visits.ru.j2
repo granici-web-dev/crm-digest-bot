@@ -1,0 +1,7 @@
+<b>Визиты в шоурум: {{ visits.total }}</b>{% if visits.total %} ({% for showroom in visits.showrooms if visits.showroom_total(showroom) %}{{ showroom or "без шоурума" }} {{ visits.showroom_total(showroom) }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %}
+
+{% if visits.total %}
+{% for row in day_showroom_rows %}
+<code>{{ row }}</code>
+{% endfor %}
+{% endif %}

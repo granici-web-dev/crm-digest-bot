@@ -408,7 +408,7 @@ async def test_older_previous_snapshot_is_not_diffed(harness: Harness) -> None:
 async def test_report_without_implemented_modules_is_not_sent(harness: Harness) -> None:
     await store_snapshot(harness.deps.engine, REPORT_DATE, [todays_lead(1)])
 
-    outcome = await run_report("weekly", NOW, harness.deps)
+    outcome = await run_report("monthly", NOW, harness.deps)
 
     assert outcome == "failed"
     assert harness.group.sent == []
@@ -548,6 +548,42 @@ async def test_document_send_failure_marks_run_failed(harness: Harness) -> None:
     [run] = await report_run_rows(harness.deps.engine)
     assert run["status"] == "failed"
     assert run["message_ids"] == [message.message_id for message in harness.group.sent]
+
+
+async def test_weekly_report_contains_implemented_modules_and_excel(harness: Harness) -> None:
+    monday = date(2026, 9, 21)
+    await store_snapshot(
+        harness.deps.engine,
+        WEEK_SUNDAY,
+        [
+            make_snapshot_row(lead_id=1, created_at=datetime(2026, 9, 21, 11, tzinfo=BUCHAREST)),
+            make_snapshot_row(
+                lead_id=2,
+                source_name="Showroom",
+                created_at=datetime(2026, 9, 22, 12, tzinfo=BUCHAREST),
+            ),
+        ],
+    )
+
+    outcome = await run_report("weekly", MONDAY_09, harness.deps)
+
+    assert outcome == "success"
+    text = harness.group_text
+    positions = [
+        text.index(marker)
+        for marker in (
+            "Lead-uri fără Showroom: 1",
+            "Vizite showroom: 1",
+            "Pâlnia săptămânii",
+            "Pierdute: 0",
+            "Față de săptămâna trecută",
+            "📎 sofabelle_sapt39_2026.xlsx",
+        )
+    ]
+    assert positions == sorted(positions)
+    assert f"{monday:%d-%m} Luni | 0 | 1 | 0 | 0 | 1" in text
+    [document] = harness.group.documents
+    assert document.filename == "sofabelle_sapt39_2026.xlsx"
 
 
 @pytest.mark.parametrize(("stored_days_back", "expected_week_ago"), [(7, True), (6, False)])

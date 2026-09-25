@@ -1,0 +1,119 @@
+# serializer version: 1
+# name: test_weekly_module_text[w1-ro]
+  '''
+  <b>Săpt. 39 (21–27.09) · Lead-uri fără Showroom: 5</b>
+  <i>Ore de lucru 10:00–19:00: lead-urile din afara lor trec pe ziua următoare.</i>
+  <code>Zi lucrătoare | Brașov | București | Cluj | (fără showroom) | TOTAL</code>
+  <code>21-09 Luni | 1 | 0 | 0 | 0 | 1</code>
+  <code>22-09 Marți | 0 | 1 | 0 | 0 | 1</code>
+  <code>23-09 Miercuri | 0 | 0 | 0 | 0 | 0</code>
+  <code>24-09 Joi | 0 | 0 | 0 | 0 | 0</code>
+  <code>25-09 Vineri | 0 | 0 | 0 | 0 | 0</code>
+  <code>26-09 Sâmbătă | 0 | 0 | 0 | 0 | 0</code>
+  <code>27-09 Duminică | 0 | 0 | 2 | 1 | 3</code>
+  <code>TOTAL | 1 | 1 | 2 | 1 | 5</code>
+  
+  <code>Showroom | Site | Telefon | WhatsApp | (fără sursă) | TOTAL</code>
+  <code>Brașov | 1 | 0 | 0 | 0 | 1</code>
+  <code>București | 0 | 0 | 1 | 0 | 1</code>
+  <code>Cluj | 1 | 1 | 0 | 0 | 2</code>
+  <code>(fără showroom) | 1 | 0 | 0 | 0 | 1</code>
+  <code>TOTAL | 3 | 1 | 1 | 0 | 5</code>
+  '''
+# ---
+# name: test_weekly_module_text[w1-ru]
+  '''
+  <b>Нед. 39 (21–27.09) · Лиды без Showroom: 5</b>
+  <i>Рабочие часы 10:00–19:00: лиды вне их переносятся на следующий день.</i>
+  <code>Zi lucrătoare | Brașov | București | Cluj | (fără showroom) | TOTAL</code>
+  <code>21-09 Luni | 1 | 0 | 0 | 0 | 1</code>
+  <code>22-09 Marți | 0 | 1 | 0 | 0 | 1</code>
+  <code>23-09 Miercuri | 0 | 0 | 0 | 0 | 0</code>
+  <code>24-09 Joi | 0 | 0 | 0 | 0 | 0</code>
+  <code>25-09 Vineri | 0 | 0 | 0 | 0 | 0</code>
+  <code>26-09 Sâmbătă | 0 | 0 | 0 | 0 | 0</code>
+  <code>27-09 Duminică | 0 | 0 | 2 | 1 | 3</code>
+  <code>TOTAL | 1 | 1 | 2 | 1 | 5</code>
+  
+  <code>Showroom | Site | Telefon | WhatsApp | (fără sursă) | TOTAL</code>
+  <code>Brașov | 1 | 0 | 0 | 0 | 1</code>
+  <code>București | 0 | 0 | 1 | 0 | 1</code>
+  <code>Cluj | 1 | 1 | 0 | 0 | 2</code>
+  <code>(fără showroom) | 1 | 0 | 0 | 0 | 1</code>
+  <code>TOTAL | 3 | 1 | 1 | 0 | 5</code>
+  '''
+# ---
+# name: test_weekly_module_text[w12-ro]
+  '📎 sofabelle_sapt39_2026.xlsx: zi × showroom, showroom × sursă, lista lead-urilor și a vizitelor'
+# ---
+# name: test_weekly_module_text[w12-ru]
+  '📎 sofabelle_sapt39_2026.xlsx: день × шоурум, шоурум × источник, список лидов и визитов'
+# ---
+# name: test_weekly_module_text[w2-ro]
+  '''
+  <b>Vizite showroom: 1</b> (Brașov 1)
+  <code>Zi | Brașov | București | Cluj | (fără showroom) | TOTAL</code>
+  <code>21-09 Luni | 1 | 0 | 0 | 0 | 1</code>
+  <code>22-09 Marți | 0 | 0 | 0 | 0 | 0</code>
+  <code>23-09 Miercuri | 0 | 0 | 0 | 0 | 0</code>
+  <code>24-09 Joi | 0 | 0 | 0 | 0 | 0</code>
+  <code>25-09 Vineri | 0 | 0 | 0 | 0 | 0</code>
+  <code>26-09 Sâmbătă | 0 | 0 | 0 | 0 | 0</code>
+  <code>27-09 Duminică | 0 | 0 | 0 | 0 | 0</code>
+  <code>TOTAL | 1 | 0 | 0 | 0 | 1</code>
+  '''
+# ---
+# name: test_weekly_module_text[w2-ru]
+  '''
+  <b>Визиты в шоурум: 1</b> (Brașov 1)
+  <code>Zi | Brașov | București | Cluj | (fără showroom) | TOTAL</code>
+  <code>21-09 Luni | 1 | 0 | 0 | 0 | 1</code>
+  <code>22-09 Marți | 0 | 0 | 0 | 0 | 0</code>
+  <code>23-09 Miercuri | 0 | 0 | 0 | 0 | 0</code>
+  <code>24-09 Joi | 0 | 0 | 0 | 0 | 0</code>
+  <code>25-09 Vineri | 0 | 0 | 0 | 0 | 0</code>
+  <code>26-09 Sâmbătă | 0 | 0 | 0 | 0 | 0</code>
+  <code>27-09 Duminică | 0 | 0 | 0 | 0 | 0</code>
+  <code>TOTAL | 1 | 0 | 0 | 0 | 1</code>
+  '''
+# ---
+# name: test_weekly_module_text[w3-ro]
+  '''
+  <b>Pâlnia săptămânii</b> (lead-uri create în săptămână)
+  Lead-uri 6 → Utile 6 (irelevante 0) → Oferte 1 → Contracte 0
+  Lead→Ofertă 17% · Ofertă→Contract 0%
+  <i>Ofertele și contractele pentru aceste lead-uri vor mai crește.</i>
+  '''
+# ---
+# name: test_weekly_module_text[w3-ru]
+  '''
+  <b>Воронка недели</b> (лиды, созданные за неделю)
+  Лиды 6 → Полезные 6 (нерелевантные 0) → Оферты 1 → Контракты 0
+  Лид→Оферта 17% · Оферта→Контракт 0%
+  <i>Оферты и контракты по этим лидам ещё будут расти.</i>
+  '''
+# ---
+# name: test_weekly_module_text[w4-ro]
+  '''
+  <b>Pierdute 2</b>: Nu a răspuns 1 · Buget 1
+  Cluj 2: Nu a răspuns 1 · Buget 1
+  '''
+# ---
+# name: test_weekly_module_text[w4-ru]
+  '''
+  <b>Потеряно 2</b>: Не ответил 1 · Бюджет 1
+  Cluj 2: Не ответил 1 · Бюджет 1
+  '''
+# ---
+# name: test_weekly_module_text[w8-ro]
+  '''
+  <b>Față de săptămâna trecută</b>
+  Lead-uri 5 (+400%) · Vizite 1 (—) · Oferte 1 · Contracte 1 (—)
+  '''
+# ---
+# name: test_weekly_module_text[w8-ru]
+  '''
+  <b>К прошлой неделе</b>
+  Лиды 5 (+400%) · Визиты 1 (—) · Оферты 1 · Контракты 1 (—)
+  '''
+# ---

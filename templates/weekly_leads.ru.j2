@@ -1,0 +1,9 @@
+<b>Нед. {{ week_number }} ({{ week_range }}) · Лиды без Showroom: {{ tables.total }}</b>
+<i>Рабочие часы 10:00–19:00: лиды вне их переносятся на следующий день.</i>
+{% for row in day_showroom_rows %}
+<code>{{ row }}</code>
+{% endfor %}
+
+{% for row in showroom_source_rows %}
+<code>{{ row }}</code>
+{% endfor %}
