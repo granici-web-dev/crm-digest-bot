@@ -3,7 +3,11 @@ from aiogram.exceptions import TelegramNetworkError, TelegramRetryAfter
 from aiogram.methods import SendMessage
 
 from digest.delivery.ops import OpsChannel, notify_ops
-from digest.delivery.telegram import MAX_FLOOD_RETRIES, send_message_with_retry
+from digest.delivery.telegram import (
+    MAX_FLOOD_RETRIES,
+    send_document_with_retry,
+    send_message_with_retry,
+)
 from fakes import recording_bot
 
 OPS_CHAT_ID = -100
@@ -37,6 +41,28 @@ async def test_flood_wait_beyond_retry_budget_raises() -> None:
     with pytest.raises(TelegramRetryAfter):
         await send_message_with_retry(bot, 42, "text", sleep=no_sleep)
     assert session.sent == []
+
+
+async def test_document_is_sent_with_filename_after_flood_wait() -> None:
+    bot, session = recording_bot()
+    session.fail_next(flood_wait(3))
+    sleeps: list[float] = []
+
+    async def record_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    message_id = await send_document_with_retry(
+        bot, 42, "sofabelle_sapt39_2026.xlsx", b"xlsx", sleep=record_sleep
+    )
+
+    assert sleeps == [3]
+    [document] = session.documents
+    assert (document.chat_id, document.filename, document.content, document.message_id) == (
+        42,
+        "sofabelle_sapt39_2026.xlsx",
+        b"xlsx",
+        message_id,
+    )
 
 
 async def test_ops_alert_goes_to_ops_chat_as_plain_text() -> None:

@@ -27,11 +27,15 @@ from digest.db.schema import (
     snapshot_runs,
 )
 from digest.delivery.ops import OpsChannel, notify_ops
-from digest.delivery.telegram import send_message_with_retry, split_message
+from digest.delivery.telegram import (
+    send_document_with_retry,
+    send_message_with_retry,
+    split_message,
+)
 from digest.metrics.daily import PreviousSnapshot
 from digest.metrics.frame import unknown_manager_ids
 from digest.metrics.kpi import Period
-from digest.reports.context import ReportContext
+from digest.reports.context import ReportContext, ReportDocument
 from digest.reports.modules import ReportModuleFunction
 from digest.reports.periods import ReportLevel, report_period
 from digest.reports.render import ReportLanguage, render
@@ -75,6 +79,7 @@ class BuiltReport:
     text: str
     status: Literal["success", "partial"]
     snapshot_date: date
+    documents: tuple[ReportDocument, ...] = ()
 
 
 def period_label(level: ReportLevel, period: Period) -> str:
@@ -317,6 +322,14 @@ async def alert_snapshot_findings(
         )
 
 
+async def snapshot_if_successful(deps: ReportDeps, snapshot_date: date) -> PreviousSnapshot | None:
+    try:
+        lead_frame = await load_lead_frame(deps.engine, deps.tenant_id, snapshot_date, deps.config)
+    except SnapshotMissingError:
+        return None
+    return PreviousSnapshot(snapshot_date, lead_frame)
+
+
 async def build_report(
     deps: ReportDeps, level: ReportLevel, period: Period, snapshot_date: date
 ) -> BuiltReport | None:
@@ -357,8 +370,15 @@ async def build_report(
         if previous_date is not None
         else None
     )
-    context = ReportContext(snapshot_date, previous, deps.config, language)
+    # w8 сравнивает оферты только со снапшотом ровно за прошлое воскресенье.
+    week_ago = (
+        await snapshot_if_successful(deps, snapshot_date - timedelta(days=7))
+        if level == "weekly"
+        else None
+    )
+    context = ReportContext(snapshot_date, previous, week_ago, deps.config, language)
     blocks: list[ModuleBlock] = []
+    documents: list[ReportDocument] = []
     unavailable_sources: set[str] = set()
     for module_id, module_function in modules:
         try:
@@ -377,6 +397,8 @@ async def build_report(
             for alert in result.alerts:
                 await notify_ops(deps.ops, alert)
             unavailable_sources.update(result.unavailable_sources)
+            if result.document is not None:
+                documents.append(result.document)
             # Текст модуля уже отрендерен своим шаблоном с autoescape, второй раз не экранируем.
             blocks.append(ModuleBlock(module_id, Markup(result.text)))
     text = render(
@@ -390,7 +412,7 @@ async def build_report(
     status: Literal["success", "partial"] = (
         "partial" if any(block.text is None for block in blocks) else "success"
     )
-    return BuiltReport(text, status, snapshot_date)
+    return BuiltReport(text, status, snapshot_date, tuple(documents))
 
 
 async def run_report(level: ReportLevel, now: datetime, deps: ReportDeps) -> ReportRunOutcome:
@@ -449,6 +471,15 @@ async def run_report(level: ReportLevel, now: datetime, deps: ReportDeps) -> Rep
             await record_message_ids(
                 deps, claim.run_id, [*claim.previously_sent_message_ids, *message_ids]
             )
+        for document in report.documents:
+            message_ids.append(
+                await send_document_with_retry(
+                    deps.report_bot, chat_id, document.filename, document.content
+                )
+            )
+            await record_message_ids(
+                deps, claim.run_id, [*claim.previously_sent_message_ids, *message_ids]
+            )
     except Exception as error:
         await finish_report_run(
             deps, claim.run_id, "failed", report.snapshot_date, describe_error(error)
@@ -456,7 +487,8 @@ async def run_report(level: ReportLevel, now: datetime, deps: ReportDeps) -> Rep
         await notify_ops(
             deps.ops,
             f"Отправка отчёта {level} за {label} в чат {chat_id} не удалась: "
-            f"{describe_error(error)}. Отправлено частей: {len(message_ids)} из {len(parts)}.",
+            f"{describe_error(error)}. Отправлено частей: {len(message_ids)} "
+            f"из {len(parts) + len(report.documents)}.",
         )
         return "failed"
     await finish_report_run(deps, claim.run_id, report.status, report.snapshot_date)

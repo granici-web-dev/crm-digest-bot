@@ -5,9 +5,9 @@ from typing import Any, cast
 
 from aiogram import Bot
 from aiogram.client.session.base import BaseSession
-from aiogram.methods import SendMessage, TelegramMethod
+from aiogram.methods import SendDocument, SendMessage, TelegramMethod
 from aiogram.methods.base import TelegramType
-from aiogram.types import Chat, Message
+from aiogram.types import BufferedInputFile, Chat, Document, Message
 
 from digest.delivery.telegram import create_bot
 
@@ -22,16 +22,29 @@ class SentMessage:
     message_id: int
 
 
+@dataclass(frozen=True)
+class SentDocument:
+    chat_id: int
+    filename: str
+    content: bytes
+    message_id: int
+
+
 # Сигнатуры make_request и stream_content заданы BaseSession aiogram, timeout оттуда (ASYNC109).
 class RecordingSession(BaseSession):
     def __init__(self) -> None:
         super().__init__()
         self.sent: list[SentMessage] = []
+        self.documents: list[SentDocument] = []
+        self.document_failures: list[Exception] = []
         self.failures: list[Exception] = []
         self.next_message_id = 1
 
     def fail_next(self, *errors: Exception) -> None:
         self.failures.extend(errors)
+
+    def fail_next_document(self, *errors: Exception) -> None:
+        self.document_failures.extend(errors)
 
     async def make_request(
         self,
@@ -41,6 +54,22 @@ class RecordingSession(BaseSession):
     ) -> TelegramType:
         if self.failures:
             raise self.failures.pop(0)
+        if isinstance(method, SendDocument):
+            if self.document_failures:
+                raise self.document_failures.pop(0)
+            assert isinstance(method.document, BufferedInputFile)
+            chat_id = int(method.chat_id)
+            message_id = self.next_message_id
+            self.next_message_id += 1
+            filename = method.document.filename or ""
+            self.documents.append(SentDocument(chat_id, filename, method.document.data, message_id))
+            document_message = Message(
+                message_id=message_id,
+                date=datetime.now(UTC),
+                chat=Chat(id=chat_id, type="group"),
+                document=Document(file_id="test", file_unique_id="test", file_name=filename),
+            )
+            return cast(TelegramType, document_message)
         assert isinstance(method, SendMessage)
         chat_id = int(method.chat_id)
         message_id = self.next_message_id

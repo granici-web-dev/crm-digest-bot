@@ -6,6 +6,7 @@ from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramRetryAfter
+from aiogram.types import BufferedInputFile
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,29 @@ async def send_message_with_retry(
     for attempt in range(MAX_FLOOD_RETRIES + 1):
         try:
             message = await bot.send_message(chat_id, text, parse_mode=parse_mode)
+        except TelegramRetryAfter as error:
+            if attempt == MAX_FLOOD_RETRIES:
+                raise
+            logger.warning(
+                "telegram flood wait",
+                extra={"chat_id": chat_id, "retry_after": error.retry_after, "attempt": attempt},
+            )
+            await sleep(error.retry_after)
+        else:
+            return message.message_id
+    raise AssertionError("unreachable")
+
+
+async def send_document_with_retry(
+    bot: Bot,
+    chat_id: int,
+    filename: str,
+    content: bytes,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+) -> int:
+    for attempt in range(MAX_FLOOD_RETRIES + 1):
+        try:
+            message = await bot.send_document(chat_id, BufferedInputFile(content, filename))
         except TelegramRetryAfter as error:
             if attempt == MAX_FLOOD_RETRIES:
                 raise

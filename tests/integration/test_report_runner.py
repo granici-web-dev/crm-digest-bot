@@ -7,7 +7,7 @@ from typing import Any
 import pandas as pd
 import pytest
 from aiogram.exceptions import TelegramNetworkError
-from aiogram.methods import SendMessage
+from aiogram.methods import SendDocument, SendMessage
 from sqlalchemy import insert, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -15,7 +15,7 @@ from digest.app import DEFAULT_SCHEDULES, report_job, seed_defaults
 from digest.config import AppConfig
 from digest.db.schema import lead_snapshots, module_settings, report_runs, schedules, snapshot_runs
 from digest.delivery.ops import OpsChannel
-from digest.reports.context import ModuleResult, ReportContext
+from digest.reports.context import ModuleResult, ReportContext, ReportDocument
 from digest.reports.modules import IMPLEMENTED_MODULES
 from digest.reports.runner import ReportDeps, run_report
 from factories import BUCHAREST, lead_snapshots_row, make_snapshot_row
@@ -501,6 +501,78 @@ async def test_weekly_report_on_monday_reads_sundays_snapshot(harness: Harness) 
     assert "leads: 2" in harness.group_text
     [run] = await report_run_rows(harness.deps.engine)
     assert run["snapshot_date"] == sunday
+
+
+MONDAY_09 = datetime(2026, 9, 28, 9, 0, tzinfo=BUCHAREST)
+WEEK_SUNDAY = date(2026, 9, 27)
+
+
+def document_module(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
+    return ModuleResult("📎 week.xlsx", document=ReportDocument("week.xlsx", b"xlsx-bytes"))
+
+
+async def test_weekly_document_is_sent_after_text_and_recorded(harness: Harness) -> None:
+    deps = replace(harness.deps, modules={"w12": document_module})
+    await store_snapshot(harness.deps.engine, WEEK_SUNDAY, [todays_lead(1)])
+
+    outcome = await run_report("weekly", MONDAY_09, deps)
+
+    assert outcome == "success"
+    [document] = harness.group.documents
+    assert (document.chat_id, document.filename, document.content) == (
+        GROUP_CHAT_ID,
+        "week.xlsx",
+        b"xlsx-bytes",
+    )
+    assert max(message.message_id for message in harness.group.sent) < document.message_id
+    [run] = await report_run_rows(harness.deps.engine)
+    assert run["message_ids"] == [
+        *(message.message_id for message in harness.group.sent),
+        document.message_id,
+    ]
+
+
+async def test_document_send_failure_marks_run_failed(harness: Harness) -> None:
+    deps = replace(harness.deps, modules={"w12": document_module})
+    await store_snapshot(harness.deps.engine, WEEK_SUNDAY, [todays_lead(1)])
+    harness.group.fail_next_document(
+        TelegramNetworkError(SendDocument(chat_id=1, document="x"), "down")
+    )
+    text_parts_sent = 1
+
+    outcome = await run_report("weekly", MONDAY_09, deps)
+
+    assert outcome == "failed"
+    assert len(harness.group.sent) == text_parts_sent
+    assert any(f"Отправлено частей: {text_parts_sent} из 2" in alert for alert in harness.ops_texts)
+    [run] = await report_run_rows(harness.deps.engine)
+    assert run["status"] == "failed"
+    assert run["message_ids"] == [message.message_id for message in harness.group.sent]
+
+
+@pytest.mark.parametrize(("stored_days_back", "expected_week_ago"), [(7, True), (6, False)])
+async def test_weekly_context_has_snapshot_exactly_a_week_old(
+    harness: Harness, stored_days_back: int, expected_week_ago: bool
+) -> None:
+    seen: list[ReportContext] = []
+
+    def weekly_module(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
+        seen.append(context)
+        return ModuleResult("ok")
+
+    deps = replace(harness.deps, modules={"w8": weekly_module})
+    older_date = WEEK_SUNDAY - timedelta(days=stored_days_back)
+    await store_snapshot(harness.deps.engine, older_date, [todays_lead(1)])
+    await store_snapshot(harness.deps.engine, WEEK_SUNDAY, [todays_lead(1)])
+
+    await run_report("weekly", MONDAY_09, deps)
+
+    [context] = seen
+    if expected_week_ago:
+        assert context.week_ago is not None
+        assert context.week_ago.snapshot_date == older_date
+    else:
+        assert context.week_ago is None
 
 
 async def test_daily_report_job_alerts_when_backup_dir_has_no_dumps(
