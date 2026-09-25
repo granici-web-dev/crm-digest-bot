@@ -147,6 +147,16 @@ def flagged_lead_ids(today_frame: pd.DataFrame, flag: pd.Series) -> tuple[int, .
     return tuple(sorted(int(lead_id) for lead_id in today_frame.loc[flag, "lead_id"]))
 
 
+def comparable_previous(
+    previous: PreviousSnapshot | None, report_date: date
+) -> PreviousSnapshot | None:
+    # Разница с более старым снапшотом покрыла бы несколько дней под подписью одного
+    # (docs/shapes/2026-09-25-delivery.md, «d1: счёт»). Правило общее для d1 и d4.
+    if previous is not None and previous.snapshot_date == report_date - timedelta(days=1):
+        return previous
+    return None
+
+
 def seller_format_counts(
     today_frame: pd.DataFrame,
     previous: PreviousSnapshot | None,
@@ -155,13 +165,7 @@ def seller_format_counts(
 ) -> SellerFormatCounts:
     period = daily_window(report_date, config.status_mapping.time)
     flags = lead_row_flags(today_frame, period, config)
-    # Разница с более старым снапшотом покрыла бы несколько дней под подписью одного
-    # (docs/shapes/2026-09-25-delivery.md, «d1: счёт»).
-    comparable = (
-        previous
-        if previous is not None and previous.snapshot_date == report_date - timedelta(days=1)
-        else None
-    )
+    comparable = comparable_previous(previous, report_date)
     if comparable is not None:
         flags = flags.join(transition_flags(today_frame, comparable.frame, period, config))
     else:

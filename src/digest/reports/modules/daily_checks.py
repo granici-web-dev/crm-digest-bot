@@ -12,13 +12,13 @@ from digest.reports.render import render
 
 
 def untouched_leads_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
-    findings = untouched_leads(lead_frame, context.report_date, context.config)
-    return ModuleResult(render("untouched_leads", context.language, findings=findings))
+    untouched = untouched_leads(lead_frame, context.report_date, context.config)
+    return ModuleResult(render("untouched_leads", context.language, untouched=untouched))
 
 
 def overdue_revenire_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
-    findings = overdue_revenire_by_manager(lead_frame, context.report_date, context.config)
-    return ModuleResult(render("overdue_revenire", context.language, findings=findings))
+    overdue = overdue_revenire_by_manager(lead_frame, context.report_date, context.config)
+    return ModuleResult(render("overdue_revenire", context.language, overdue=overdue))
 
 
 def stale_offers_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:

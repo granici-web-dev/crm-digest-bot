@@ -6,34 +6,53 @@ from syrupy.assertion import SnapshotAssertion
 from digest.metrics.daily_checks import (
     Anomalies,
     IrelevantSpike,
-    ManagerFinding,
+    OverdueGroup,
+    OverdueRevenire,
     SameWeekdayComparison,
     StaleOffers,
+    UntouchedGroup,
+    UntouchedLeads,
 )
 from digest.reports.render import ReportLanguage, render
 
 LANGUAGES = ["ro", "ru"]
-FINDINGS = (
-    ManagerFinding(None, 1, 5),
-    ManagerFinding("Roibu Valeria", 2, 26),
-    ManagerFinding("Raileanu  Leon", 1, 1),
+# Первая группа «не взяты» не самая старая: общий максимум печатается отдельно.
+UNTOUCHED = UntouchedLeads(
+    lead_count=4,
+    oldest_age_hours=26,
+    groups=(
+        UntouchedGroup(None, 1, 5),
+        UntouchedGroup("Roibu Valeria", 2, 26),
+        UntouchedGroup("Raileanu  Leon", 1, 1),
+    ),
+)
+OVERDUE = OverdueRevenire(
+    lead_count=4,
+    max_days_overdue=26,
+    groups=(
+        OverdueGroup(None, 1, 5),
+        OverdueGroup("Roibu Valeria", 2, 26),
+        OverdueGroup("Raileanu  Leon", 1, 1),
+    ),
 )
 
 
 @pytest.mark.parametrize("language", LANGUAGES)
-@pytest.mark.parametrize("findings", [FINDINGS, ()], ids=["found", "none"])
+@pytest.mark.parametrize(
+    "untouched", [UNTOUCHED, UntouchedLeads(0, None, ())], ids=["found", "none"]
+)
 def test_untouched_leads_render(
-    language: ReportLanguage, findings: tuple[ManagerFinding, ...], snapshot: SnapshotAssertion
+    language: ReportLanguage, untouched: UntouchedLeads, snapshot: SnapshotAssertion
 ) -> None:
-    assert render("untouched_leads", language, findings=findings) == snapshot
+    assert render("untouched_leads", language, untouched=untouched) == snapshot
 
 
 @pytest.mark.parametrize("language", LANGUAGES)
-@pytest.mark.parametrize("findings", [FINDINGS, ()], ids=["found", "none"])
+@pytest.mark.parametrize("overdue", [OVERDUE, OverdueRevenire(0, None, ())], ids=["found", "none"])
 def test_overdue_revenire_render(
-    language: ReportLanguage, findings: tuple[ManagerFinding, ...], snapshot: SnapshotAssertion
+    language: ReportLanguage, overdue: OverdueRevenire, snapshot: SnapshotAssertion
 ) -> None:
-    assert render("overdue_revenire", language, findings=findings) == snapshot
+    assert render("overdue_revenire", language, overdue=overdue) == snapshot
 
 
 @pytest.mark.parametrize(
@@ -41,9 +60,12 @@ def test_overdue_revenire_render(
     [(1, "1 zi"), (2, "2 zile"), (19, "19 zile"), (20, "20 de zile"), (101, "101 zile")],
 )
 def test_overdue_revenire_ro_day_numerals(days: int, expected: str) -> None:
-    text = render("overdue_revenire", "ro", findings=(ManagerFinding("Marc Andra", 1, days),))
+    overdue = OverdueRevenire(1, days, (OverdueGroup("Marc Andra", 1, days),))
 
-    assert text.endswith(f"(cea mai veche: {expected})")
+    text = render("overdue_revenire", "ro", overdue=overdue)
+
+    assert f"(cea mai veche: {expected})" in text
+    assert text.endswith(f"Marc Andra 1 ({expected})")
 
 
 @pytest.mark.parametrize("language", LANGUAGES)
@@ -54,8 +76,9 @@ def test_overdue_revenire_ro_day_numerals(days: int, expected: str) -> None:
         StaleOffers({"Brașov": 1, "București": 0, "Cluj": 0, None: 0}, 1, -3),
         StaleOffers({"Brașov": 2, "București": 1, "Cluj": 0, None: 0}, 3, None),
         StaleOffers({"Brașov": 0, "București": 0, "Cluj": 0, None: 0}, 0, None),
+        StaleOffers({"Brașov": 0, "București": 0, "Cluj": 0, None: 0}, 0, -2),
     ],
-    ids=["growth", "decline", "no_yesterday", "none"],
+    ids=["growth", "decline", "no_yesterday", "none", "none_after_decline"],
 )
 def test_stale_offers_render(
     language: ReportLanguage, offers: StaleOffers, snapshot: SnapshotAssertion

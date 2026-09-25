@@ -1,6 +1,8 @@
 {% if offers.total %}
 📄 Зависшие оферты >{{ stale_days }} дней: {{ offers.total }} (к вчера: {{ "—" if offers.change_since_yesterday is none else "%+d" | format(offers.change_since_yesterday) }}) · {% for showroom, count in offers.by_showroom.items() if count %}{{ showroom or "без шоурума" }} {{ count }}{% if not loop.last %}, {% endif %}{% endfor %}
 
+{% elif offers.change_since_yesterday %}
+Зависшие оферты >{{ stale_days }} дней: нет (к вчера: {{ "%+d" | format(offers.change_since_yesterday) }})
 {% else %}
 Зависшие оферты >{{ stale_days }} дней: нет
 {% endif %}

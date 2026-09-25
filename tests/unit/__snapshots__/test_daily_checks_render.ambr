@@ -30,10 +30,10 @@
   '🔴 Всплеск IRELEVANT: Marc Andra 5'
 # ---
 # name: test_overdue_revenire_render[found-ro]
-  '⏰ Reveniri restante: 4 · Nepreluate 1 (cea mai veche: 5 zile), Roibu Valeria 2 (26 de zile), Raileanu  Leon 1 (1 zi)'
+  '⏰ Reveniri restante: 4 (cea mai veche: 26 de zile) · Nepreluate 1 (5 zile), Roibu Valeria 2 (26 de zile), Raileanu  Leon 1 (1 zi)'
 # ---
 # name: test_overdue_revenire_render[found-ru]
-  '⏰ Просроченные возвраты: 4 · Не взяты 1 (самый старый: 5 дн.), Roibu Valeria 2 (26 дн.), Raileanu  Leon 1 (1 дн.)'
+  '⏰ Просроченные возвраты: 4 (самый старый: 26 дн.) · Не взяты 1 (5 дн.), Roibu Valeria 2 (26 дн.), Raileanu  Leon 1 (1 дн.)'
 # ---
 # name: test_overdue_revenire_render[none-ro]
   'Reveniri restante: nu'
@@ -77,11 +77,17 @@
 # name: test_stale_offers_render[none-ru]
   'Зависшие оферты >14 дней: нет'
 # ---
+# name: test_stale_offers_render[none_after_decline-ro]
+  'Oferte blocate >14 zile: nu (față de ieri: -2)'
+# ---
+# name: test_stale_offers_render[none_after_decline-ru]
+  'Зависшие оферты >14 дней: нет (к вчера: -2)'
+# ---
 # name: test_untouched_leads_render[found-ro]
-  '⚠ Lead-uri neatinse: 4 · Nepreluate 1 (cel mai vechi: 5h), Roibu Valeria 2 (26h), Raileanu  Leon 1 (1h)'
+  '⚠ Lead-uri neatinse: 4 (cel mai vechi: 26h) · Nepreluate 1 (5h), Roibu Valeria 2 (26h), Raileanu  Leon 1 (1h)'
 # ---
 # name: test_untouched_leads_render[found-ru]
-  '⚠ Лиды без касания: 4 · Не взяты 1 (самый старый: 5 ч), Roibu Valeria 2 (26 ч), Raileanu  Leon 1 (1 ч)'
+  '⚠ Лиды без касания: 4 (самый старый: 26 ч) · Не взяты 1 (5 ч), Roibu Valeria 2 (26 ч), Raileanu  Leon 1 (1 ч)'
 # ---
 # name: test_untouched_leads_render[none-ro]
   'Lead-uri neatinse: nu'

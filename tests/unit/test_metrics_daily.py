@@ -3,11 +3,13 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+import pytest
 
 from digest.config import AppConfig
 from digest.metrics.daily import (
     PreviousSnapshot,
     SellerFormatRow,
+    comparable_previous,
     daily_window,
     seller_format_counts,
 )
@@ -257,3 +259,17 @@ def test_other_sources_go_to_alte_and_unknown_ones_are_reported(app_config: AppC
     assert counts.total.leads_other == 4
     assert counts.total.leads_phone == 1
     assert counts.unknown_source_lead_ids == (3, 4)
+
+
+@pytest.mark.parametrize(
+    ("snapshot_date", "is_comparable"),
+    [(date(2026, 9, 24), True), (date(2026, 9, 23), False), (date(2026, 9, 25), False)],
+    ids=["yesterday", "two_days_ago", "same_day"],
+)
+def test_only_snapshot_of_exactly_yesterday_is_comparable(
+    snapshot_date: date, is_comparable: bool
+) -> None:
+    previous = PreviousSnapshot(snapshot_date, pd.DataFrame())
+
+    assert (comparable_previous(previous, REPORT_DATE) is previous) is is_comparable
+    assert comparable_previous(None, REPORT_DATE) is None

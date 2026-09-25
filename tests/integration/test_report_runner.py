@@ -154,8 +154,8 @@ async def test_daily_report_contains_d1_to_d6_in_order(harness: Harness) -> None
         text.index(marker)
         for marker in (
             "<b>TOTAL</b>",
-            "⚠ Lead-uri neatinse: 2 · Dragoi Mihaela 2 (cel mai vechi: 9h)",
-            "⏰ Reveniri restante: 1 · Dragoi Mihaela 1 (cea mai veche: 3 zile)",
+            "⚠ Lead-uri neatinse: 2 (cel mai vechi: 9h) · Dragoi Mihaela 2 (9h)",
+            "⏰ Reveniri restante: 1 (cea mai veche: 3 zile) · Dragoi Mihaela 1 (3 zile)",
             "Oferte blocate >14 zile: nu",
             "Anomalii: nu",
             "Lead-uri azi: 2 (vinerea trecută: 0) · Contracte: 0 (0)",

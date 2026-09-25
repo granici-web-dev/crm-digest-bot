@@ -1,5 +1,6 @@
-{% if findings %}
-⏰ Просроченные возвраты: {{ findings | sum(attribute="lead_count") }} · {% for finding in findings %}{{ finding.manager_name or "Не взяты" }} {{ finding.lead_count }} ({% if loop.first %}самый старый: {% endif %}{{ finding.oldest }} дн.){% if not loop.last %}, {% endif %}{% endfor %}
+{% from "_names.ru.j2" import manager %}
+{% if overdue.lead_count %}
+⏰ Просроченные возвраты: {{ overdue.lead_count }} (самый старый: {{ overdue.max_days_overdue }} дн.) · {% for group in overdue.groups %}{{ manager(group.manager_name) }} {{ group.lead_count }} ({{ group.max_days_overdue }} дн.){% if not loop.last %}, {% endif %}{% endfor %}
 
 {% else %}
 Просроченные возвраты: нет

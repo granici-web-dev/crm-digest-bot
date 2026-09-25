@@ -8,7 +8,10 @@ from digest.config import AppConfig
 from digest.metrics.daily import LEAD_ROWS, PreviousSnapshot, seller_format_counts
 from digest.metrics.daily_checks import (
     IrelevantSpike,
-    ManagerFinding,
+    OverdueGroup,
+    OverdueRevenire,
+    UntouchedGroup,
+    UntouchedLeads,
     anomalies,
     overdue_revenire_by_manager,
     same_weekday_comparison,
@@ -33,8 +36,8 @@ def new_lead(lead_id: int, created_at: datetime, **overrides: Any) -> dict[str, 
     )
 
 
-def untouched(rows: list[dict[str, Any]], config: AppConfig) -> tuple[ManagerFinding, ...]:
-    return untouched_leads(frame(rows, config), REPORT_DATE, config)
+def untouched(rows: list[dict[str, Any]], config: AppConfig) -> tuple[UntouchedGroup, ...]:
+    return untouched_leads(frame(rows, config), REPORT_DATE, config).groups
 
 
 # d2
@@ -43,7 +46,7 @@ def untouched(rows: list[dict[str, Any]], config: AppConfig) -> tuple[ManagerFin
 def test_untouched_lead_is_reported_with_age_from_window_end(app_config: AppConfig) -> None:
     rows = [new_lead(1, datetime(2026, 9, 25, 10, 30, tzinfo=BUCHAREST))]
 
-    assert untouched(rows, app_config) == (ManagerFinding("Dragoi Mihaela", 1, 8),)
+    assert untouched(rows, app_config) == (UntouchedGroup("Dragoi Mihaela", 1, 8),)
 
 
 @pytest.mark.parametrize(
@@ -74,7 +77,7 @@ def test_lead_created_by_consultant_is_touched(app_config: AppConfig) -> None:
         new_lead(2, created_at, created_by_id=7),
     ]
 
-    assert untouched(rows, app_config) == (ManagerFinding("Dragoi Mihaela", 1, 9),)
+    assert untouched(rows, app_config) == (UntouchedGroup("Dragoi Mihaela", 1, 9),)
 
 
 @pytest.mark.parametrize(
@@ -84,13 +87,13 @@ def test_lead_created_by_consultant_is_touched(app_config: AppConfig) -> None:
         (datetime(2026, 9, 25, 15, 0, tzinfo=BUCHAREST), ()),
         (
             datetime(2026, 9, 25, 14, 59, tzinfo=BUCHAREST),
-            (ManagerFinding("Dragoi Mihaela", 1, 4),),
+            (UntouchedGroup("Dragoi Mihaela", 1, 4),),
         ),
     ],
     ids=["3h59", "exactly_4h", "4h01"],
 )
 def test_lead_younger_than_threshold_is_not_reported(
-    app_config: AppConfig, created_at: datetime, expected: tuple[ManagerFinding, ...]
+    app_config: AppConfig, created_at: datetime, expected: tuple[UntouchedGroup, ...]
 ) -> None:
     assert untouched([new_lead(1, created_at)], app_config) == expected
 
@@ -122,14 +125,14 @@ def test_not_taken_lead_is_reported_even_if_touched(app_config: AppConfig) -> No
         )
     ]
 
-    assert untouched(rows, app_config) == (ManagerFinding(None, 1, 10),)
+    assert untouched(rows, app_config) == (UntouchedGroup(None, 1, 10),)
 
 
 def test_lead_without_assignee_is_not_taken(app_config: AppConfig) -> None:
     created_at = datetime(2026, 9, 25, 9, 0, tzinfo=BUCHAREST)
     rows = [new_lead(1, created_at, assigned_to_id=None, assigned_to_name=None)]
 
-    assert untouched(rows, app_config) == (ManagerFinding(None, 1, 10),)
+    assert untouched(rows, app_config) == (UntouchedGroup(None, 1, 10),)
 
 
 def test_showroom_visit_is_not_untouched(app_config: AppConfig) -> None:
@@ -163,10 +166,16 @@ def test_untouched_groups_put_not_taken_first_then_larger_groups(app_config: App
         new_lead(4, at(14), assigned_to_id=None, assigned_to_name=None),
     ]
 
-    assert untouched(rows, app_config) == (
-        ManagerFinding(None, 1, 5),
-        ManagerFinding("Roibu Valeria", 2, 11),
-        ManagerFinding("Dragoi Mihaela", 1, 10),
+    result = untouched_leads(frame(rows, app_config), REPORT_DATE, app_config)
+
+    assert result == UntouchedLeads(
+        lead_count=4,
+        oldest_age_hours=11,
+        groups=(
+            UntouchedGroup(None, 1, 5),
+            UntouchedGroup("Roibu Valeria", 2, 11),
+            UntouchedGroup("Dragoi Mihaela", 1, 10),
+        ),
     )
 
 
@@ -176,7 +185,9 @@ def test_untouched_groups_put_not_taken_first_then_larger_groups(app_config: App
 def test_revenire_today_is_not_overdue(app_config: AppConfig) -> None:
     rows = [make_snapshot_row(lead_id=1, data_revenire=REPORT_DATE)]
 
-    assert overdue_revenire_by_manager(frame(rows, app_config), REPORT_DATE, app_config) == ()
+    result = overdue_revenire_by_manager(frame(rows, app_config), REPORT_DATE, app_config)
+
+    assert result == OverdueRevenire(lead_count=0, max_days_overdue=None, groups=())
 
 
 def test_overdue_days_are_counted_per_manager(app_config: AppConfig) -> None:
@@ -193,10 +204,16 @@ def test_overdue_days_are_counted_per_manager(app_config: AppConfig) -> None:
         ),
     ]
 
-    assert overdue_revenire_by_manager(frame(rows, app_config), REPORT_DATE, app_config) == (
-        ManagerFinding(None, 1, 1),
-        ManagerFinding("Godja Adina Maria", 2, 6),
-        ManagerFinding("Dragoi Mihaela", 1, 2),
+    assert overdue_revenire_by_manager(
+        frame(rows, app_config), REPORT_DATE, app_config
+    ) == OverdueRevenire(
+        lead_count=4,
+        max_days_overdue=6,
+        groups=(
+            OverdueGroup(None, 1, 1),
+            OverdueGroup("Godja Adina Maria", 2, 6),
+            OverdueGroup("Dragoi Mihaela", 1, 2),
+        ),
     )
 
 

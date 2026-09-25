@@ -4,17 +4,47 @@ from datetime import date, timedelta
 import pandas as pd
 
 from digest.config import AppConfig
-from digest.metrics.daily import LEAD_ROWS, PreviousSnapshot, daily_window, lead_row_flags
+from digest.metrics.daily import (
+    LEAD_ROWS,
+    PreviousSnapshot,
+    comparable_previous,
+    daily_window,
+    lead_row_flags,
+)
 from digest.metrics.extra import overdue_revenire
 from digest.metrics.kpi import Period, lead_counts_by_showroom
 
 
 @dataclass(frozen=True)
-class ManagerFinding:
+class UntouchedGroup:
     # None: лид не взят (консультант с not_taken или без консультанта).
     manager_name: str | None
     lead_count: int
-    oldest: int
+    oldest_age_hours: int
+
+
+@dataclass(frozen=True)
+class UntouchedLeads:
+    lead_count: int
+    # None: лидов в блоке нет.
+    oldest_age_hours: int | None
+    groups: tuple[UntouchedGroup, ...]
+
+
+@dataclass(frozen=True)
+class OverdueGroup:
+    # None: лид не взят (консультант с not_taken или без консультанта).
+    manager_name: str | None
+    lead_count: int
+    max_days_overdue: int
+
+
+@dataclass(frozen=True)
+class OverdueRevenire:
+    lead_count: int
+    # None: просроченных revenire нет.
+    max_days_overdue: int | None
+    groups: tuple[OverdueGroup, ...]
 
 
 @dataclass(frozen=True)
@@ -57,33 +87,28 @@ def name_or_not_taken(group_key: object) -> str | None:
     return group_key if isinstance(group_key, str) else None
 
 
-def findings_by_manager(
-    leads: pd.DataFrame, oldest: pd.Series, config: AppConfig
-) -> tuple[ManagerFinding, ...]:
+def not_taken_first(manager_name: str | None, lead_count: int) -> tuple[bool, int, str]:
+    return (manager_name is not None, -lead_count, manager_name or "")
+
+
+def count_and_max_by_manager(
+    leads: pd.DataFrame, values: pd.Series, config: AppConfig
+) -> list[tuple[str | None, int, int]]:
     grouped = (
-        pd.DataFrame({"manager_name": manager_names(leads, config), "oldest": oldest})
-        .groupby("manager_name", dropna=False)["oldest"]
+        pd.DataFrame({"manager_name": manager_names(leads, config), "value": values})
+        .groupby("manager_name", dropna=False)["value"]
         .agg(["size", "max"])
     )
-    findings = [
-        ManagerFinding(name_or_not_taken(manager_name), int(row["size"]), int(row["max"]))
+    groups = [
+        (name_or_not_taken(manager_name), int(row["size"]), int(row["max"]))
         for manager_name, row in grouped.iterrows()
     ]
-    return tuple(
-        sorted(
-            findings,
-            key=lambda finding: (
-                finding.manager_name is not None,
-                -finding.lead_count,
-                finding.manager_name or "",
-            ),
-        )
-    )
+    return sorted(groups, key=lambda group: not_taken_first(group[0], group[1]))
 
 
 def untouched_leads(
     lead_frame: pd.DataFrame, report_date: date, config: AppConfig
-) -> tuple[ManagerFinding, ...]:
+) -> UntouchedLeads:
     # docs/kpi-definitions.md, «Ежедневные проверки», d2.
     params = config.modules.untouched_leads_params()
     # Возраст от конца окна, а не от now(): повтор отчёта даёт те же цифры.
@@ -111,16 +136,23 @@ def untouched_leads(
     not_taken = manager_names(lead_frame, config).isna()
     reported = candidate & (not_taken | ~touched)
     leads = lead_frame[reported]
-    return findings_by_manager(leads, age_hours[reported].floordiv(1), config)
+    ages = age_hours[reported].floordiv(1)
+    groups = tuple(
+        UntouchedGroup(*group) for group in count_and_max_by_manager(leads, ages, config)
+    )
+    return UntouchedLeads(len(leads), None if leads.empty else int(ages.max()), groups)
 
 
 def overdue_revenire_by_manager(
     lead_frame: pd.DataFrame, today: date, config: AppConfig
-) -> tuple[ManagerFinding, ...]:
+) -> OverdueRevenire:
     # docs/kpi-definitions.md, «Дополнительные метрики», просроченные revenire.
     overdue = lead_frame[lead_frame["lead_id"].isin(overdue_revenire(lead_frame, today, config))]
     days_overdue = (pd.Timestamp(today) - overdue["data_revenire"]).dt.days
-    return findings_by_manager(overdue, days_overdue, config)
+    groups = tuple(
+        OverdueGroup(*group) for group in count_and_max_by_manager(overdue, days_overdue, config)
+    )
+    return OverdueRevenire(len(overdue), None if overdue.empty else int(days_overdue.max()), groups)
 
 
 def stale_offer_counts_by_showroom(
@@ -146,12 +178,16 @@ def stale_offers(
 ) -> StaleOffers:
     by_showroom = stale_offer_counts_by_showroom(lead_frame, report_date, config)
     total = sum(by_showroom.values())
-    yesterday = report_date - timedelta(days=1)
-    # Как в d1: дельта только к снапшоту ровно за вчера, иначе она покрыла бы несколько дней.
+    comparable = comparable_previous(previous, report_date)
     change_since_yesterday = (
-        total - sum(stale_offer_counts_by_showroom(previous.frame, yesterday, config).values())
-        if previous is not None and previous.snapshot_date == yesterday
-        else None
+        None
+        if comparable is None
+        else total
+        - sum(
+            stale_offer_counts_by_showroom(
+                comparable.frame, comparable.snapshot_date, config
+            ).values()
+        )
     )
     return StaleOffers(by_showroom, total, change_since_yesterday)
 

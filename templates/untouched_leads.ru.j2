@@ -1,5 +1,6 @@
-{% if findings %}
-⚠ Лиды без касания: {{ findings | sum(attribute="lead_count") }} · {% for finding in findings %}{{ finding.manager_name or "Не взяты" }} {{ finding.lead_count }} ({% if loop.first %}самый старый: {% endif %}{{ finding.oldest }} ч){% if not loop.last %}, {% endif %}{% endfor %}
+{% from "_names.ru.j2" import manager %}
+{% if untouched.lead_count %}
+⚠ Лиды без касания: {{ untouched.lead_count }} (самый старый: {{ untouched.oldest_age_hours }} ч) · {% for group in untouched.groups %}{{ manager(group.manager_name) }} {{ group.lead_count }} ({{ group.oldest_age_hours }} ч){% if not loop.last %}, {% endif %}{% endfor %}
 
 {% else %}
 Лиды без касания: нет

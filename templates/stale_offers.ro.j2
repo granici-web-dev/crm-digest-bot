@@ -1,6 +1,8 @@
 {% if offers.total %}
 📄 Oferte blocate >{{ stale_days }} zile: {{ offers.total }} (față de ieri: {{ "—" if offers.change_since_yesterday is none else "%+d" | format(offers.change_since_yesterday) }}) · {% for showroom, count in offers.by_showroom.items() if count %}{{ showroom or "fără showroom" }} {{ count }}{% if not loop.last %}, {% endif %}{% endfor %}
 
+{% elif offers.change_since_yesterday %}
+Oferte blocate >{{ stale_days }} zile: nu (față de ieri: {{ "%+d" | format(offers.change_since_yesterday) }})
 {% else %}
 Oferte blocate >{{ stale_days }} zile: nu
 {% endif %}
