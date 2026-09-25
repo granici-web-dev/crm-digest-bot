@@ -1,0 +1,65 @@
+# Продовый стек на VPS, порядок работы в docs/deploy.md.
+# Имя проекта отдельное: на ноутбуке этот файл лежит рядом с docker-compose.yml и иначе делил бы
+# с ним проект и volume.
+name: crm-digest-bot-prod
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  app:
+    build:
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+    env_file: .env
+    environment:
+      # Перекрывает DATABASE_URL из .env (там localhost для локального прогона).
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-digest}:${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env}@postgres:5432/${POSTGRES_DB:-digest}
+      BACKUP_DIR: /backups
+    volumes:
+      - ./backups:/backups:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *logging
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-digest}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env}
+      POSTGRES_DB: ${POSTGRES_DB:-digest}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+    logging: *logging
+
+  backup:
+    image: postgres:16
+    entrypoint: ["sh", "/backup.sh", "loop"]
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-digest}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env}
+      PGDATABASE: ${POSTGRES_DB:-digest}
+      BACKUP_DIR: /backups
+    volumes:
+      - ./deploy/backup.sh:/backup.sh:ro
+      - ./backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  postgres-data:

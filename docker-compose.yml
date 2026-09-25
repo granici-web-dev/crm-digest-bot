@@ -1,4 +1,4 @@
-# Локальная разработка: только Postgres. Продовый compose (app, postgres, pg_dump) появится с деплоем.
+# Локальная разработка: только Postgres. Продовый стек в docker-compose.prod.yml (docs/deploy.md).
 services:
   postgres:
     image: postgres:16
