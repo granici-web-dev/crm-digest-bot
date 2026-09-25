@@ -1,66 +1,68 @@
 # KPI — определения, формулы, пороги
 
-Источник: `SB KPi.xlsx` (Sales Performance Index v2.0), формулы сняты скриптом из ячеек `01_Input_Leads` (колонки V..AG) и `03_KPI_Agenti` (C..AE). v1 повторяет workbook один в один (ADR-002), отступления помечены **[наше]**. Пороги — `config/kpi.yaml`, ключи совпадают с `02_Setari_Targete`. Изменение формулы или порога — только через ADR и обновление эталона.
+Формулы — по `docs/brief.md` §3 (ADR-002). `SB KPi.xlsx` составлен через ИИ, из него берутся только лиды для эталона; расхождения с workbook перечислены в конце. Пороги и цели — `config/kpi.yaml`. Изменение формулы или порога — только через ADR и пересборку эталона.
 
 Считаются по консультанту, по шоуруму и по компании за период.
 
-## Признаки лида (как `01_Input_Leads` V..AG)
+## Признаки лида
 
-| Признак | Excel | У нас |
-|---|---|---|
-| Нормализация статуса | `UPPER(Status)`, `Ț→T`, `Ș/Ş→S` | не нужна: категория по `status.name` из `config/status-mapping.yaml` (инвариант 4) |
-| `is_clienti` | `Status_Normalizat` содержит `CLIENTI` | категория `WON` по `status.name = Clienți`. `converted_at` в счёт не идёт (в workbook контракты только по статусу), расхождение с ним — алерт |
-| `is_irelevant` | содержит `IRELEVANT` | категория `LOST · IRELEVANT` (IRELEVANT, SPAM). **[наше]** SPAM в Excel не считался бы; в эталоне SPAM нет, на цифры не влияет |
-| `is_nu_a_raspuns` | содержит `NU A RASPUNS` | `LOST · NU RASPUNS` |
-| `is_buget` | содержит `BUGET` | `LOST · BUGET` |
-| `is_produs_nepotrivit` | содержит `PRODUS` | `LOST · PRODUS NEPOTRIVIT` |
-| `is_ofertat` | `Ofertat` содержит `DA` | кастомное поле `Ofertat` (field_id 20) = `✅DA`; до подключения источника B |
-| `is_showroom_visit` | `Sursa` содержит `SHOWROOM` | `source.name = Showroom` |
-| `is_lead` | дата `Data ultimei solicitări` не пустая | лид в снапшоте с `created_at` в периоде |
-| агент | `TRIM(Desemnat)`: схлопывает двойной пробел (`Raileanu  Leon` → `Raileanu Leon`) | `assigned_to.id` → `config/managers.yaml`, имя не сравнивается |
+| Признак | Определение |
+|---|---|
+| категория | по `status.name` из `config/status-mapping.yaml` (инвариант 4), не подстрокой |
+| `is_clienti` | категория `WON`: `status.name = Clienți`. `converted_at` в счёт не идёт, расхождение с ним — алерт снапшота |
+| `is_irelevant` | `LOST · IRELEVANT`: IRELEVANT, SPAM |
+| `is_partnership` | `PARTNERSHIP`: DESIGNER, INFLUENCER |
+| `is_nu_a_raspuns` | `LOST · NU RASPUNS` |
+| `is_buget` | `LOST · BUGET` |
+| `is_produs_nepotrivit` | `LOST · PRODUS NEPOTRIVIT` |
+| `is_ofertat` | кастомное поле `Ofertat` (field_id 20) = `✅DA` |
+| `is_showroom_visit` | `source.name = Showroom` |
+| консультант | `assigned_to.id` → `config/managers.yaml`, имя не сравнивается |
 
-Лиды без консультанта входят в итог по компании, но ни в одну строку по консультантам (в эталоне таких 5 из 314).
+Лиды без консультанта входят в итог по компании, но ни в одну строку по консультантам.
 
 ## Базовые множества (за период, по `created_at` лида)
 
-| Обозначение | Определение | Колонка `03_KPI_Agenti` |
-|---|---|---|
-| `LEADS` | все лиды с датой, **включая** DESIGNER и INFLUENCER. **[наше]** Минус лиды тестовых аккаунтов (`config/managers.yaml`, `test_account: true`) | C `Lead-uri` |
-| `IRR_LEADS` | `LEADS` с `is_irelevant` | D `Irelevante` |
-| `USEFUL` | `LEADS − IRR_LEADS` | E `Lead-uri utile` |
-| `CLIENTI` | `LEADS` с `is_clienti` | F `CLIENTI` |
-| `OFFERS` | `LEADS` с `is_ofertat` | G `Oferte` |
-| `NAR` | `LEADS` с `is_nu_a_raspuns` | H `Nu a răspuns` |
-| `BUGET` | `LEADS` с `is_buget` | I `Buget` |
-| `PNP` | `LEADS` с `is_produs_nepotrivit` | J `Produs nepotrivit` |
-| `SHOWROOM_VISITS` | `LEADS` с `is_showroom_visit` | K `Vizite showroom` |
-| `ACTIVE_OFFERS_14` | `OFFERS`, не `CLIENTI`, не `IRR_LEADS`, `analysis_date − date(last_contact_at) > 14` дней; `last_contact_at = null` → не входит | L `Oferte active >14 zile` |
+| Обозначение | Определение |
+|---|---|
+| `LEADS` | лиды с `created_at` в периоде, **кроме** PARTNERSHIP и лидов тестовых аккаунтов (`test_account: true`) |
+| `IRR_LEADS` | `LEADS` с `is_irelevant` |
+| `USEFUL` | `LEADS − IRR_LEADS` (= все − IRELEVANT − PARTNERSHIP, бриф §3) |
+| `CLIENTI` | `LEADS` с `is_clienti` |
+| `OFFERS` | `LEADS` с `is_ofertat` |
+| `NAR` | `LEADS` с `is_nu_a_raspuns` |
+| `BUGET` | `LEADS` с `is_buget` |
+| `PNP` | `LEADS` с `is_produs_nepotrivit` |
+| `SHOWROOM_VISITS` | `LEADS` с `is_showroom_visit` |
+| `ACTIVE_OFFERS_14` | `OFFERS`, не `CLIENTI`, не `IRR_LEADS`, `analysis_date − date(last_contact_at) > 14` дней; `last_contact_at = null` → не входит |
 
-`analysis_date` — дата расчёта отчёта; в эталоне `02_Setari_Targete!B3` = 2026-06-27. Порог дней — `active_offer_stale_days`.
+`analysis_date` — дата расчёта отчёта, дата `last_contact_at` берётся в Europe/Bucharest. Порог дней — `active_offer_stale_days`. `status_changed_at` не используется: в mefi он `null`, если статус задан при создании лида.
 
-**Дефект workbook.** Формула `01_Input_Leads!AC` ссылается на `'02_Setari_Targete'!$B$2`, а ячейка пустая (дата лежит в B3). Разность отрицательная, поэтому в Excel `ACTIVE_OFFERS_14 = 0` у всех консультантов и `Score ACR = 5`. Кроме того, `DATEVALUE("dd-mm-yyyy")` зависит от локали Excel. Мы считаем по B3, как задумано. С B3 по эталону: Raileanu 9, Dragoi 16, Roibu 16, Moaca 6, Godja 15, Doja 3. `Score ACR` падает до 3 у Roibu, Moaca, Godja; их SPI на 2 ниже Excel (50, 42, 55), уровень и рекомендация не меняются. `expected_by_agent` в эталоне хранит значения Excel как есть; как их сверять, решает shape `metrics/`.
+## KPI (отчёты MVP: m5 и режим вопросов)
 
-## KPI
+| KPI | Название | Формула | Цель |
+|---|---|---|---|
+| SCR | Sales Conversion Rate | `CLIENTI / USEFUL` | > 10 % |
+| L2O | Lead to Offer | `OFFERS / USEFUL` | > 50 %, информативно |
+| O2C | Offer to Contract | `CLIENTI / OFFERS` | > 20 %, информативно |
+| CDR | Contact Discipline Rate | `(LEADS − NAR) / LEADS` | > 90 % |
+| PLR | Price Lost Rate | `BUGET / (LEADS − IRR_LEADS − NAR)` | < 25 % |
+| SC | Showroom Conversion | `count(CLIENTI ∩ SHOWROOM_VISITS) / count(SHOWROOM_VISITS)` | > 20 % |
+| PFR | Product Fit Rate | `PNP / USEFUL` | < 10 % |
+| ACR | Active Control Rate | `ACTIVE_OFFERS_14 / LEADS` | < 20 % |
+| IRR | Irrelevant Rate | `IRR_LEADS / LEADS` | ≤ 20 % |
 
-| KPI | Название | Формула | Ячейка | Цель |
-|---|---|---|---|---|
-| SCR | Sales Conversion Rate | `CLIENTI / USEFUL` | M | > 10 % |
-| L2O | Lead to Offer | `OFFERS / USEFUL` | N | > 50 %, информативно |
-| O2C | Offer to Contract | `CLIENTI / OFFERS` | O | > 20 %, информативно |
-| CDR | Contact Discipline Rate | `(LEADS − NAR) / LEADS` | P | > 90 % |
-| PLR | Price Lost Rate | `BUGET / (LEADS − IRR_LEADS − NAR)` | Q | < 25 % |
-| SC | Showroom Conversion | `CLIENTI / SHOWROOM_VISITS`, все клиенты консультанта, **без пересечения** с визитами | R | > 20 % |
-| PFR | Product Fit Rate | `PNP / USEFUL` | S | < 10 % |
-| ACR | Active Control Rate | `ACTIVE_OFFERS_14 / LEADS` | T | < 20 % |
-| IRR | Irrelevant Rate | `IRR_LEADS / LEADS` | U | ≤ 20 %, штраф к SPI |
+Цели — первые ступени порогов `config/kpi.yaml` (`scr_elite`, `cdr_minim`, `plr_maxim`, `sc_perfect`, `pfr_perfect`, `acr_perfect`, `irr_acceptabil`); они тоже `provisional`, но показываются как ориентир рядом с фактом.
 
-Доли не округляются до вывода.
+Доли не округляются до вывода. **Деление на ноль:** метрика `null`, в отчёте и в ответе чата «—».
 
-**Деление на ноль.** Excel: `IFERROR(…, 0)`. У нас метрика `null`, в отчёте и в ответе чата «—». Балл SPI и рекомендация считаются от 0, как в Excel. Следствие: при нулевом знаменателе PLR, PFR, ACR, IRR получают лучший балл, SCR, CDR, SC — худший. Консультант без лидов получает SPI 54.
+## Предварительно, не показывать до калибровки (ADR-002)
 
-## Баллы SPI (`03_KPI_Agenti` V..AB)
+Механика ниже пришла из workbook и не согласована с владельцем. Функции в `metrics/` есть, пороги в `config/kpi.yaml` (`status: provisional`), но в отчёты MVP и в ответы чата SPI, баллы, уровни и рекомендации не выводятся. Калибровка — по 2–3 месяцам снапшотов плюс Excel 2024–2025, отдельным ADR. Как баллы обрабатывают `null`, решает тот же ADR.
 
-Проверка сверху вниз, первая выполненная ступень. Пороги по ключам `config/kpi.yaml`.
+### Баллы
+
+Проверка сверху вниз, первая выполненная ступень.
 
 | KPI | Ступень 1 | Ступень 2 | Ступень 3 | Иначе | Макс. |
 |---|---|---|---|---|---|
@@ -71,13 +73,11 @@
 | PFR ↓ | ≤ `pfr_perfect` (10 %) → 10 | ≤ `pfr_bine` (15 %) → 8 | ≤ `pfr_maxim` (20 %) → 5 | 2 | 10 |
 | ACR ↓ | ≤ `acr_perfect` (20 %) → 5 | ≤ `acr_maxim` (30 %) → 3 | — | 1 | 5 |
 
-`cdr_contact_floor` (80 %) в `02_Setari_Targete` нет, он зашит в формулу W. **[наше]** Вынесен в `config/kpi.yaml` с пометкой, значение то же.
+Штраф IRR: ≤ `irr_acceptabil` (20 %) → 0; ≤ `irr_atentie` (30 %) → −5; иначе −10.
 
-Штраф IRR (AB): ≤ `irr_acceptabil` (20 %) → 0; ≤ `irr_atentie` (30 %) → −5; иначе −10.
+`SPI = max(0, сумма баллов + штраф IRR)`, максимум 100.
 
-`SPI = max(0, Score_SCR + Score_CDR + Score_PLR + Score_SC + Score_PFR + Score_ACR + Penalizare_IRR)`, максимум 100. Баллы — сразу очки, без весов и перенормировки.
-
-## Уровни (AD, `config/kpi.yaml` → `levels`)
+### Уровни (`config/kpi.yaml` → `levels`)
 
 | SPI | Уровень |
 |---|---|
@@ -87,7 +87,7 @@
 | ≥ 60 | Bronze |
 | < 60 | Coaching |
 
-## Главная рекомендация (AE)
+### Главная рекомендация
 
 Первое выполненное условие сверху вниз. Текст RO из workbook, RU — в `templates/recommendations.{ro,ru}.yaml`.
 
@@ -111,4 +111,22 @@
 
 ## Эталон
 
-`tests/fixtures/etalon-2026-05.json`, собирается `scripts/build_etalon.py` из `docs/reference/SB KPi.xlsx`. Лиды 01.05–16.06.2026 (314 строк с непустым Status, без контактов клиента), пороги `02_Setari_Targete`, ожидаемые значения по 6 консультантам из `03_KPI_Agenti` (C..AE, доли без округления). Тест `test_kpi_matches_etalon` должен проходить до любого рефакторинга `metrics/`.
+`tests/fixtures/etalon-2026-05.json` — регрессионный фикстур. Собирается `scripts/build_etalon.py` из `docs/reference/SB KPi.xlsx`: 314 лидов 01.05–16.06.2026 без контактов клиента, пороги `02_Setari_Targete`, `analysis_date` 2026-06-27.
+
+- `expected_by_agent` — счётчики и 9 KPI по 6 консультантам, посчитаны скриптом по формулам этого файла независимо от `metrics/` (простые циклы, без pandas).
+- `excel_reference` — значения `03_KPI_Agenti` как есть, для сравнения; тесты по нему не проверяют.
+- `meta.manual_check` — Moaca Andreea пересчитана вручную по счётчикам; скрипт падает при расхождении. Клиентов у неё нет, пересечение в SC ручной проверкой не покрыто.
+
+Консультанты в эталоне по имени (в Excel нет `assigned_to.id`), с пробелами, схлопнутыми как `TRIM` в workbook.
+
+## Расхождения с SB KPi.xlsx
+
+| Тема | Workbook | У нас |
+|---|---|---|
+| Партнёрства | DESIGNER, INFLUENCER входят в `LEADS` и `USEFUL` | исключены из `LEADS` |
+| SC | все клиенты консультанта / визиты | клиенты среди визитов / визиты |
+| Деление на ноль | `IFERROR(…, 0)` | `null`, «—» |
+| Категории | поиск подстроки в нормализованном статусе | точный `status.name` через конфиг; SPAM = IRELEVANT |
+| Консультант | `TRIM(Desemnat)` | `assigned_to.id` |
+| ACR | формула `01_Input_Leads!AC` ссылается на пустую `02_Setari_Targete!$B$2`, ACR = 0 у всех | по дате расчёта |
+| `cdr_contact_floor` | 80 % зашит в формулу `03_KPI_Agenti!W` | ключ в `config/kpi.yaml` |

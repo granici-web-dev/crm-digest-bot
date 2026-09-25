@@ -2,12 +2,13 @@
 
 Обновляется в конце каждой сессии: что сделано, что дальше, какие решения приняты. История в git, здесь только текущее.
 
-## Где мы (24.09.2026)
+## Где мы (25.09.2026)
 
 - Сделано: стандарты (PRINCIPLES, STACK, TESTING), ADR-001 accepted, .env.example, settings.json, разведка mefi API (docs/mefi-api-notes.md), фикстура tests/fixtures/mefi/search_3_leads.json, конфиги исправлены по живым данным.
 - Фундамент закрыт (сессия 3): craft 267f27f, 44f81c1; critique; дополнение к shape d996160; harden тремя коммитами: 41f2a4c (персональные данные, pre-commit), f9b73ff (терпимая модель лида, nullable is_duplicate, проверка полноты снапшота), 91db89e (устойчивость прогона, Retry-After через пейсер, время по Бухаресту и DST). 55 тестов зелёные, pre-commit чистый.
 - Сессия 4, часть 1: эталон из SB KPi.xlsx (`scripts/build_etalon.py` → `tests/fixtures/etalon-2026-05.json`, 314 лидов, 6 консультантов, проверка на контакты клиента), `docs/kpi-definitions.md` переписан по формулам workbook, `config/kpi.yaml`, ADR-002 (v1 повторяет Excel). Speed-to-lead теперь ADR-003.
-- Сейчас: /rigorous shape metrics/. Решить в shape: как сверять ACR, Score ACR, SPI с эталоном. В Excel ACR = 0 у всех из-за ссылки на пустую B2; по дате B3 SPI у Roibu, Moaca, Godja на 2 ниже (kpi-definitions.md, «Дефект workbook»). Поправить `PARTNERSHIP.excluded_from_leads` в status-mapping.yaml (ADR-002).
+- Сессия 4, часть 2 (25.09.2026): SB KPi.xlsx составлен через ИИ, ADR-002 переписан (`ADR-002-kpi-brief-primary.md`): формулы по брифу, SPI предварительный и скрыт. Эталон пересобран по формулам брифа, значения Excel в `excel_reference`, Moaca Andreea сверена вручную (`meta.manual_check`). m6 выключен.
+- Сейчас: /rigorous shape metrics/. Тест сверяет `metrics/` с `expected_by_agent` (счётчики и 9 KPI); SPI и баллы тестировать на синтетике, не на эталоне. Консультанты в эталоне по имени, в `metrics/` по `assigned_to.id`: сопоставление решить в shape.
 - Расхождение с дополнением к shape: там сказано, что 5 от API и 4 записанных при порогах по умолчанию это failed, но по записанным там же порогам (max(5, 0.5 %) недополучено, max(10, 1 %) пропущено) это success. Реализованы пороги; тест переименован в test_snapshot_below_thresholds_is_success_with_alert_data. Если 5/4 должно падать, пороги в status-mapping.yaml нужно ужесточить.
 - Для сессии 5: планировщик ловит исключение run_daily_snapshot и логирует только describe_error(error), без traceback со str(error). Незнакомые ключи лида (unknown_raw_key) пишутся в raw, не вырезаются: алерт обязателен.
 - Локально тесты идут с `TESTCONTAINERS_RYUK_DISABLED=true`: docker pull образа ryuk зависает.
@@ -15,7 +16,8 @@
 
 ## Принятые решения (не обсуждать заново)
 
-- KPI v1 повторяет SB KPi.xlsx v2.0 один в один (ADR-002), пересмотр отдельным ADR после месяца эксплуатации.
+- KPI по брифу §3 (ADR-002): PARTNERSHIP и тестовые аккаунты вне LEADS, SC = клиенты среди визитов, деление на ноль → null («—»), ACR по last_contact_at. SB KPi.xlsx только тестовые данные, его ошибка ACR (ссылка на пустую B2) не воспроизводится.
+- Баллы, штраф IRR, SPI, уровни, рекомендации предварительные: в config/kpi.yaml (status: provisional) и в metrics/, но не в отчётах MVP. m5 = 9 KPI с целями без SPI, m6 выключен.
 - Только ежедневный снапшот в 19:00, повтор 19:10. Частый опрос и speed-to-lead не в v1, w5 выключен, формула через ADR-003.
 - Фильтры дат mefi не используются, окна считаются локально по снапшоту в Europe/Bucharest.
 - Lifecycle mefi для категорий не используется, только status.name. status null → UNMAPPED. Алерт UNMAPPED только при первом появлении id.
@@ -35,6 +37,7 @@
 
 - Кто такой Doja Ovidiu (Cluj, 18 лидов в эталоне), нет в пользователях mefi.
 - Письмо директора в mefi про API для Oferte/Contracte/Facturi, теперь условие этапа 2.
+- Калибровка SPI с владельцем после 2–3 месяцев снапшотов (плюс Excel 2024–2025), отдельным ADR.
 
 ## Правило контекста
 

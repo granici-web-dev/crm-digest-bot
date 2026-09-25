@@ -40,8 +40,10 @@ monthly:          # 1-е число 09:00
   m2:  { name: funnel_by_showroom_image, sources: [A], enabled: true }
   m3:  { name: trend_6m_image,        sources: [A],    enabled: true }
   m4:  { name: scr_with_targets,      sources: [A],    enabled: true }
+  # Таблица 9 KPI по консультантам (docs/kpi-definitions.md) с целями, без SPI, баллов и уровней.
   m5:  { name: manager_cockpit,       sources: [A],    enabled: true }
-  m6:  { name: spi_ranking,           sources: [A],    enabled: true }
+  # До калибровки, ADR-002.
+  m6:  { name: spi_ranking,           sources: [A],    enabled: false }
   m7:  { name: scr_by_source_campaign, sources: [A],   enabled: false }
   m8:  { name: loss_reasons_trend,    sources: [A],    enabled: true }
   m9:  { name: cohort_conversion,     sources: [A],    enabled: false }

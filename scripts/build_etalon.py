@@ -2,6 +2,10 @@
 
 Usage: uv run python scripts/build_etalon.py
 
+The workbook supplies leads and thresholds only. expected_by_agent is computed here by
+the brief formulas (ADR-002, docs/kpi-definitions.md), independently of metrics/;
+the workbook's own 03_KPI_Agenti values go to excel_reference for comparison.
+
 Prints only counts; lead data never goes to stdout (the workbook holds client contacts).
 """
 
@@ -12,7 +16,7 @@ import re
 import sys
 import unicodedata
 import warnings
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -54,6 +58,39 @@ PII_HEADERS = ("Nume", "Telefon", "E-mail")
 # substring search is limited to identifying shapes: full names, e-mails, phone digits.
 PII_SUBSTRING_MIN_LEN = 6
 PHONE_MIN_DIGITS = 7
+
+# Deliberately duplicated from config/status-mapping.yaml: the etalon is an oracle for
+# metrics/, so it must not share category code or config parsing with it (ADR-002).
+STATUS_CLIENTI = "Clienți"
+STATUSES_IRELEVANT = {"IRELEVANT", "SPAM"}
+STATUSES_PARTNERSHIP = {"DESIGNER", "INFLUENCER"}
+STATUS_NU_A_RASPUNS = "NU A RASPUNS"
+STATUS_BUGET = "BUGET"
+STATUS_PRODUS_NEPOTRIVIT = "PRODUS NEPOTRIVIT"
+SOURCE_SHOWROOM = "Showroom"
+OFERTAT_YES = "✅DA"
+ACTIVE_OFFER_STALE_DAYS = 14
+
+# Counted by hand from the fixture leads on 2026-09-25 (ADR-002). The build fails if the
+# computed values drift from this record.
+MANUAL_CHECK: dict[str, Any] = {
+    "agent": "Moaca Andreea",
+    "checked_on": "2026-09-25",
+    "note": "23 строки в Excel, 1 INFLUENCER исключён; клиентов нет, пересечение SC не проверено",
+    "counts": {
+        "leads": 22,
+        "irr_leads": 3,
+        "useful": 19,
+        "clienti": 0,
+        "offers": 7,
+        "nar": 5,
+        "buget": 4,
+        "pnp": 2,
+        "showroom_visits": 10,
+        "clienti_from_showroom": 0,
+        "active_offers_14": 6,
+    },
+}
 
 
 def snake(text: str) -> str:
@@ -116,7 +153,7 @@ def read_thresholds(ws: Any) -> tuple[str, dict[str, float]]:
     return analysis_date.date().isoformat(), thresholds
 
 
-def read_expected(ws: Any) -> dict[str, dict[str, Any]]:
+def read_excel_reference(ws: Any) -> dict[str, dict[str, Any]]:
     headers = {
         c: snake(str(ws.cell(KPI_HEADER_ROW, c).value))
         for c in range(KPI_FIRST_COL, KPI_LAST_COL + 1)
@@ -127,6 +164,69 @@ def read_expected(ws: Any) -> dict[str, dict[str, Any]]:
         values: dict[str, Any] = {"showroom": ws.cell(row, 2).value}
         values.update({key: ws.cell(row, c).value for c, key in headers.items()})
         expected[str(agent)] = values
+    return expected
+
+
+def ratio(numerator: int, denominator: int) -> float | None:
+    return None if denominator == 0 else numerator / denominator
+
+
+def is_stale_offer(lead: dict[str, Any], analysis_date: date) -> bool:
+    if lead["last_contact_at"] is None:
+        return False
+    contact_day = datetime.fromisoformat(lead["last_contact_at"]).date()
+    return (analysis_date - contact_day).days > ACTIVE_OFFER_STALE_DAYS
+
+
+def brief_counts(leads: list[dict[str, Any]], analysis_date: date) -> dict[str, int]:
+    counts = dict.fromkeys(MANUAL_CHECK["counts"], 0)
+    for lead in leads:
+        status = lead["status"]
+        if lead["created_at"] is None or status in STATUSES_PARTNERSHIP:
+            continue
+        clienti = status == STATUS_CLIENTI
+        irelevant = status in STATUSES_IRELEVANT
+        offer = lead["ofertat"] == OFERTAT_YES
+        showroom = lead["source"] == SOURCE_SHOWROOM
+        counts["leads"] += 1
+        counts["irr_leads"] += irelevant
+        counts["clienti"] += clienti
+        counts["offers"] += offer
+        counts["nar"] += status == STATUS_NU_A_RASPUNS
+        counts["buget"] += status == STATUS_BUGET
+        counts["pnp"] += status == STATUS_PRODUS_NEPOTRIVIT
+        counts["showroom_visits"] += showroom
+        counts["clienti_from_showroom"] += clienti and showroom
+        counts["active_offers_14"] += (
+            offer and not clienti and not irelevant and is_stale_offer(lead, analysis_date)
+        )
+    counts["useful"] = counts["leads"] - counts["irr_leads"]
+    return counts
+
+
+def brief_kpis(c: dict[str, int]) -> dict[str, float | None]:
+    return {
+        "scr": ratio(c["clienti"], c["useful"]),
+        "l2o": ratio(c["offers"], c["useful"]),
+        "o2c": ratio(c["clienti"], c["offers"]),
+        "cdr": ratio(c["leads"] - c["nar"], c["leads"]),
+        "plr": ratio(c["buget"], c["leads"] - c["irr_leads"] - c["nar"]),
+        "sc": ratio(c["clienti_from_showroom"], c["showroom_visits"]),
+        "pfr": ratio(c["pnp"], c["useful"]),
+        "acr": ratio(c["active_offers_14"], c["leads"]),
+        "irr": ratio(c["irr_leads"], c["leads"]),
+    }
+
+
+def expected_by_agent(
+    leads: list[dict[str, Any]], agents: list[str], analysis_date: date
+) -> dict[str, dict[str, Any]]:
+    expected: dict[str, dict[str, Any]] = {}
+    for agent in agents:
+        # 03_KPI_Agenti keys agents by TRIM(Desemnat); mefi keeps "Raileanu  Leon" with two spaces.
+        own = [lead for lead in leads if " ".join((lead["assigned_to"] or "").split()) == agent]
+        counts = brief_counts(own, analysis_date)
+        expected[agent] = {"counts": counts, "kpi": brief_kpis(counts)}
     return expected
 
 
@@ -161,7 +261,11 @@ def main() -> None:
 
     leads, pii = read_leads(wb[LEADS_SHEET])
     analysis_date, thresholds = read_thresholds(wb[SETTINGS_SHEET])
-    expected = read_expected(wb[KPI_SHEET])
+    excel_reference = read_excel_reference(wb[KPI_SHEET])
+    expected = expected_by_agent(leads, list(excel_reference), date.fromisoformat(analysis_date))
+    checked = expected[MANUAL_CHECK["agent"]]["counts"]
+    if checked != MANUAL_CHECK["counts"]:
+        sys.exit(f"manual check drifted for {MANUAL_CHECK['agent']}, etalon not written")
     created = sorted(lead["created_at"] for lead in leads if lead["created_at"])
 
     payload = {
@@ -171,10 +275,15 @@ def main() -> None:
             "timezone": TZ.key,
             "date_range": {"from": created[0], "to": created[-1]},
             "lead_count": len(leads),
+            "formulas": "docs/brief.md §3, docs/kpi-definitions.md (ADR-002)",
+            "manual_check": MANUAL_CHECK,
         },
         "thresholds": thresholds,
         "leads": leads,
         "expected_by_agent": expected,
+        # SB KPi.xlsx 03_KPI_Agenti as-is, including the AC defect (ACR = 0 everywhere).
+        # Comparison only; tests assert against expected_by_agent.
+        "excel_reference": excel_reference,
     }
     dump = json.dumps(payload, ensure_ascii=False, indent=2)
 

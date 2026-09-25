@@ -31,6 +31,7 @@ categories:
       IRELEVANT:         { statuses: ["IRELEVANT", "SPAM"], excluded_from_useful: true }
   PARTNERSHIP:
     statuses: ["DESIGNER", "INFLUENCER"]
+    # Бриф §3: партнёрства не лиды, исключаются из LEADS и всех KPI (ADR-002).
     excluded_from_leads: true
 
 custom_fields:

@@ -7,7 +7,26 @@
       "from": "2026-05-01T10:03:41+03:00",
       "to": "2026-06-16T10:42:00+03:00"
     },
-    "lead_count": 314
+    "lead_count": 314,
+    "formulas": "docs/brief.md §3, docs/kpi-definitions.md (ADR-002)",
+    "manual_check": {
+      "agent": "Moaca Andreea",
+      "checked_on": "2026-09-25",
+      "note": "23 строки в Excel, 1 INFLUENCER исключён; клиентов нет, пересечение SC не проверено",
+      "counts": {
+        "leads": 22,
+        "irr_leads": 3,
+        "useful": 19,
+        "clienti": 0,
+        "offers": 7,
+        "nar": 5,
+        "buget": 4,
+        "pnp": 2,
+        "showroom_visits": 10,
+        "clienti_from_showroom": 0,
+        "active_offers_14": 6
+      }
+    }
   },
   "thresholds": {
     "scr_elite": 0.1,
@@ -4742,6 +4761,164 @@
     }
   ],
   "expected_by_agent": {
+    "Raileanu Leon": {
+      "counts": {
+        "leads": 59,
+        "irr_leads": 10,
+        "useful": 49,
+        "clienti": 7,
+        "offers": 15,
+        "nar": 8,
+        "buget": 13,
+        "pnp": 9,
+        "showroom_visits": 16,
+        "clienti_from_showroom": 3,
+        "active_offers_14": 9
+      },
+      "kpi": {
+        "scr": 0.14285714285714285,
+        "l2o": 0.30612244897959184,
+        "o2c": 0.4666666666666667,
+        "cdr": 0.864406779661017,
+        "plr": 0.3170731707317073,
+        "sc": 0.1875,
+        "pfr": 0.1836734693877551,
+        "acr": 0.15254237288135594,
+        "irr": 0.1694915254237288
+      }
+    },
+    "Dragoi Mihaela": {
+      "counts": {
+        "leads": 76,
+        "irr_leads": 13,
+        "useful": 63,
+        "clienti": 2,
+        "offers": 23,
+        "nar": 13,
+        "buget": 25,
+        "pnp": 7,
+        "showroom_visits": 36,
+        "clienti_from_showroom": 2,
+        "active_offers_14": 16
+      },
+      "kpi": {
+        "scr": 0.031746031746031744,
+        "l2o": 0.36507936507936506,
+        "o2c": 0.08695652173913043,
+        "cdr": 0.8289473684210527,
+        "plr": 0.5,
+        "sc": 0.05555555555555555,
+        "pfr": 0.1111111111111111,
+        "acr": 0.21052631578947367,
+        "irr": 0.17105263157894737
+      }
+    },
+    "Roibu Valeria": {
+      "counts": {
+        "leads": 67,
+        "irr_leads": 12,
+        "useful": 55,
+        "clienti": 2,
+        "offers": 17,
+        "nar": 16,
+        "buget": 9,
+        "pnp": 6,
+        "showroom_visits": 20,
+        "clienti_from_showroom": 0,
+        "active_offers_14": 13
+      },
+      "kpi": {
+        "scr": 0.03636363636363636,
+        "l2o": 0.3090909090909091,
+        "o2c": 0.11764705882352941,
+        "cdr": 0.7611940298507462,
+        "plr": 0.23076923076923078,
+        "sc": 0.0,
+        "pfr": 0.10909090909090909,
+        "acr": 0.19402985074626866,
+        "irr": 0.1791044776119403
+      }
+    },
+    "Moaca Andreea": {
+      "counts": {
+        "leads": 22,
+        "irr_leads": 3,
+        "useful": 19,
+        "clienti": 0,
+        "offers": 7,
+        "nar": 5,
+        "buget": 4,
+        "pnp": 2,
+        "showroom_visits": 10,
+        "clienti_from_showroom": 0,
+        "active_offers_14": 6
+      },
+      "kpi": {
+        "scr": 0.0,
+        "l2o": 0.3684210526315789,
+        "o2c": 0.0,
+        "cdr": 0.7727272727272727,
+        "plr": 0.2857142857142857,
+        "sc": 0.0,
+        "pfr": 0.10526315789473684,
+        "acr": 0.2727272727272727,
+        "irr": 0.13636363636363635
+      }
+    },
+    "Godja Adina Maria": {
+      "counts": {
+        "leads": 55,
+        "irr_leads": 19,
+        "useful": 36,
+        "clienti": 1,
+        "offers": 21,
+        "nar": 2,
+        "buget": 5,
+        "pnp": 5,
+        "showroom_visits": 30,
+        "clienti_from_showroom": 1,
+        "active_offers_14": 14
+      },
+      "kpi": {
+        "scr": 0.027777777777777776,
+        "l2o": 0.5833333333333334,
+        "o2c": 0.047619047619047616,
+        "cdr": 0.9636363636363636,
+        "plr": 0.14705882352941177,
+        "sc": 0.03333333333333333,
+        "pfr": 0.1388888888888889,
+        "acr": 0.2545454545454545,
+        "irr": 0.34545454545454546
+      }
+    },
+    "Doja Ovidiu": {
+      "counts": {
+        "leads": 17,
+        "irr_leads": 4,
+        "useful": 13,
+        "clienti": 2,
+        "offers": 7,
+        "nar": 0,
+        "buget": 0,
+        "pnp": 4,
+        "showroom_visits": 13,
+        "clienti_from_showroom": 2,
+        "active_offers_14": 2
+      },
+      "kpi": {
+        "scr": 0.15384615384615385,
+        "l2o": 0.5384615384615384,
+        "o2c": 0.2857142857142857,
+        "cdr": 1.0,
+        "plr": 0.0,
+        "sc": 0.15384615384615385,
+        "pfr": 0.3076923076923077,
+        "acr": 0.11764705882352941,
+        "irr": 0.23529411764705882
+      }
+    }
+  },
+  "excel_reference": {
     "Raileanu Leon": {
       "showroom": "București",
       "lead_uri": 61,

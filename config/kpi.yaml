@@ -1,6 +1,11 @@
-# Пороги KPI и SPI. Источник: SB KPi.xlsx v2.0, лист 02_Setari_Targete (ADR-002).
+# Пороги KPI и SPI (docs/decisions/ADR-002-kpi-brief-primary.md).
+# provisional: значения из SB KPi.xlsx v2.0 (02_Setari_Targete), составлен через ИИ и с владельцем
+# не согласован. Баллы, SPI, уровни и рекомендации в отчёты MVP не выводятся; первые ступени
+# показываются в m5 только как цели. Калибровка после 2–3 месяцев снапшотов, отдельным ADR.
 # Ключи совпадают с thresholds в tests/fixtures/etalon-2026-05.json.
 # Изменение порога = ADR + обновление эталона (docs/kpi-definitions.md).
+
+status: provisional
 
 thresholds:
   scr_elite: 0.10
