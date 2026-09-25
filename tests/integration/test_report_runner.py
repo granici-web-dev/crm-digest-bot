@@ -1,4 +1,5 @@
 import logging
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -40,6 +41,7 @@ class Harness:
             report_bot=report_bot,
             ops=OpsChannel(ops_bot, OPS_CHAT_ID),
             report_chat_id=report_chat_id,
+            modules=IMPLEMENTED_MODULES,
         )
 
     @property
@@ -84,7 +86,12 @@ def todays_lead(lead_id: int, **overrides: Any) -> dict[str, Any]:
     return make_snapshot_row(**{"lead_id": lead_id, "created_at": created_at, **overrides})
 
 
-async def insert_run(engine: AsyncEngine, status: str, started_minutes_ago: int = 0) -> None:
+async def insert_run(
+    engine: AsyncEngine,
+    status: str,
+    started_minutes_ago: int = 0,
+    message_ids: list[int] | None = None,
+) -> None:
     async with engine.begin() as connection:
         await connection.execute(
             insert(report_runs).values(
@@ -95,6 +102,7 @@ async def insert_run(engine: AsyncEngine, status: str, started_minutes_ago: int 
                 chat_id=GROUP_CHAT_ID,
                 status=status,
                 started_at=text(f"now() - interval '{started_minutes_ago} minutes'"),
+                message_ids=message_ids,
             )
         )
 
@@ -163,18 +171,17 @@ async def test_fresh_running_run_is_left_alone(harness: Harness) -> None:
 
     assert outcome == "in_progress"
     assert harness.group.sent == []
+    assert any("уже отправляется другим прогоном" in alert for alert in harness.ops_texts)
 
 
-async def test_failing_module_is_replaced_by_note_and_reported(
-    harness: Harness, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_failing_module_is_replaced_by_note_and_reported(harness: Harness) -> None:
     def failing_module(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
         raise KeyError("column")
 
-    monkeypatch.setitem(IMPLEMENTED_MODULES, "d2", failing_module)
+    deps = replace(harness.deps, modules={**IMPLEMENTED_MODULES, "d2": failing_module})
     await store_snapshot(harness.deps.engine, REPORT_DATE, [todays_lead(1)])
 
-    outcome = await run_report("daily", NOW, harness.deps)
+    outcome = await run_report("daily", NOW, deps)
 
     assert outcome == "partial"
     assert "<b>Sofabelle București:</b>" in harness.group_text
@@ -206,18 +213,18 @@ async def test_test_chat_run_does_not_block_production_run(
 
 
 async def test_module_error_text_reaches_neither_logs_nor_alerts(
-    harness: Harness, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    harness: Harness, caplog: pytest.LogCaptureFixture
 ) -> None:
     client_phone = "+40700000001"
 
     def failing_module(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
         raise ValueError(f"lead {client_phone} Client Unu")
 
-    monkeypatch.setitem(IMPLEMENTED_MODULES, "d2", failing_module)
+    deps = replace(harness.deps, modules={**IMPLEMENTED_MODULES, "d2": failing_module})
     await store_snapshot(harness.deps.engine, REPORT_DATE, [todays_lead(1)])
 
     with caplog.at_level(logging.DEBUG):
-        await run_report("daily", NOW, harness.deps)
+        await run_report("daily", NOW, deps)
 
     assert "Модуль d2 отчёта daily упал: ValueError." in harness.ops_texts
     assert client_phone not in caplog.text
@@ -328,3 +335,37 @@ async def test_module_alerts_are_sent_to_ops(harness: Harness) -> None:
         alert.startswith("d1: лиды с источником вне групп") and "id: [4]" in alert
         for alert in harness.ops_texts
     )
+
+
+async def test_rerun_after_partial_send_keeps_earlier_message_ids(harness: Harness) -> None:
+    await store_snapshot(harness.deps.engine, REPORT_DATE, [todays_lead(1)])
+    await insert_run(harness.deps.engine, status="failed", message_ids=[501, 502])
+
+    outcome = await run_report("daily", NOW, harness.deps)
+
+    assert outcome == "success"
+    [run] = await report_run_rows(harness.deps.engine)
+    assert run["message_ids"] == [501, 502, *(message.message_id for message in harness.group.sent)]
+    assert any(
+        "Ранее отправлено частей: 2, в чате будет дубль" in alert for alert in harness.ops_texts
+    )
+
+
+async def test_weekly_report_on_monday_reads_sundays_snapshot(harness: Harness) -> None:
+    sunday = date(2026, 9, 27)
+    seen_report_dates: list[date] = []
+
+    def weekly_module(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
+        seen_report_dates.append(context.report_date)
+        return ModuleResult(f"leads: {len(lead_frame)}")
+
+    deps = replace(harness.deps, modules={"w1": weekly_module})
+    await store_snapshot(harness.deps.engine, sunday, [todays_lead(1), todays_lead(2)])
+
+    outcome = await run_report("weekly", datetime(2026, 9, 28, 9, 0, tzinfo=BUCHAREST), deps)
+
+    assert outcome == "success"
+    assert seen_report_dates == [sunday]
+    assert "leads: 2" in harness.group_text
+    [run] = await report_run_rows(harness.deps.engine)
+    assert run["snapshot_date"] == sunday

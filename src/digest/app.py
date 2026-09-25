@@ -15,6 +15,7 @@ from digest.db.schema import schedules, settings
 from digest.delivery.ops import OpsChannel, notify_ops
 from digest.delivery.telegram import create_bot
 from digest.mefi.client import MefiClient, create_mefi_http_client
+from digest.reports.modules import IMPLEMENTED_MODULES
 from digest.reports.periods import ReportLevel
 from digest.reports.runner import ReportDeps, run_report
 from digest.settings import Settings
@@ -76,6 +77,7 @@ def create_report_deps(
             app_settings.telegram_ops_chat_id,
         ),
         report_chat_id=app_settings.report_chat_id(dry_run),
+        modules=IMPLEMENTED_MODULES,
     )
 
 

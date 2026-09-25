@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Literal
@@ -12,7 +13,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from digest.config import AppConfig
+from digest.config import AppConfig, ModuleRegistry, ReportModule
 from digest.db.lead_frame import (
     SnapshotMissingError,
     load_lead_frame,
@@ -25,7 +26,7 @@ from digest.metrics.daily import PreviousSnapshot
 from digest.metrics.frame import unknown_manager_ids
 from digest.metrics.kpi import Period
 from digest.reports.context import ReportContext
-from digest.reports.modules import IMPLEMENTED_MODULES, ReportModuleFunction
+from digest.reports.modules import ReportModuleFunction
 from digest.reports.periods import ReportLevel, report_period
 from digest.reports.render import ReportLanguage, render
 from digest.snapshot import describe_error
@@ -47,12 +48,14 @@ class ReportDeps:
     report_bot: Bot
     ops: OpsChannel
     report_chat_id: int
+    modules: Mapping[str, ReportModuleFunction]
 
 
 @dataclass(frozen=True)
 class ReportRunClaim:
     run_id: int
     interrupted: bool
+    previously_sent_message_ids: list[int]
 
 
 @dataclass(frozen=True)
@@ -98,19 +101,20 @@ async def claim_report_run(
             .returning(report_runs.c.id)
         )
         if inserted_id is not None:
-            return ReportRunClaim(inserted_id, interrupted=False)
+            return ReportRunClaim(inserted_id, interrupted=False, previously_sent_message_ids=[])
         existing = (
             await connection.execute(
                 select(
                     report_runs.c.id,
                     report_runs.c.status,
                     report_runs.c.started_at < func.now() - STALE_RUNNING_AFTER,
+                    report_runs.c.message_ids,
                 )
                 .where(key)
                 .with_for_update()
             )
         ).one()
-        run_id, status, is_stale = existing
+        run_id, status, is_stale, previously_sent_message_ids = existing
         if status in ("success", "partial"):
             return "already_sent"
         if status == "running" and not is_stale:
@@ -118,15 +122,14 @@ async def claim_report_run(
         await connection.execute(
             update(report_runs)
             .where(report_runs.c.id == run_id)
-            .values(
-                status="running",
-                started_at=func.now(),
-                finished_at=None,
-                error=None,
-                message_ids=None,
-            )
+            # message_ids не затираем: по ним видно, какие части уже лежат в группе.
+            .values(status="running", started_at=func.now(), finished_at=None, error=None)
         )
-    return ReportRunClaim(run_id, interrupted=status == "running")
+    return ReportRunClaim(
+        run_id,
+        interrupted=status == "running",
+        previously_sent_message_ids=list(previously_sent_message_ids or []),
+    )
 
 
 async def finish_report_run(
@@ -171,6 +174,15 @@ async def module_enabled_overrides(deps: ReportDeps) -> dict[str, bool]:
         return {module_id: enabled for module_id, enabled in rows}
 
 
+def modules_of_level(registry: ModuleRegistry, level: ReportLevel) -> dict[str, ReportModule]:
+    return {
+        "daily": registry.daily,
+        "weekly": registry.weekly,
+        "monthly": registry.monthly,
+        "yearly": registry.yearly,
+    }[level]
+
+
 async def runnable_modules(
     deps: ReportDeps, level: ReportLevel
 ) -> list[tuple[str, ReportModuleFunction]]:
@@ -178,7 +190,7 @@ async def runnable_modules(
     overrides = await module_enabled_overrides(deps)
     runnable: list[tuple[str, ReportModuleFunction]] = []
     not_implemented: list[str] = []
-    for module_id, module in getattr(registry, level).items():
+    for module_id, module in modules_of_level(registry, level).items():
         if not overrides.get(module_id, module.enabled):
             continue
         disconnected = [code for code in module.sources if not registry.sources[code].connected]
@@ -188,10 +200,10 @@ async def runnable_modules(
                 f"Модуль {module_id} включён в module_settings, но источники {disconnected} "
                 "не подключены: пропущен.",
             )
-        elif module_id not in IMPLEMENTED_MODULES:
+        elif module_id not in deps.modules:
             not_implemented.append(module_id)
         else:
-            runnable.append((module_id, IMPLEMENTED_MODULES[module_id]))
+            runnable.append((module_id, deps.modules[module_id]))
     if not_implemented:
         await notify_ops(
             deps.ops,
@@ -304,17 +316,33 @@ async def run_report(level: ReportLevel, now: datetime, deps: ReportDeps) -> Rep
     time_settings = deps.config.status_mapping.time
     timezone = ZoneInfo(time_settings.timezone)
     period = report_period(level, now, time_settings)
-    snapshot_date = now.astimezone(timezone).date()
+    # Снапшот за последний день периода: weekly в понедельник читает воскресный снапшот.
+    snapshot_date = (period.end - timedelta(microseconds=1)).astimezone(timezone).date()
     label = period_label(level, period)
     log_extra = {"level": level, "period_start": period.start.isoformat(), "chat_id": chat_id}
 
     claim = await claim_report_run(deps, level, period, chat_id)
     if not isinstance(claim, ReportRunClaim):
         logger.info("report run skipped", extra={**log_extra, "reason": claim})
+        if claim == "in_progress":
+            await notify_ops(
+                deps.ops,
+                f"Отчёт {level} за {label} уже отправляется другим прогоном (моложе "
+                f"{STALE_RUNNING_AFTER.seconds // 60} минут): этот запуск ничего не шлёт.",
+            )
         return claim
+    previously_sent = len(claim.previously_sent_message_ids)
     if claim.interrupted:
         await notify_ops(
-            deps.ops, f"Прогон отчёта {level} за {label} прерван, отчёт отправлен заново."
+            deps.ops,
+            f"Прогон отчёта {level} за {label} прерван, отчёт отправлен заново. "
+            f"Ранее отправлено частей: {previously_sent}.",
+        )
+    elif previously_sent:
+        await notify_ops(
+            deps.ops,
+            f"Отчёт {level} за {label} отправляется повторно после сбоя. "
+            f"Ранее отправлено частей: {previously_sent}, в чате будет дубль.",
         )
 
     try:
@@ -336,7 +364,9 @@ async def run_report(level: ReportLevel, now: datetime, deps: ReportDeps) -> Rep
     try:
         for part in parts:
             message_ids.append(await send_message_with_retry(deps.report_bot, chat_id, part))
-            await record_message_ids(deps, claim.run_id, message_ids)
+            await record_message_ids(
+                deps, claim.run_id, [*claim.previously_sent_message_ids, *message_ids]
+            )
     except Exception as error:
         await finish_report_run(
             deps, claim.run_id, "failed", report.snapshot_date, describe_error(error)
