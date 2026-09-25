@@ -214,10 +214,68 @@ class ManagerRoster(StrictConfigModel):
         return self
 
 
+KpiName = Literal["scr", "l2o", "o2c", "cdr", "plr", "sc", "pfr", "acr", "irr"]
+Direction = Literal["higher", "lower"]
+
+
+class ScoreSteps(StrictConfigModel):
+    direction: Direction
+    steps: list[tuple[str, int]]
+    otherwise: int
+
+
+class RecommendationRule(StrictConfigModel):
+    key: str
+    kpi: KpiName
+    above: str | None = None
+    below: str | None = None
+
+    @model_validator(mode="after")
+    def exactly_one_comparison(self) -> Self:
+        if (self.above is None) == (self.below is None):
+            raise ValueError(f"рекомендация {self.key}: нужно ровно одно из above, below")
+        return self
+
+
+class KpiTarget(StrictConfigModel):
+    direction: Direction
+    value: float
+
+
+class SpiLevel(StrictConfigModel):
+    name: str
+    min_spi: int
+
+
+class KpiSettings(StrictConfigModel):
+    status: Literal["provisional"]
+    thresholds: dict[str, float]
+    active_offer_stale_days: int
+    levels: list[SpiLevel]
+    scores: dict[KpiName, ScoreSteps]
+    irr_penalty: ScoreSteps
+    recommendations: list[RecommendationRule]
+    recommendation_otherwise: str
+    targets: dict[KpiName, KpiTarget]
+
+    @model_validator(mode="after")
+    def referenced_thresholds_exist(self) -> Self:
+        referenced = [
+            threshold
+            for score_steps in (*self.scores.values(), self.irr_penalty)
+            for threshold, _points in score_steps.steps
+        ] + [rule.above or rule.below or "" for rule in self.recommendations]
+        unknown = sorted({name for name in referenced if name not in self.thresholds})
+        if unknown:
+            raise ValueError(f"пороги {unknown} не описаны в thresholds")
+        return self
+
+
 class AppConfig(StrictConfigModel):
     status_mapping: StatusMapping
     modules: ModuleRegistry
     managers: ManagerRoster
+    kpi: KpiSettings
 
     @model_validator(mode="after")
     def manager_showrooms_are_known(self) -> Self:
@@ -241,5 +299,6 @@ def load_app_config(config_dir: Path) -> AppConfig:
             "status_mapping": read_yaml(config_dir / "status-mapping.yaml"),
             "modules": read_yaml(config_dir / "modules.yaml"),
             "managers": read_yaml(config_dir / "managers.yaml"),
+            "kpi": read_yaml(config_dir / "kpi.yaml"),
         }
     )

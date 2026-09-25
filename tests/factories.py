@@ -1,6 +1,13 @@
 import json
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
+
+from digest.config import StatusMapping
+from digest.snapshot import categorize
+
+BUCHAREST = ZoneInfo("Europe/Bucharest")
 
 MEFI_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "mefi"
 
@@ -86,3 +93,63 @@ class FakeTime:
     async def sleep(self, seconds: float) -> None:
         self.sleeps.append(seconds)
         self.now += seconds
+
+
+ETALON_PATH = Path(__file__).resolve().parent / "fixtures" / "etalon-2026-05.json"
+
+
+def load_etalon() -> dict[str, Any]:
+    etalon: dict[str, Any] = json.loads(ETALON_PATH.read_text(encoding="utf-8"))
+    return etalon
+
+
+def etalon_lead_rows(etalon: dict[str, Any], status_mapping: StatusMapping) -> list[dict[str, Any]]:
+    manager_ids: dict[str, int] = etalon["managers"]
+    rows = []
+    for lead in etalon["leads"]:
+        category = categorize(lead["status"], status_mapping)
+        assignee = " ".join((lead["assigned_to"] or "").split())
+        rows.append(
+            make_snapshot_row(
+                lead_id=lead["row"],
+                category=category.category,
+                loss_reason=category.loss_reason,
+                status_name=lead["status"],
+                source_name=lead["source"],
+                showroom=lead["showroom"],
+                ofertat={"✅DA": True, "❌NU": False}.get(lead["ofertat"]),
+                data_revenire=date.fromisoformat(lead["data_revenire"])
+                if lead["data_revenire"]
+                else None,
+                is_duplicate=None,
+                assigned_to_id=manager_ids.get(assignee),
+                assigned_to_name=lead["assigned_to"],
+                created_at=datetime.fromisoformat(lead["created_at"]),
+                last_contact_at=datetime.fromisoformat(lead["last_contact_at"])
+                if lead["last_contact_at"]
+                else None,
+            )
+        )
+    return rows
+
+
+def make_snapshot_row(**overrides: Any) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "lead_id": 1001,
+        "category": "ACTIVE",
+        "loss_reason": None,
+        "status_name": "IN PROCES",
+        "source_name": "Site",
+        "showroom": "București",
+        "ofertat": False,
+        "data_revenire": None,
+        "is_duplicate": False,
+        "assigned_to_id": 12,
+        "assigned_to_name": "Dragoi Mihaela",
+        "created_at": datetime(2026, 9, 23, 11, 0, tzinfo=BUCHAREST),
+        "status_changed_at": None,
+        "last_contact_at": datetime(2026, 9, 23, 11, 0, tzinfo=BUCHAREST),
+        "converted_at": None,
+    }
+    row.update(overrides)
+    return row

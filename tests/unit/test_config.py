@@ -63,5 +63,6 @@ def test_manager_showroom_must_be_in_showrooms_list() -> None:
                 "status_mapping": repository_yaml("status-mapping.yaml"),
                 "modules": repository_yaml("modules.yaml"),
                 "managers": raw_roster,
+                "kpi": repository_yaml("kpi.yaml"),
             }
         )
