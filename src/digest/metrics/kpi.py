@@ -84,6 +84,29 @@ def counts_from_sums(sums: Mapping[Hashable, Any]) -> LeadCounts:
     return LeadCounts(**{name: int(sums[name]) for name in COUNT_NAMES})
 
 
+def sum_counts(flags: pd.DataFrame) -> LeadCounts:
+    return counts_from_sums(flags[list(COUNT_NAMES)].sum().to_dict())
+
+
+def lead_counts(
+    lead_frame: pd.DataFrame, period: Period, analysis_date: date, config: AppConfig
+) -> LeadCounts:
+    return sum_counts(count_flags(lead_frame, period, analysis_date, config))
+
+
+def lead_counts_by_showroom(
+    lead_frame: pd.DataFrame, period: Period, analysis_date: date, config: AppConfig
+) -> dict[str | None, LeadCounts]:
+    flags = count_flags(lead_frame, period, analysis_date, config)
+    showroom = flags["showroom"]
+    # Значение вне списка showrooms тоже получает строку: лиды не пропадают из разреза молча.
+    observed = set(showroom.dropna()) - set(config.status_mapping.showrooms)
+    keys: list[str | None] = [*config.status_mapping.showrooms, *sorted(observed), None]
+    return {
+        key: sum_counts(flags[showroom.isna() if key is None else showroom.eq(key)]) for key in keys
+    }
+
+
 def lead_counts_by_manager(
     lead_frame: pd.DataFrame, period: Period, analysis_date: date, config: AppConfig
 ) -> dict[int, LeadCounts]:

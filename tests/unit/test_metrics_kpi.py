@@ -1,12 +1,20 @@
 from dataclasses import asdict
-from datetime import date, datetime
+from datetime import UTC, date, datetime, time, timedelta
+from typing import Any
 
 import pytest
 
 from digest.config import AppConfig, Manager, ManagerRoster
 from digest.metrics.frame import prepare_lead_frame
-from digest.metrics.kpi import Period, kpis_from, lead_counts_by_manager
-from factories import BUCHAREST, etalon_lead_rows, load_etalon
+from digest.metrics.kpi import (
+    LeadCounts,
+    Period,
+    kpis_from,
+    lead_counts,
+    lead_counts_by_manager,
+    lead_counts_by_showroom,
+)
+from factories import BUCHAREST, etalon_lead_rows, load_etalon, make_snapshot_row
 
 ETALON_PERIOD = Period(
     start=datetime(2026, 5, 1, tzinfo=BUCHAREST), end=datetime(2026, 6, 17, tzinfo=BUCHAREST)
@@ -35,3 +43,164 @@ def test_kpi_matches_etalon(app_config: AppConfig) -> None:
         assert asdict(kpis_from(counts_by_manager[manager_id])) == pytest.approx(
             expected["kpi"], abs=1e-9
         ), name
+
+
+SEPTEMBER = Period(
+    start=datetime(2026, 9, 1, tzinfo=BUCHAREST), end=datetime(2026, 10, 1, tzinfo=BUCHAREST)
+)
+SEPTEMBER_END = date(2026, 9, 30)
+IN_SEPTEMBER = datetime(2026, 9, 10, 12, 0, tzinfo=BUCHAREST)
+
+
+def company_counts(rows: list[dict[str, Any]], config: AppConfig, **overrides: Any) -> LeadCounts:
+    arguments: dict[str, Any] = {"period": SEPTEMBER, "analysis_date": SEPTEMBER_END}
+    arguments.update(overrides)
+    return lead_counts(prepare_lead_frame(rows, config), config=config, **arguments)
+
+
+def test_partnership_is_not_a_lead(app_config: AppConfig) -> None:
+    rows = [
+        make_snapshot_row(lead_id=1, created_at=IN_SEPTEMBER),
+        make_snapshot_row(lead_id=2, created_at=IN_SEPTEMBER, category="PARTNERSHIP"),
+    ]
+
+    assert company_counts(rows, app_config).leads == 1
+
+
+def test_unmapped_lead_is_a_useful_lead(app_config: AppConfig) -> None:
+    rows = [make_snapshot_row(created_at=IN_SEPTEMBER, category="UNMAPPED", status_name=None)]
+
+    counts = company_counts(rows, app_config)
+
+    assert (counts.leads, counts.useful) == (1, 1)
+
+
+def test_unassigned_lead_counts_in_company_total(app_config: AppConfig) -> None:
+    rows = [make_snapshot_row(created_at=IN_SEPTEMBER, assigned_to_id=None)]
+
+    assert company_counts(rows, app_config).leads == 1
+
+
+def test_period_includes_start_and_excludes_end(app_config: AppConfig) -> None:
+    rows = [
+        make_snapshot_row(lead_id=1, created_at=SEPTEMBER.start),
+        make_snapshot_row(lead_id=2, created_at=SEPTEMBER.end),
+        make_snapshot_row(lead_id=3, created_at=SEPTEMBER.start - timedelta(seconds=1)),
+    ]
+
+    assert company_counts(rows, app_config).leads == 1
+
+
+def test_daily_window_boundary_is_19_bucharest(app_config: AppConfig) -> None:
+    daily_window = Period(
+        start=datetime(2026, 9, 22, 19, 0, tzinfo=BUCHAREST),
+        end=datetime(2026, 9, 23, 19, 0, tzinfo=BUCHAREST),
+    )
+    rows = [
+        make_snapshot_row(lead_id=1, created_at=datetime(2026, 9, 23, 15, 59, tzinfo=UTC)),
+        make_snapshot_row(lead_id=2, created_at=datetime(2026, 9, 23, 16, 0, tzinfo=UTC)),
+    ]
+
+    assert company_counts(rows, app_config, period=daily_window).leads == 1
+
+
+def test_showroom_conversion_counts_only_clients_among_visits(app_config: AppConfig) -> None:
+    client = {"created_at": IN_SEPTEMBER, "category": "WON", "status_name": "Clienți"}
+    rows = [
+        make_snapshot_row(lead_id=1, source_name="Showroom", **client),
+        make_snapshot_row(lead_id=2, source_name="Site", **client),
+        make_snapshot_row(lead_id=3, source_name="Showroom", created_at=IN_SEPTEMBER),
+    ]
+
+    assert kpis_from(company_counts(rows, app_config)).sc == 0.5
+
+
+@pytest.mark.parametrize(
+    ("last_contact_day", "is_stale"),
+    [(date(2026, 9, 16), False), (date(2026, 9, 15), True)],
+)
+def test_offer_is_stale_after_more_than_14_days_without_contact(
+    app_config: AppConfig, last_contact_day: date, is_stale: bool
+) -> None:
+    last_contact_at = datetime.combine(last_contact_day, time(23, 30), tzinfo=BUCHAREST)
+    row = make_snapshot_row(created_at=IN_SEPTEMBER, ofertat=True, last_contact_at=last_contact_at)
+
+    assert company_counts([row], app_config).active_offers_14 == int(is_stale)
+
+
+def test_offer_without_last_contact_is_not_stale(app_config: AppConfig) -> None:
+    row = make_snapshot_row(created_at=IN_SEPTEMBER, ofertat=True, last_contact_at=None)
+
+    assert company_counts([row], app_config).active_offers_14 == 0
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"category": "WON", "status_name": "Clienți"},
+        {"category": "LOST", "loss_reason": "IRELEVANT", "status_name": "IRELEVANT"},
+    ],
+)
+def test_won_or_irrelevant_offer_is_not_stale(
+    app_config: AppConfig, overrides: dict[str, Any]
+) -> None:
+    row = make_snapshot_row(
+        created_at=IN_SEPTEMBER,
+        ofertat=True,
+        last_contact_at=datetime(2026, 8, 1, tzinfo=BUCHAREST),
+        **overrides,
+    )
+
+    assert company_counts([row], app_config).active_offers_14 == 0
+
+
+def test_every_kpi_is_none_without_leads(app_config: AppConfig) -> None:
+    kpis = kpis_from(company_counts([], app_config))
+
+    assert set(asdict(kpis).values()) == {None}
+
+
+def test_price_lost_rate_excludes_irrelevant_and_no_answer(app_config: AppConfig) -> None:
+    lost = {"created_at": IN_SEPTEMBER, "category": "LOST"}
+    rows = [
+        make_snapshot_row(lead_id=1, loss_reason="BUGET", **lost),
+        make_snapshot_row(lead_id=2, loss_reason="IRELEVANT", **lost),
+        make_snapshot_row(lead_id=3, loss_reason="NU_RASPUNS", **lost),
+        make_snapshot_row(lead_id=4, created_at=IN_SEPTEMBER),
+    ]
+
+    assert kpis_from(company_counts(rows, app_config)).plr == 0.5
+
+
+def test_manager_slice_has_zero_row_for_active_manager_without_leads(
+    app_config: AppConfig,
+) -> None:
+    counts = lead_counts_by_manager(
+        prepare_lead_frame([], app_config), SEPTEMBER, SEPTEMBER_END, app_config
+    )
+
+    assert counts[12].leads == 0
+
+
+def test_manager_slice_skips_inactive_manager(app_config: AppConfig) -> None:
+    marketing_account_id = 7
+    rows = [make_snapshot_row(created_at=IN_SEPTEMBER, assigned_to_id=marketing_account_id)]
+
+    counts = lead_counts_by_manager(
+        prepare_lead_frame(rows, app_config), SEPTEMBER, SEPTEMBER_END, app_config
+    )
+
+    assert marketing_account_id not in counts
+
+
+def test_showroom_slice_keeps_leads_without_showroom_under_none(app_config: AppConfig) -> None:
+    rows = [
+        make_snapshot_row(lead_id=1, created_at=IN_SEPTEMBER, showroom="Cluj"),
+        make_snapshot_row(lead_id=2, created_at=IN_SEPTEMBER, showroom=None),
+    ]
+
+    counts = lead_counts_by_showroom(
+        prepare_lead_frame(rows, app_config), SEPTEMBER, SEPTEMBER_END, app_config
+    )
+
+    assert (counts["Cluj"].leads, counts[None].leads, counts["București"].leads) == (1, 1, 0)
