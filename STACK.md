@@ -27,7 +27,7 @@
 | Логи | `logging` из stdlib с JSON-форматтером |
 | Время | `zoneinfo` из stdlib, `Europe/Bucharest` всегда явно |
 | Тесты | pytest, pytest-asyncio, testcontainers, respx, syrupy |
-| Хостинг | VPS Hetzner CX22 + Docker Compose |
+| Хостинг | VPS Hetzner CPX12 (Nuremberg) + Docker Compose; линейка CX недоступна, в ADR-001 записан CX22 |
 | CI | GitHub Actions: ruff, mypy, pytest с testcontainers, сборка образа; без секретов |
 
 ## Этап 2 (не в v1)
