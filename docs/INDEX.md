@@ -8,6 +8,9 @@
 | `docs/PLAN.md` | Где мы, что дальше, принятые решения | Всегда |
 | `PRINCIPLES.md`, `STACK.md`, `TESTING.md` | Инженерные стандарты | Читает rigorous, вручную не открывать |
 | `docs/brief.md` | Спецификация: источники, маппинг, расписания, реестр модулей, MVP | Shape нового модуля или источника |
+| `docs/report-menu.md` | Названия, описания, mock-примеры RO/RU всех модулей | Shape и craft шаблонов |
+| `docs/samples/weekly-manual-report-2026-07.md` | Ручной недельный отчёт: формат и правило рабочего окна | Shape w1 и любой недельной метрики |
+| `docs/samples/daily-seller-report-sample.md` | Настоящий ежедневный отчёт продавцов за 12.08.2026 | Shape и craft d1, формат повторять один в один |
 | `docs/kpi-definitions.md` | Формулы KPI и SPI, пороги, веса | `metrics/`, вопросы про формулы |
 | `docs/mefi-api-notes.md` | Проверенные факты mefi API, лимиты, реальные id | Клиент mefi, снапшот |
 | `docs/mefi-api-reference/` | Документация mefi из соседнего проекта | Только если в notes нет ответа, по одному файлу |
