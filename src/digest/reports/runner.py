@@ -190,14 +190,13 @@ def modules_of_level(registry: ModuleRegistry, level: ReportLevel) -> dict[str, 
 async def runnable_modules(
     deps: ReportDeps, level: ReportLevel
 ) -> list[tuple[str, ReportModuleFunction]]:
-    registry = deps.config.modules
     overrides = await module_enabled_overrides(deps)
     runnable: list[tuple[str, ReportModuleFunction]] = []
     not_implemented: list[str] = []
-    for module_id, module in modules_of_level(registry, level).items():
+    for module_id, module in modules_of_level(deps.config.modules, level).items():
         if not overrides.get(module_id, module.enabled):
             continue
-        disconnected = [code for code in module.sources if not registry.sources[code].connected]
+        disconnected = list(deps.config.module_blockers(module_id).disconnected_sources)
         if disconnected:
             await notify_ops(
                 deps.ops,

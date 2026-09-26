@@ -40,11 +40,11 @@ def test_status_in_two_categories_fails_config_load() -> None:
 
 
 def test_enabled_module_with_disconnected_source_fails_config_load() -> None:
-    raw_registry = repository_yaml("modules.yaml")
-    raw_registry["monthly"]["m10"]["enabled"] = True
+    raw_config = raw_repository_config()
+    raw_config["modules"]["monthly"]["m10"]["enabled"] = True
 
     with pytest.raises(ValidationError, match="m10"):
-        ModuleRegistry.model_validate(raw_registry)
+        AppConfig.model_validate(raw_config)
 
 
 def test_managers_yaml_rejects_duplicate_ids() -> None:
@@ -206,6 +206,14 @@ def test_spi_module_can_be_enabled_once_kpi_is_calibrated() -> None:
     raw_config["kpi"]["status"] = "calibrated"
 
     assert AppConfig.model_validate(raw_config).modules.monthly["m6"].enabled
+
+
+def test_module_blockers_name_disconnected_sources_and_missing_kpi_status(
+    app_config: AppConfig,
+) -> None:
+    assert app_config.module_blockers("m13").disconnected_sources == ("B", "D")
+    assert app_config.module_blockers("m6").missing_kpi_status == "calibrated"
+    assert not app_config.module_blockers("d1").blocked
 
 
 def test_unknown_kpi_status_fails_config_load() -> None:

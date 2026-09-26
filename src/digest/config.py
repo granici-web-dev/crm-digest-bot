@@ -293,16 +293,11 @@ class ModuleRegistry(StrictConfigModel):
         return self
 
     @model_validator(mode="after")
-    def enabled_modules_have_connected_sources(self) -> Self:
+    def module_sources_are_declared(self) -> Self:
         for module_id, module in self.all_modules.items():
             undeclared = [code for code in module.sources if code not in self.sources]
             if undeclared:
                 raise ValueError(f"модуль {module_id}: источники {undeclared} не описаны в sources")
-            disconnected = [code for code in module.sources if not self.sources[code].connected]
-            if module.enabled and disconnected:
-                raise ValueError(
-                    f"модуль {module_id} включён, но источники {disconnected} не подключены"
-                )
         return self
 
     @model_validator(mode="after")
@@ -465,27 +460,54 @@ class KpiSettings(StrictConfigModel):
         return self
 
 
+@dataclass(frozen=True)
+class ModuleBlockers:
+    disconnected_sources: tuple[SourceCode, ...]
+    missing_kpi_status: KpiStatus | None
+
+    @property
+    def blocked(self) -> bool:
+        return bool(self.disconnected_sources) or self.missing_kpi_status is not None
+
+
 class AppConfig(StrictConfigModel):
     status_mapping: StatusMapping
     modules: ModuleRegistry
     managers: ManagerRoster
     kpi: KpiSettings
 
+    def module_blockers(self, module_id: str) -> ModuleBlockers:
+        module = self.modules.all_modules[module_id]
+        required_kpi_status = module.requires_kpi_status
+        return ModuleBlockers(
+            disconnected_sources=tuple(
+                code for code in module.sources if not self.modules.sources[code].connected
+            ),
+            missing_kpi_status=(
+                required_kpi_status
+                if required_kpi_status is not None and required_kpi_status != self.kpi.status
+                else None
+            ),
+        )
+
     @model_validator(mode="after")
-    def modules_needing_calibrated_kpi_stay_disabled(self) -> Self:
+    def enabled_modules_are_available(self) -> Self:
         # Баллы и SPI предварительные (ADR-002): модуль на них не включается ни из YAML,
         # ни через /settings, пока kpi.yaml не переведён в calibrated отдельным ADR.
-        blocked = sorted(
-            module_id
-            for module_id, module in self.modules.all_modules.items()
-            if module.enabled
-            and module.requires_kpi_status is not None
-            and self.kpi.status != module.requires_kpi_status
-        )
-        if blocked:
-            raise ValueError(
-                f"модули {blocked} требуют kpi.yaml status: calibrated, сейчас {self.kpi.status}"
-            )
+        for module_id, module in self.modules.all_modules.items():
+            if not module.enabled:
+                continue
+            blockers = self.module_blockers(module_id)
+            if blockers.disconnected_sources:
+                raise ValueError(
+                    f"модуль {module_id} включён, но источники "
+                    f"{list(blockers.disconnected_sources)} не подключены"
+                )
+            if blockers.missing_kpi_status is not None:
+                raise ValueError(
+                    f"модуль {module_id} требует kpi.yaml status: {blockers.missing_kpi_status}, "
+                    f"сейчас {self.kpi.status}"
+                )
         return self
 
     @model_validator(mode="after")
