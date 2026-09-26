@@ -24,7 +24,7 @@ from digest.db.schema import (
 from digest.delivery.ops import OpsChannel
 from digest.reports.context import ModuleResult, ReportContext, ReportDocument, ReportPhoto
 from digest.reports.modules import IMPLEMENTED_MODULES, ReportModuleFunction
-from digest.reports.runner import ReportDeps, run_report
+from digest.reports.runner import ReportDeps, run_report, runnable_modules
 from factories import BUCHAREST, lead_snapshots_row, make_snapshot_row
 from fakes import recording_bot
 
@@ -434,6 +434,20 @@ async def test_module_disabled_in_module_settings_is_skipped(harness: Harness) -
     assert outcome == "success"
     assert "<b>TOTAL</b>" not in harness.group_text
     assert "Lead-uri azi:" in harness.group_text
+
+
+async def test_module_needing_calibrated_kpi_is_skipped_even_if_enabled_in_db(
+    harness: Harness,
+) -> None:
+    async with harness.deps.engine.begin() as connection:
+        await connection.execute(
+            insert(module_settings).values(tenant_id=TENANT_ID, module_id="m6", enabled=True)
+        )
+
+    runnable = await runnable_modules(harness.deps, "monthly")
+
+    assert "m6" not in [module_id for module_id, _ in runnable]
+    assert any("m6" in alert and "calibrated" in alert for alert in harness.ops_texts)
 
 
 async def test_seed_defaults_keeps_existing_values(engine: AsyncEngine) -> None:

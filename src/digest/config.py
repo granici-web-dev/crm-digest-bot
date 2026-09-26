@@ -30,6 +30,7 @@ SNAPSHOT_RETRY_DELAY = timedelta(minutes=10)
 DAILY_REPORT_EARLIEST_AFTER_WINDOW_END = timedelta(minutes=30)
 MODULE_LABEL_MAX_LENGTH = 28
 SettingsLevel = Literal["daily", "weekly", "monthly"]
+SETTINGS_LEVELS: tuple[SettingsLevel, ...] = get_args(SettingsLevel)
 
 
 class StrictConfigModel(BaseModel):
@@ -303,7 +304,7 @@ class ModuleRegistry(StrictConfigModel):
 
     @model_validator(mode="after")
     def send_times_are_unique_per_level(self) -> Self:
-        for level in get_args(SettingsLevel):
+        for level in SETTINGS_LEVELS:
             if level not in self.send_times:
                 raise ValueError(f"send_times: нет вариантов для {level}")
             options = self.send_times[level]

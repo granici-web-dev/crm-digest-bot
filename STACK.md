@@ -11,7 +11,7 @@
 | Линтер, форматтер | ruff (lint + format) |
 | Типизация | mypy strict |
 | Pre-commit | ruff, mypy, проверка TODO без номера issue |
-| Telegram | aiogram 3 + aiogram_dialog (`/settings`) |
+| Telegram | aiogram 3, long polling в процессе `app`; `/settings` на `CallbackData` без aiogram_dialog |
 | Планировщик | APScheduler 3, расписания в таблице `schedules` |
 | БД | Postgres 16 |
 | Доступ к БД | SQLAlchemy 2 **Core** + asyncpg |

@@ -5,9 +5,23 @@ from typing import Any, cast
 
 from aiogram import Bot
 from aiogram.client.session.base import BaseSession
-from aiogram.methods import SendDocument, SendMessage, SendPhoto, TelegramMethod
+from aiogram.methods import (
+    AnswerCallbackQuery,
+    EditMessageText,
+    SendDocument,
+    SendMessage,
+    SendPhoto,
+    TelegramMethod,
+)
 from aiogram.methods.base import TelegramType
-from aiogram.types import BufferedInputFile, Chat, Document, Message, PhotoSize
+from aiogram.types import (
+    BufferedInputFile,
+    Chat,
+    Document,
+    InlineKeyboardMarkup,
+    Message,
+    PhotoSize,
+)
 
 from digest.delivery.telegram import create_bot
 
@@ -20,6 +34,22 @@ class SentMessage:
     text: str
     parse_mode: str | None
     message_id: int
+    reply_markup: InlineKeyboardMarkup | None = None
+
+
+@dataclass(frozen=True)
+class EditedMessage:
+    chat_id: int
+    message_id: int
+    text: str
+    reply_markup: InlineKeyboardMarkup | None
+
+
+@dataclass(frozen=True)
+class CallbackAnswer:
+    callback_query_id: str
+    text: str | None
+    show_alert: bool | None
 
 
 @dataclass(frozen=True)
@@ -45,6 +75,8 @@ class RecordingSession(BaseSession):
         self.sent: list[SentMessage] = []
         self.documents: list[SentDocument] = []
         self.photos: list[SentPhoto] = []
+        self.edited: list[EditedMessage] = []
+        self.callback_answers: list[CallbackAnswer] = []
         self.photo_failures: list[Exception] = []
         self.document_failures: list[Exception] = []
         self.failures: list[Exception] = []
@@ -67,6 +99,26 @@ class RecordingSession(BaseSession):
     ) -> TelegramType:
         if self.failures:
             raise self.failures.pop(0)
+        if isinstance(method, AnswerCallbackQuery):
+            self.callback_answers.append(
+                CallbackAnswer(method.callback_query_id, method.text, method.show_alert)
+            )
+            return cast(TelegramType, True)
+        if isinstance(method, EditMessageText):
+            assert method.chat_id is not None
+            assert method.message_id is not None
+            assert method.text is not None
+            chat_id = int(method.chat_id)
+            self.edited.append(
+                EditedMessage(chat_id, method.message_id, method.text, method.reply_markup)
+            )
+            edited_message = Message(
+                message_id=method.message_id,
+                date=datetime.now(UTC),
+                chat=Chat(id=chat_id, type="private"),
+                text=method.text,
+            )
+            return cast(TelegramType, edited_message)
         if isinstance(method, SendPhoto):
             if self.photo_failures:
                 raise self.photo_failures.pop(0)
@@ -104,7 +156,8 @@ class RecordingSession(BaseSession):
         message_id = self.next_message_id
         self.next_message_id += 1
         parse_mode = cast(str | None, method.parse_mode)
-        self.sent.append(SentMessage(chat_id, method.text, parse_mode, message_id))
+        reply_markup = cast(InlineKeyboardMarkup | None, method.reply_markup)
+        self.sent.append(SentMessage(chat_id, method.text, parse_mode, message_id, reply_markup))
         message = Message(
             message_id=message_id,
             date=datetime.now(UTC),
@@ -112,6 +165,16 @@ class RecordingSession(BaseSession):
             text=method.text,
         )
         return cast(TelegramType, message)
+
+    @property
+    def request_count(self) -> int:
+        return (
+            len(self.sent)
+            + len(self.documents)
+            + len(self.photos)
+            + len(self.edited)
+            + len(self.callback_answers)
+        )
 
     async def close(self) -> None:
         pass

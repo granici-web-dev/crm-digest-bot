@@ -196,11 +196,18 @@ async def runnable_modules(
     for module_id, module in modules_of_level(deps.config.modules, level).items():
         if not overrides.get(module_id, module.enabled):
             continue
-        disconnected = list(deps.config.module_blockers(module_id).disconnected_sources)
-        if disconnected:
+        blockers = deps.config.module_blockers(module_id)
+        if blockers.disconnected_sources:
             await notify_ops(
                 deps.ops,
-                f"Модуль {module_id} включён, но источники {disconnected} не подключены: пропущен.",
+                f"Модуль {module_id} включён, но источники "
+                f"{list(blockers.disconnected_sources)} не подключены: пропущен.",
+            )
+        elif blockers.missing_kpi_status is not None:
+            await notify_ops(
+                deps.ops,
+                f"Модуль {module_id} включён, но требует kpi.yaml status: "
+                f"{blockers.missing_kpi_status}: пропущен.",
             )
         elif module_id not in deps.modules:
             not_implemented.append(module_id)

@@ -1,9 +1,10 @@
-import asyncio
 import logging
 from datetime import date, datetime
+from functools import partial
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from aiogram import Dispatcher
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from pydantic import TypeAdapter
@@ -12,6 +13,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.backup_check import stale_backup_alert
+from digest.bot.settings_handlers import settings_router
 from digest.config import SNAPSHOT_RETRY_DELAY, AppConfig
 from digest.db.schema import schedules
 from digest.delivery.ops import OpsChannel, notify_ops
@@ -107,6 +109,22 @@ async def report_job(deps: ReportDeps, level: ReportLevel, backup_dir: Path | No
             await notify_ops(deps.ops, backup_alert)
 
 
+def schedule_report_job(
+    scheduler: AsyncIOScheduler,
+    deps: ReportDeps,
+    backup_dir: Path | None,
+    level: ReportLevel,
+    cron: str,
+) -> None:
+    scheduler.add_job(
+        report_job,
+        CronTrigger.from_crontab(cron, timezone=ZoneInfo(deps.config.status_mapping.time.timezone)),
+        args=[deps, level, backup_dir],
+        id=f"report_{level}",
+        replace_existing=True,
+    )
+
+
 def startup_announcement(app_version: str, dry_run: bool) -> str:
     return f"Бот запущен, версия {app_version}, DRY_RUN={int(dry_run)}."
 
@@ -129,17 +147,15 @@ async def run_app(engine: AsyncEngine, config: AppConfig, app_settings: Settings
             args=[deps, mefi_client],
             id=f"snapshot_{attempt_at:%H%M}",
         )
+    reschedule = partial(schedule_report_job, scheduler, deps, app_settings.backup_dir)
     for level, cron in (await enabled_schedules(engine, app_settings.tenant_id)).items():
-        scheduler.add_job(
-            report_job,
-            CronTrigger.from_crontab(cron, timezone=timezone),
-            args=[deps, level, app_settings.backup_dir],
-            id=f"report_{level}",
-        )
+        reschedule(level, cron)
     scheduler.start()
     logger.info(
         "scheduler started",
         extra={"jobs": [job.id for job in scheduler.get_jobs()], "dry_run": app_settings.dry_run},
     )
     await notify_ops(deps.ops, startup_announcement(app_settings.app_version, app_settings.dry_run))
-    await asyncio.Event().wait()
+    dispatcher = Dispatcher(deps=deps, reschedule=reschedule)
+    dispatcher.include_router(settings_router(app_settings.telegram_admin_ids))
+    await dispatcher.start_polling(deps.report_bot, allowed_updates=["message", "callback_query"])
