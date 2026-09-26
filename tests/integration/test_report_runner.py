@@ -11,7 +11,7 @@ from aiogram.methods import SendDocument, SendMessage, SendPhoto
 from sqlalchemy import insert, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from digest.app import DEFAULT_SCHEDULES, report_job, seed_defaults
+from digest.app import default_schedules, report_job, seed_defaults
 from digest.config import AppConfig
 from digest.db.schema import (
     lead_snapshots,
@@ -63,7 +63,7 @@ class Harness:
 
 @pytest.fixture
 async def harness(engine: AsyncEngine, app_config: AppConfig) -> Harness:
-    await seed_defaults(engine, TENANT_ID)
+    await seed_defaults(engine, app_config, TENANT_ID)
     return Harness(engine, app_config)
 
 
@@ -450,19 +450,21 @@ async def test_module_needing_calibrated_kpi_is_skipped_even_if_enabled_in_db(
     assert any("m6" in alert and "calibrated" in alert for alert in harness.ops_texts)
 
 
-async def test_seed_defaults_keeps_existing_values(engine: AsyncEngine) -> None:
-    await seed_defaults(engine, TENANT_ID)
+async def test_seed_defaults_keeps_existing_values(
+    engine: AsyncEngine, app_config: AppConfig
+) -> None:
+    await seed_defaults(engine, app_config, TENANT_ID)
     async with engine.begin() as connection:
         await connection.execute(
             text("UPDATE schedules SET cron = '0 20 * * *' WHERE report_level = 'daily'")
         )
 
-    await seed_defaults(engine, TENANT_ID)
+    await seed_defaults(engine, app_config, TENANT_ID)
 
     async with engine.connect() as connection:
         result = await connection.execute(select(schedules.c.report_level, schedules.c.cron))
         cron_by_level = {level: cron for level, cron in result}
-    assert cron_by_level == {**DEFAULT_SCHEDULES, "daily": "0 20 * * *"}
+    assert cron_by_level == {**default_schedules(app_config), "daily": "0 20 * * *"}
     async with engine.connect() as connection:
         assert (await connection.execute(select(settings.c.key))).all() == []
 

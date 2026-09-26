@@ -1,3 +1,4 @@
+from datetime import time
 from pathlib import Path
 from typing import Any
 
@@ -385,3 +386,17 @@ def test_repeated_send_time_fails_config_load() -> None:
 
     with pytest.raises(ValidationError, match=r"send_times\.weekly"):
         ModuleRegistry.model_validate(raw_modules)
+
+
+def test_weekly_send_times_without_default_option_fail_config_load() -> None:
+    raw_modules = repository_yaml("modules.yaml")
+    raw_modules["send_times"]["weekly"] = ["09:00"]
+
+    with pytest.raises(ValidationError, match=r"send_times\.weekly: время по умолчанию"):
+        ModuleRegistry.model_validate(raw_modules)
+
+
+def test_default_send_times_come_from_send_times(app_config: AppConfig) -> None:
+    assert app_config.modules.default_send_time("daily") == time(19, 30)
+    assert app_config.modules.default_send_time("weekly") == time(9, 0)
+    assert app_config.modules.default_send_time("monthly") == time(9, 0)

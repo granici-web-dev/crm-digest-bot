@@ -1,9 +1,11 @@
 import asyncio
 import logging
 import signal
+from collections.abc import Mapping
 from datetime import date, datetime, timedelta
 from functools import partial
 from pathlib import Path
+from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -16,7 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from digest.backup_check import stale_backup_alert
 from digest.bot.polling import PollingHealth, supervise_polling, watch_polling_silence
 from digest.bot.settings_handlers import settings_dispatcher
-from digest.config import SNAPSHOT_RETRY_DELAY, AppConfig
+from digest.bot.settings_menu import standard_send_time
+from digest.config import SETTINGS_LEVELS, SNAPSHOT_RETRY_DELAY, AppConfig, SettingsLevel
 from digest.db.schema import schedules
 from digest.delivery.ops import OpsChannel, notify_ops
 from digest.delivery.telegram import create_bot
@@ -39,36 +42,72 @@ POLLING_SILENCE_CHECK_INTERVAL = timedelta(minutes=1)
 POLLING_SILENCE_ALERT_AFTER = timedelta(minutes=30)
 
 # Бриф §4: дефолты при первом запуске, дальше расписание меняется только в таблице.
-DEFAULT_SCHEDULES: dict[ReportLevel, str] = {
-    "daily": "30 19 * * *",
-    "weekly": "0 9 * * mon",
-    "monthly": "0 9 1 * *",
-    "yearly": "0 9 5 1 *",
+# Время уровней /settings берётся из send_times, здесь только дни.
+DEFAULT_SCHEDULE_DAYS: dict[SettingsLevel, str] = {
+    "daily": "* * *",
+    "weekly": "* * mon",
+    "monthly": "1 * *",
 }
+YEARLY_DEFAULT_SCHEDULE = "0 9 5 1 *"
 
 
-async def seed_defaults(engine: AsyncEngine, tenant_id: str) -> None:
+class StoredSchedule(NamedTuple):
+    cron: str
+    enabled: bool
+
+
+def default_schedules(config: AppConfig) -> dict[ReportLevel, str]:
+    crons: dict[ReportLevel, str] = {"yearly": YEARLY_DEFAULT_SCHEDULE}
+    for level in SETTINGS_LEVELS:
+        send_time = config.modules.default_send_time(level)
+        crons[level] = f"{send_time.minute} {send_time.hour} {DEFAULT_SCHEDULE_DAYS[level]}"
+    return crons
+
+
+async def seed_defaults(engine: AsyncEngine, config: AppConfig, tenant_id: str) -> None:
     async with engine.begin() as connection:
         await connection.execute(
             pg_insert(schedules)
             .values(
                 [
                     {"tenant_id": tenant_id, "report_level": level, "cron": cron, "enabled": True}
-                    for level, cron in DEFAULT_SCHEDULES.items()
+                    for level, cron in default_schedules(config).items()
                 ]
             )
             .on_conflict_do_nothing()
         )
 
 
-async def enabled_schedules(engine: AsyncEngine, tenant_id: str) -> dict[ReportLevel, str]:
+async def stored_schedules(
+    engine: AsyncEngine, tenant_id: str
+) -> dict[ReportLevel, StoredSchedule]:
     async with engine.connect() as connection:
         rows = await connection.execute(
-            select(schedules.c.report_level, schedules.c.cron).where(
-                schedules.c.tenant_id == tenant_id, schedules.c.enabled
+            select(schedules.c.report_level, schedules.c.cron, schedules.c.enabled).where(
+                schedules.c.tenant_id == tenant_id
             )
         )
-        return {TypeAdapter(ReportLevel).validate_python(level): cron for level, cron in rows}
+        return {
+            TypeAdapter(ReportLevel).validate_python(level): StoredSchedule(cron, enabled)
+            for level, cron, enabled in rows
+        }
+
+
+def nonstandard_schedule_alert(
+    config: AppConfig, schedules_by_level: Mapping[ReportLevel, StoredSchedule]
+) -> str | None:
+    nonstandard = [
+        f"{level} «{schedules_by_level[level].cron}»"
+        for level in SETTINGS_LEVELS
+        if level in schedules_by_level
+        and standard_send_time(config, level, schedules_by_level[level].cron) is None
+    ]
+    if not nonstandard:
+        return None
+    return (
+        f"Расписание вне вариантов send_times: {', '.join(nonstandard)}. /settings показывает "
+        "«program nestandard» и время не меняет: поправить cron в schedules или send_times."
+    )
 
 
 def create_report_deps(
@@ -159,7 +198,7 @@ def startup_announcement(app_version: str, dry_run: bool) -> str:
 
 
 async def run_app(engine: AsyncEngine, config: AppConfig, app_settings: Settings) -> None:
-    await seed_defaults(engine, app_settings.tenant_id)
+    await seed_defaults(engine, config, app_settings.tenant_id)
     deps = create_report_deps(engine, config, app_settings, app_settings.dry_run)
     mefi_http_client = create_mefi_http_client(
         app_settings.mefi_base_url, app_settings.mefi_api_key
@@ -168,14 +207,19 @@ async def run_app(engine: AsyncEngine, config: AppConfig, app_settings: Settings
     scheduler = AsyncIOScheduler(timezone=ZoneInfo(config.status_mapping.time.timezone))
     schedule_snapshot_jobs(scheduler, deps, mefi_client)
     reschedule = partial(schedule_report_job, scheduler, deps, app_settings.backup_dir)
-    for level, cron in (await enabled_schedules(engine, app_settings.tenant_id)).items():
-        reschedule(level, cron)
+    schedules_by_level = await stored_schedules(engine, app_settings.tenant_id)
+    for level, schedule in schedules_by_level.items():
+        if schedule.enabled:
+            reschedule(level, schedule.cron)
     scheduler.start()
     logger.info(
         "scheduler started",
         extra={"jobs": [job.id for job in scheduler.get_jobs()], "dry_run": app_settings.dry_run},
     )
     await notify_ops(deps.ops, startup_announcement(app_settings.app_version, app_settings.dry_run))
+    schedule_alert = nonstandard_schedule_alert(config, schedules_by_level)
+    if schedule_alert is not None:
+        await notify_ops(deps.ops, schedule_alert)
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -183,7 +227,12 @@ async def run_app(engine: AsyncEngine, config: AppConfig, app_settings: Settings
         loop.add_signal_handler(stop_signal, stop.set)
     health = PollingHealth()
     deps.report_bot.session.middleware(health)
-    dispatcher = settings_dispatcher(deps, reschedule, app_settings.telegram_admin_ids)
+    dispatcher = settings_dispatcher(
+        deps,
+        reschedule,
+        app_settings.telegram_admin_ids,
+        clock=partial(datetime.now, ZoneInfo(config.status_mapping.time.timezone)),
+    )
     start_polling = partial(
         dispatcher.start_polling,
         deps.report_bot,

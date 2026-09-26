@@ -31,6 +31,8 @@ DAILY_REPORT_EARLIEST_AFTER_WINDOW_END = timedelta(minutes=30)
 MODULE_LABEL_MAX_LENGTH = 28
 SettingsLevel = Literal["daily", "weekly", "monthly"]
 SETTINGS_LEVELS: tuple[SettingsLevel, ...] = get_args(SettingsLevel)
+# Время засева берётся из send_times, чтобы оно всегда было вариантом меню /settings.
+DEFAULT_SEND_TIME_INDEX: dict[SettingsLevel, int] = {"daily": 0, "weekly": 1, "monthly": 1}
 
 
 class StrictConfigModel(BaseModel):
@@ -310,7 +312,15 @@ class ModuleRegistry(StrictConfigModel):
             options = self.send_times[level]
             if len(set(options)) != len(options):
                 raise ValueError(f"send_times.{level}: варианты повторяются")
+            if len(options) <= DEFAULT_SEND_TIME_INDEX[level]:
+                raise ValueError(
+                    f"send_times.{level}: время по умолчанию это вариант "
+                    f"№{DEFAULT_SEND_TIME_INDEX[level] + 1}, вариантов меньше"
+                )
         return self
+
+    def default_send_time(self, level: SettingsLevel) -> time:
+        return self.send_times[level][DEFAULT_SEND_TIME_INDEX[level]]
 
     @model_validator(mode="after")
     def module_sources_are_declared(self) -> Self:

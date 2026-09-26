@@ -1,5 +1,6 @@
-from collections.abc import AsyncIterator
-from datetime import UTC, date, datetime
+import asyncio
+from collections.abc import AsyncIterator, Callable
+from datetime import UTC, date, datetime, time
 from functools import partial
 from typing import Any
 
@@ -7,16 +8,20 @@ import pytest
 from aiogram.types import CallbackQuery, Chat, Message, Update, User
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from digest.app import enabled_schedules, schedule_report_job, seed_defaults
-from digest.bot.settings_handlers import settings_dispatcher
-from digest.bot.settings_menu import LevelMenu, ModuleSwitch, SendTimeChoice
+from digest.app import schedule_report_job, seed_defaults, stored_schedules
+from digest.bot.settings_handlers import (
+    HANDLER_ERROR_TEXT,
+    settings_dispatcher,
+)
+from digest.bot.settings_menu import LevelMenu, ModuleSwitch, SendTimeChoice, SendTimeMenu
 from digest.config import AppConfig
 from digest.db.schema import lead_snapshots, module_settings, schedules, snapshot_runs
 from digest.delivery.ops import OpsChannel
 from digest.reports.modules import IMPLEMENTED_MODULES
+from digest.reports.periods import ReportLevel
 from digest.reports.runner import ReportDeps, run_report
 from factories import BUCHAREST, lead_snapshots_row, make_snapshot_row
 from fakes import recording_bot
@@ -43,8 +48,18 @@ class SettingsHarness:
             modules=IMPLEMENTED_MODULES,
         )
         self.scheduler = AsyncIOScheduler(timezone=BUCHAREST)
-        self.reschedule = partial(schedule_report_job, self.scheduler, self.deps, None)
-        self.dispatcher = settings_dispatcher(self.deps, self.reschedule, [ADMIN_ID])
+        self.reschedule: Callable[[ReportLevel, str], None] = partial(
+            schedule_report_job, self.scheduler, self.deps, None
+        )
+        # До любого варианта daily и в пятницу: перенос времени не досылает отчёт, пока тест
+        # сам не выставит момент.
+        self.now = datetime(2026, 9, 25, 12, 0, tzinfo=BUCHAREST)
+        self.dispatcher = settings_dispatcher(
+            self.deps,
+            lambda level, cron: self.reschedule(level, cron),
+            [ADMIN_ID],
+            lambda: self.now,
+        )
         self.update_id = 0
 
     async def feed(self, **update_fields: Any) -> None:
@@ -99,11 +114,12 @@ def admin_user(user_id: int) -> User:
 
 @pytest.fixture
 async def harness(engine: AsyncEngine, app_config: AppConfig) -> AsyncIterator[SettingsHarness]:
-    await seed_defaults(engine, TENANT_ID)
+    await seed_defaults(engine, app_config, TENANT_ID)
     harness = SettingsHarness(engine, app_config)
     harness.scheduler.start(paused=True)
-    for level, cron in (await enabled_schedules(engine, TENANT_ID)).items():
-        harness.reschedule(level, cron)
+    for level, schedule in (await stored_schedules(engine, TENANT_ID)).items():
+        if schedule.enabled:
+            harness.reschedule(level, schedule.cron)
     yield harness
     harness.scheduler.shutdown(wait=False)
 
@@ -128,6 +144,30 @@ async def schedule_row(engine: AsyncEngine, level: str) -> tuple[str, int | None
             )
         ).one()
         return cron, updated_by
+
+
+async def store_successful_snapshot(engine: AsyncEngine, snapshot_date: date) -> None:
+    async with engine.begin() as connection:
+        lead = make_snapshot_row(
+            lead_id=1, created_at=datetime.combine(snapshot_date, time(11, 0), tzinfo=BUCHAREST)
+        )
+        await connection.execute(
+            insert(lead_snapshots).values(
+                tenant_id=TENANT_ID, snapshot_date=snapshot_date, **lead_snapshots_row(lead)
+            )
+        )
+        await connection.execute(
+            insert(snapshot_runs).values(
+                tenant_id=TENANT_ID, snapshot_date=snapshot_date, attempt=1, status="success"
+            )
+        )
+
+
+async def set_cron(engine: AsyncEngine, level: str, cron: str) -> None:
+    async with engine.begin() as connection:
+        await connection.execute(
+            update(schedules).where(schedules.c.report_level == level).values(cron=cron)
+        )
 
 
 def trigger_fields(harness: SettingsHarness, level: str) -> dict[str, str]:
@@ -273,22 +313,7 @@ async def test_send_time_outside_options_is_rejected(harness: SettingsHarness) -
 
 
 async def test_runner_skips_module_switched_off_in_settings(harness: SettingsHarness) -> None:
-    report_date = date(2026, 9, 25)
-    async with harness.deps.engine.begin() as connection:
-        lead = make_snapshot_row(
-            lead_id=1, created_at=datetime(2026, 9, 25, 11, 0, tzinfo=BUCHAREST)
-        )
-        await connection.execute(
-            insert(lead_snapshots).values(
-                tenant_id=TENANT_ID, snapshot_date=report_date, **lead_snapshots_row(lead)
-            )
-        )
-        await connection.execute(
-            insert(snapshot_runs).values(
-                tenant_id=TENANT_ID, snapshot_date=report_date, attempt=1, status="success"
-            )
-        )
-
+    await store_successful_snapshot(harness.deps.engine, date(2026, 9, 25))
     await harness.press(ModuleSwitch(module_id="d1", enabled=False).pack())
     outcome = await run_report(
         "daily", datetime(2026, 9, 25, 19, 30, tzinfo=BUCHAREST), harness.deps
@@ -298,3 +323,87 @@ async def test_runner_skips_module_switched_off_in_settings(harness: SettingsHar
     group_text = "\n".join(message.text for message in harness.chat.sent)
     assert "<b>TOTAL</b>" not in group_text
     assert "Lead-uri azi:" in group_text
+
+
+async def test_enabled_module_that_became_unavailable_can_be_switched_off(
+    harness: SettingsHarness,
+) -> None:
+    async with harness.deps.engine.begin() as connection:
+        await connection.execute(
+            insert(module_settings).values(tenant_id=TENANT_ID, module_id="m1", enabled=True)
+        )
+
+    await harness.press(ModuleSwitch(module_id="m1", enabled=False).pack())
+
+    assert await module_settings_rows(harness.deps.engine) == [("m1", False, ADMIN_ID)]
+    assert harness.ops_texts == [
+        f"Настройки: Ana Admin ({ADMIN_ID}): m1 month_summary_image включён → выключен"
+    ]
+
+
+async def test_earlier_time_already_passed_sends_todays_report_once(
+    harness: SettingsHarness,
+) -> None:
+    await store_successful_snapshot(harness.deps.engine, date(2026, 9, 25))
+    await harness.press(SendTimeChoice(level="daily", hhmm="2030").pack())
+    harness.now = datetime(2026, 9, 25, 20, 10, tzinfo=BUCHAREST)
+
+    await harness.press(SendTimeChoice(level="daily", hhmm="2000").pack())
+
+    group_messages = [message for message in harness.chat.sent if message.chat_id == GROUP_CHAT_ID]
+    admin_messages = [message.text for message in harness.chat.sent if message.chat_id == ADMIN_ID]
+    assert group_messages
+    assert admin_messages == ["raportul de azi a fost trimis acum"]
+    assert harness.ops_texts[-1] == "Настройки: daily: raportul de azi a fost trimis acum"
+
+    await harness.press(SendTimeChoice(level="daily", hhmm="2030").pack())
+    await harness.press(SendTimeChoice(level="daily", hhmm="1930").pack())
+
+    assert [message for message in harness.chat.sent if message.chat_id == GROUP_CHAT_ID] == (
+        group_messages
+    )
+    assert [message.text for message in harness.chat.sent if message.chat_id == ADMIN_ID] == (
+        admin_messages
+    )
+
+
+async def test_nonstandard_schedule_is_shown_and_not_changed(harness: SettingsHarness) -> None:
+    await set_cron(harness.deps.engine, "daily", "*/5 19 * * *")
+
+    await harness.press(LevelMenu(level="daily").pack())
+    await harness.press(SendTimeMenu(level="daily").pack())
+    await harness.press(SendTimeChoice(level="daily", hhmm="2000").pack())
+
+    assert harness.chat.edited[0].text.startswith("Zilnic · program nestandard.")
+    assert [answer.text for answer in harness.chat.callback_answers[1:]] == [
+        "program nestandard",
+        "program nestandard",
+    ]
+    assert await schedule_row(harness.deps.engine, "daily") == ("*/5 19 * * *", None)
+    assert harness.ops_texts == []
+
+
+async def test_failed_reschedule_keeps_schedule_and_alerts_ops(harness: SettingsHarness) -> None:
+    def failing_reschedule(level: ReportLevel, cron: str) -> None:
+        raise RuntimeError("scheduler stopped")
+
+    harness.reschedule = failing_reschedule
+
+    await harness.press(SendTimeChoice(level="daily", hhmm="2000").pack())
+
+    assert await schedule_row(harness.deps.engine, "daily") == ("30 19 * * *", None)
+    assert harness.ops_texts == ["/settings: хендлер упал: RuntimeError."]
+    assert harness.last_answer_text == HANDLER_ERROR_TEXT
+
+
+async def test_concurrent_send_time_changes_leave_job_matching_schedule(
+    harness: SettingsHarness,
+) -> None:
+    await asyncio.gather(
+        harness.press(SendTimeChoice(level="daily", hhmm="2000").pack()),
+        harness.press(SendTimeChoice(level="daily", hhmm="2030").pack()),
+    )
+
+    cron, _ = await schedule_row(harness.deps.engine, "daily")
+    fields = trigger_fields(harness, "daily")
+    assert cron == f"{fields['minute']} {fields['hour']} * * *"

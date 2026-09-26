@@ -1,20 +1,23 @@
-from datetime import time
+from datetime import datetime, time
+from zoneinfo import ZoneInfo
 
+import pytest
 from aiogram.types import InlineKeyboardMarkup
 
 from digest.bot.settings_menu import (
     LevelMenu,
     ModuleSwitch,
     SendTimeChoice,
-    cron_send_time,
     cron_with_send_time,
     level_menu,
     module_unavailable_reason,
+    report_missed_today,
     root_menu,
     send_time_menu,
     send_time_option,
+    standard_send_time,
 )
-from digest.config import AppConfig
+from digest.config import AppConfig, SettingsLevel
 from digest.reports.modules import IMPLEMENTED_MODULES
 
 
@@ -95,7 +98,76 @@ def test_send_time_option_accepts_only_configured_times(app_config: AppConfig) -
     assert send_time_option(app_config, "daily", "1800") is None
 
 
-def test_cron_send_time_keeps_day_fields() -> None:
-    assert cron_send_time("0 9 * * mon") == time(9, 0)
+BUCHAREST = ZoneInfo("Europe/Bucharest")
+
+
+def test_level_menu_lets_switch_off_enabled_module_that_became_unavailable(
+    app_config: AppConfig,
+) -> None:
+    enabled_by_module = {module_id: False for module_id in app_config.modules.monthly}
+
+    _, keyboard = level_menu(
+        app_config, "monthly", enabled_by_module | {"m1": True}, IMPLEMENTED_MODULES, time(9, 0)
+    )
+
+    assert button_for(keyboard, "m1") == (
+        "✅ m1 · Rezumatul lunii · nu e disponibil: sursa B",
+        ModuleSwitch(module_id="m1", enabled=False).pack(),
+    )
+
+
+def test_level_menu_with_nonstandard_schedule_hides_send_time_button(
+    app_config: AppConfig,
+) -> None:
+    enabled_by_module = {module_id: True for module_id in app_config.modules.daily}
+
+    text, keyboard = level_menu(app_config, "daily", enabled_by_module, IMPLEMENTED_MODULES, None)
+
+    assert text.startswith("Zilnic · program nestandard.")
+    assert button_texts(keyboard)[-1] == "⬅ Înapoi"
+    assert "🕒 Ora" not in button_texts(keyboard)
+
+
+@pytest.mark.parametrize(
+    ("level", "cron", "expected"),
+    [
+        ("daily", "30 19 * * *", time(19, 30)),
+        ("weekly", "0 9 * * mon", time(9, 0)),
+        ("daily", "15 18 * * *", None),
+        ("daily", "*/5 19 * * *", None),
+        ("daily", "0,30 20 * * *", None),
+        ("daily", "0 25 * * *", None),
+    ],
+)
+def test_standard_send_time_accepts_only_menu_options(
+    app_config: AppConfig, level: SettingsLevel, cron: str, expected: time | None
+) -> None:
+    assert standard_send_time(app_config, level, cron) == expected
+
+
+@pytest.mark.parametrize(
+    ("old_cron", "new_cron", "now", "expected"),
+    [
+        # 20:10, перенос 20:30 → 20:00: сегодняшний отчёт ещё не ушёл, новое время прошло.
+        ("30 20 * * *", "0 20 * * *", datetime(2026, 9, 25, 20, 10), True),
+        # Новое время ещё впереди: планировщик отправит сам.
+        ("30 20 * * *", "0 20 * * *", datetime(2026, 9, 25, 19, 45), False),
+        # Старое время уже прошло: отчёт за сегодня отправлен.
+        ("0 20 * * *", "30 19 * * *", datetime(2026, 9, 25, 20, 10), False),
+        # Weekly в пятницу: сегодня не день отправки.
+        ("0 10 * * mon", "0 8 * * mon", datetime(2026, 9, 25, 9, 0), False),
+        ("0 10 * * mon", "0 8 * * mon", datetime(2026, 9, 28, 9, 0), True),
+    ],
+)
+def test_report_missed_today_only_between_new_and_old_time(
+    old_cron: str, new_cron: str, now: datetime, expected: bool
+) -> None:
+    assert (
+        report_missed_today(old_cron, new_cron, now.replace(tzinfo=BUCHAREST), BUCHAREST)
+        is expected
+    )
+
+
+def test_cron_with_send_time_keeps_day_fields() -> None:
     assert cron_with_send_time("0 9 * * mon", time(10, 0)) == "0 10 * * mon"
     assert cron_with_send_time("30 19 * * *", time(20, 30)) == "30 20 * * *"
