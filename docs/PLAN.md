@@ -35,8 +35,8 @@
 - Расхождение с дополнением к shape: там сказано, что 5 от API и 4 записанных при порогах по умолчанию это failed, но по записанным там же порогам (max(5, 0.5 %) недополучено, max(10, 1 %) пропущено) это success. Реализованы пороги; тест переименован в test_snapshot_below_thresholds_is_success_with_alert_data. Если 5/4 должно падать, пороги в status-mapping.yaml нужно ужесточить.
 - Незнакомые ключи лида (unknown_raw_key) пишутся в raw, не вырезаются; алерт шлёт раннер отчёта, только по ключам, которых не было в предыдущем успешном снапшоте. Остальные записи custom_field_mismatches (missing, unexpected_value, invalid_shape) в служебный бот пока не уходят.
 - Локально тесты идут с `TESTCONTAINERS_RYUK_DISABLED=true`: docker pull образа ryuk зависает.
-- Сессия 8 (26.09.2026): shape /settings `docs/shapes/2026-09-26-settings.md`, ждёт согласования (три открытых вопроса в конце). Решения пользователя: без aiogram_dialog, CallbackData, polling в процессе app, chat_id группы только через .env, Chat и Yearly в меню нет.
-- Дальше: согласовать shape /settings, затем craft.
+- Сессия 8 (26.09.2026): /settings по shape `docs/shapes/2026-09-26-settings.md` (e536681, решения и отклонения в конце shape) через craft, три коммита: cef81c4 (refactor: `AppConfig.module_blockers` одно правило для загрузки конфига и раннера), 4dbb0a8 (миграция 0002 `schedules.updated_at/updated_by`, `TELEGRAM_ADMIN_IDS` через запятую, `label` до 28 символов у всех модулей, `send_times` с проверкой daily не раньше 19:30, `bot/settings_menu.py`), 0718239 (`bot/settings_handlers.py`: доступ только личка + админ, кнопка несёт целевое состояние, недоступный и нереализованный модуль не пишется, строка в ops «было → стало»; `schedule_report_job` для старта и перепланировки; long polling в `run_app`; раннер пропускает модуль без калибровки KPI, включённый в БД). 534 теста зелёные, pre-commit чистый. Реальный Telegram не проверялся: нет токенов, только фейковая сессия и `feed_update`.
+- Дальше: critique /settings, затем harden. Перед сервером: вписать `TELEGRAM_ADMIN_IDS` в `.env` сервера, иначе `app` не стартует; руками проверить `/settings` в личке с ботом отчётов (пункт в `docs/deploy.md` §4).
 
 ## Принятые решения (не обсуждать заново)
 
@@ -52,7 +52,7 @@
 - Консультанты: config/managers.yaml, сверен со списком пользователей mefi 24.09.2026.
 - Метрики по консультантам считают только active: true; лид с assigned_to.id вне managers.yaml находит unknown_manager_ids (metrics/ не логирует и не ходит в БД), алерт шлёт раннер отчёта (сессия 5).
 - Срок «лид ACTIVE без движения» по status_changed_at получит свой ключ stale_lead_days в kpi.yaml, когда появится модуль, который его читает (сессия 5).
-- m6 и любой модуль с requires_kpi_status: calibrated не включается, пока kpi.yaml в status: provisional; /settings (сессия 6) использует тот же валидатор AppConfig.
+- m6 и любой модуль с requires_kpi_status: calibrated не включается, пока kpi.yaml в status: provisional; загрузка конфига, раннер и /settings читают одно правило `AppConfig.module_blockers`.
 - Лиды с assigned_to.id консультанта с test_account: true исключаются из всех метрик в prepare_lead_frame.
 - Отчёты читают только снапшот с snapshot_date = today и status = success, иначе пометка «данные mefi недоступны».
 - Висящая оферта (ACTIVE_OFFERS_14, ACR, d4) только у лида ACTIVE или ACTIVE_FOLLOWUP (ADR-005): 564 висящие на живом снапшоте 25.09.2026 были почти все у LOST.
@@ -70,6 +70,7 @@
 - Отчёты в группу только на румынском, служебный бот по-русски (26.09.2026). Ключ `report_language` в `settings` мёртвый, миграции нет. Заголовок шоурума как в mefi (`Brașov`).
 - report_runs: success/partial не отправляются повторно; failed отправляется заново; running старше 30 минут = прерван, отправляется целиком с алертом (дубль лучше пропуска); running моложе 30 минут не трогается.
 - Источник B на этапе 2 читается через POST /admin/<модуль>/table с length=5000, не через обход HTML. Вход в mefi это блокер: reCAPTCHA плюс обязательная 2FA; цель официальный API, временная мера ручной вход с cookie.
+- /settings: без aiogram_dialog, CallbackData с короткими префиксами, long polling в процессе app; в меню Daily, Weekly, Monthly (Yearly и Chat нет); chat_id группы только через `.env`; модуль не из `IMPLEMENTED_MODULES` серый «în lucru»; время только из `send_times`.
 
 ## Ждём извне
 
