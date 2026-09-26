@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 from aiogram import Dispatcher, F, Router
 from aiogram.enums import ChatType
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, ErrorEvent, InlineKeyboardMarkup, Message, User
+from aiogram.types import CallbackQuery, ErrorEvent, InlineKeyboardMarkup, Message
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -47,14 +47,6 @@ Menu = tuple[str, InlineKeyboardMarkup]
 
 STALE_MENU_TEXT = "Meniul e vechi, trimiteți /settings."
 HANDLER_ERROR_TEXT = "Nu s-a putut aplica. Încercați din nou mai târziu."
-
-
-def enabled_state(enabled: bool) -> str:
-    return "включён" if enabled else "выключен"
-
-
-def admin_label(user: User) -> str:
-    return f"{user.full_name} ({user.id})"
 
 
 def settings_level_of_module(deps: ReportDeps, module_id: str) -> SettingsLevel | None:
@@ -137,10 +129,12 @@ async def switch_module(
                 set_={**values, "updated_at": func.now()},
             )
         )
+    admin = callback.from_user
     await notify_ops(
         deps.ops,
-        f"Настройки: {admin_label(callback.from_user)}: {module_id} {module.name} "
-        f"{enabled_state(was_enabled)} → {enabled_state(callback_data.enabled)}",
+        f"Настройки: {admin.full_name} ({admin.id}): {module_id} {module.name} "
+        f"{'включён' if was_enabled else 'выключен'} → "
+        f"{'включён' if callback_data.enabled else 'выключен'}",
     )
     await show_menu(callback, await load_level_menu(deps, level))
 
@@ -200,9 +194,10 @@ async def choose_send_time(
     if not changed:
         await callback.answer()
         return
+    admin = callback.from_user
     await notify_ops(
         deps.ops,
-        f"Настройки: {admin_label(callback.from_user)}: время {level} "
+        f"Настройки: {admin.full_name} ({admin.id}): время {level} "
         f"{format_send_time(old_time)} → {format_send_time(new_time)}",
     )
     await show_menu(callback, send_time_menu(deps.config, level, new_time))

@@ -10,6 +10,7 @@ from digest.config import (
     KpiSettings,
     LeadCategory,
     ManagerRoster,
+    ModuleBlockers,
     ModuleRegistry,
     StatusMapping,
     read_yaml,
@@ -214,7 +215,9 @@ def test_module_blockers_name_disconnected_sources_and_missing_kpi_status(
 ) -> None:
     assert app_config.module_blockers("m13").disconnected_sources == ("B", "D")
     assert app_config.module_blockers("m6").missing_kpi_status == "calibrated"
-    assert not app_config.module_blockers("d1").blocked
+    assert app_config.module_blockers("d1") == ModuleBlockers(
+        disconnected_sources=(), missing_kpi_status=None
+    )
 
 
 def test_unknown_kpi_status_fails_config_load() -> None:

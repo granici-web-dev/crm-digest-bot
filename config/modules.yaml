@@ -13,7 +13,7 @@ sources:
   G: { title: "себестоимость",                             connected: false }
   H: { title: "LLM из заметок",                            connected: false }
 
-daily:            # 19:30, окно 19:00 вчера → 19:00 сегодня
+daily:            # окно 19:00 вчера → 19:00 сегодня; время отправки в таблице schedules
   d1: { name: seller_format_report, label: "Raport format consilieri",   sources: [A], enabled: true }
   # last_contact_at у нового лида отстаёт от created_at до минуты (замер 25.09.2026: 982 точно, 14 до 60 с).
   d2: { name: untouched_leads, label: "Lead-uri neatinse azi",        sources: [A], enabled: true,  params: { threshold_hours: 4, lookback_days: 3, touch_tolerance_seconds: 60 } }
@@ -26,7 +26,7 @@ daily:            # 19:30, окно 19:00 вчера → 19:00 сегодня
   d7: { name: scr_rolling_30, label: "Conversie 30 de zile",         sources: [A], enabled: false }
   d8: { name: instant_alerts, label: "Alertă imediată",         sources: [A], enabled: false, params: { site_zero_by: "15:00" } }
 
-weekly:           # понедельник 09:00, пн–вс
+weekly:           # пн–вс, отправка в понедельник; время в таблице schedules
   w1:  { name: leads_day_showroom_source, label: "Lead-uri pe zi și showroom", sources: [A], enabled: true }
   w2:  { name: showroom_visits, label: "Vizite în showroom",           sources: [A], enabled: true }
   w3:  { name: weekly_funnel, label: "Pâlnia săptămânii",             sources: [A], enabled: true }
@@ -40,7 +40,7 @@ weekly:           # понедельник 09:00, пн–вс
   w11: { name: sessions_to_leads, label: "Trafic site → lead-uri",         sources: [A, E], enabled: false }
   w12: { name: excel_attachment, label: "Fișier Excel",          sources: [A], enabled: true }
 
-monthly:          # 1-е число 09:00
+monthly:          # календарный месяц, отправка 1-го числа; время в таблице schedules
   m1:  { name: month_summary_image, label: "Rezumatul lunii",   sources: [B],    enabled: false }
   m2:  { name: funnel_by_showroom_image, label: "Pâlnia lunii pe showroom", sources: [A], enabled: true }
   m3:  { name: trend_6m_image, label: "Trend 6 luni",        sources: [A],    enabled: true }

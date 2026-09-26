@@ -5,7 +5,9 @@ from functools import partial
 from typing import Any
 
 import pytest
-from aiogram.types import CallbackQuery, Chat, Message, Update, User
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.methods import EditMessageText
+from aiogram.types import CallbackQuery, Chat, InaccessibleMessage, Message, Update, User
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import insert, select, update
@@ -14,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from digest.app import schedule_report_job, seed_defaults, stored_schedules
 from digest.bot.settings_handlers import (
     HANDLER_ERROR_TEXT,
+    STALE_MENU_TEXT,
     settings_dispatcher,
 )
 from digest.bot.settings_menu import LevelMenu, ModuleSwitch, SendTimeChoice, SendTimeMenu
@@ -83,19 +86,22 @@ class SettingsHarness:
             )
         )
 
-    async def press(self, callback_data: str, user_id: int = ADMIN_ID) -> None:
+    async def press(
+        self, callback_data: str, user_id: int = ADMIN_ID, menu_is_stale: bool = False
+    ) -> None:
+        chat = Chat(id=user_id, type="private")
+        message: Message | InaccessibleMessage = (
+            InaccessibleMessage(chat=chat, message_id=MENU_MESSAGE_ID)
+            if menu_is_stale
+            else Message(message_id=MENU_MESSAGE_ID, date=datetime.now(UTC), chat=chat, text="menu")
+        )
         await self.feed(
             callback_query=CallbackQuery(
                 id=f"callback-{self.update_id}",
                 from_user=admin_user(user_id),
                 chat_instance="settings",
                 data=callback_data,
-                message=Message(
-                    message_id=MENU_MESSAGE_ID,
-                    date=datetime.now(UTC),
-                    chat=Chat(id=user_id, type="private"),
-                    text="menu",
-                ),
+                message=message,
             )
         )
 
@@ -407,3 +413,41 @@ async def test_concurrent_send_time_changes_leave_job_matching_schedule(
     cron, _ = await schedule_row(harness.deps.engine, "daily")
     fields = trigger_fields(harness, "daily")
     assert cron == f"{fields['minute']} {fields['hour']} * * *"
+
+
+async def test_button_on_menu_older_than_48_hours_asks_for_new_menu(
+    harness: SettingsHarness,
+) -> None:
+    await harness.press(LevelMenu(level="daily").pack(), menu_is_stale=True)
+
+    assert harness.chat.edited == []
+    assert harness.last_answer_text == STALE_MENU_TEXT
+
+
+async def test_send_time_of_disabled_schedule_is_written_without_job(
+    harness: SettingsHarness,
+) -> None:
+    async with harness.deps.engine.begin() as connection:
+        await connection.execute(
+            update(schedules).where(schedules.c.report_level == "daily").values(enabled=False)
+        )
+    harness.scheduler.remove_job("report_daily")
+
+    await harness.press(SendTimeChoice(level="daily", hhmm="2000").pack())
+
+    assert await schedule_row(harness.deps.engine, "daily") == ("0 20 * * *", ADMIN_ID)
+    assert harness.scheduler.get_job("report_daily") is None
+    assert harness.ops_texts == [f"Настройки: Ana Admin ({ADMIN_ID}): время daily 19:30 → 20:00"]
+
+
+async def test_handler_error_goes_to_ops_and_answers_button(harness: SettingsHarness) -> None:
+    harness.chat.fail_next(
+        TelegramBadRequest(
+            method=EditMessageText(text="x"), message="Bad Request: message can't be edited"
+        )
+    )
+
+    await harness.press(LevelMenu(level="daily").pack())
+
+    assert harness.ops_texts == ["/settings: хендлер упал: TelegramBadRequest."]
+    assert harness.last_answer_text == HANDLER_ERROR_TEXT

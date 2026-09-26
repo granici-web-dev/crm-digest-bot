@@ -25,9 +25,11 @@ Share = Annotated[float, Field(ge=0, le=1)]
 LOSS_REASONS_USED_BY_METRICS = ("IRELEVANT", "NU_RASPUNS", "BUGET", "PRODUS_NEPOTRIVIT", "STAND_BY")
 
 SNAPSHOT_RETRY_DELAY = timedelta(minutes=10)
-# Снапшот в конце окна, повтор через 10 минут, прогон при паузе 1.2 с на запрос идёт минуты:
-# daily раньше конца окна плюс полчаса прочитал бы вчерашний снапшот.
+# Снапшот в конце окна, повтор через SNAPSHOT_RETRY_DELAY, прогон при паузе 1.2 с на запрос
+# идёт минуты: daily раньше этой границы прочитал бы вчерашний снапшот.
 DAILY_REPORT_EARLIEST_AFTER_WINDOW_END = timedelta(minutes=30)
+# Длиннее кнопка «✅ w12 · label» обрезается на экране телефона; полный заголовок модуля
+# остаётся в docs/report-menu.md.
 MODULE_LABEL_MAX_LENGTH = 28
 SettingsLevel = Literal["daily", "weekly", "monthly"]
 SETTINGS_LEVELS: tuple[SettingsLevel, ...] = get_args(SettingsLevel)
@@ -494,10 +496,6 @@ class KpiSettings(StrictConfigModel):
 class ModuleBlockers:
     disconnected_sources: tuple[SourceCode, ...]
     missing_kpi_status: KpiStatus | None
-
-    @property
-    def blocked(self) -> bool:
-        return bool(self.disconnected_sources) or self.missing_kpi_status is not None
 
 
 class AppConfig(StrictConfigModel):
