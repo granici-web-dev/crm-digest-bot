@@ -4,7 +4,6 @@ from functools import partial
 from typing import Any
 
 import pytest
-from aiogram import Dispatcher
 from aiogram.types import CallbackQuery, Chat, Message, Update, User
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -12,7 +11,7 @@ from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.app import enabled_schedules, schedule_report_job, seed_defaults
-from digest.bot.settings_handlers import settings_router
+from digest.bot.settings_handlers import settings_dispatcher
 from digest.bot.settings_menu import LevelMenu, ModuleSwitch, SendTimeChoice
 from digest.config import AppConfig
 from digest.db.schema import lead_snapshots, module_settings, schedules, snapshot_runs
@@ -45,8 +44,7 @@ class SettingsHarness:
         )
         self.scheduler = AsyncIOScheduler(timezone=BUCHAREST)
         self.reschedule = partial(schedule_report_job, self.scheduler, self.deps, None)
-        self.dispatcher = Dispatcher(deps=self.deps, reschedule=self.reschedule)
-        self.dispatcher.include_router(settings_router([ADMIN_ID]))
+        self.dispatcher = settings_dispatcher(self.deps, self.reschedule, [ADMIN_ID])
         self.update_id = 0
 
     async def feed(self, **update_fields: Any) -> None:

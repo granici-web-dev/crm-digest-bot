@@ -1,10 +1,11 @@
+import asyncio
 import logging
-from datetime import date, datetime
+import signal
+from datetime import date, datetime, timedelta
 from functools import partial
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from aiogram import Dispatcher
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from pydantic import TypeAdapter
@@ -13,7 +14,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.backup_check import stale_backup_alert
-from digest.bot.settings_handlers import settings_router
+from digest.bot.polling import PollingHealth, supervise_polling, watch_polling_silence
+from digest.bot.settings_handlers import settings_dispatcher
 from digest.config import SNAPSHOT_RETRY_DELAY, AppConfig
 from digest.db.schema import schedules
 from digest.delivery.ops import OpsChannel, notify_ops
@@ -26,6 +28,15 @@ from digest.settings import Settings
 from digest.snapshot import describe_error, run_daily_snapshot
 
 logger = logging.getLogger(__name__)
+
+# Отчёт, опоздавший до получаса, руководству ещё полезен; позже его отправляют вручную.
+REPORT_MISFIRE_GRACE = timedelta(minutes=30)
+# Снапшот позже этого наезжал бы на повтор через SNAPSHOT_RETRY_DELAY.
+SNAPSHOT_MISFIRE_GRACE = timedelta(minutes=5)
+POLLING_FIRST_RETRY_DELAY = timedelta(seconds=5)
+POLLING_MAX_RETRY_DELAY = timedelta(minutes=10)
+POLLING_SILENCE_CHECK_INTERVAL = timedelta(minutes=1)
+POLLING_SILENCE_ALERT_AFTER = timedelta(minutes=30)
 
 # Бриф §4: дефолты при первом запуске, дальше расписание меняется только в таблице.
 DEFAULT_SCHEDULES: dict[ReportLevel, str] = {
@@ -122,7 +133,25 @@ def schedule_report_job(
         args=[deps, level, backup_dir],
         id=f"report_{level}",
         replace_existing=True,
+        misfire_grace_time=int(REPORT_MISFIRE_GRACE.total_seconds()),
     )
+
+
+def schedule_snapshot_jobs(
+    scheduler: AsyncIOScheduler, deps: ReportDeps, mefi_client: MefiClient
+) -> None:
+    time_settings = deps.config.status_mapping.time
+    timezone = ZoneInfo(time_settings.timezone)
+    window_end = time_settings.daily_window_end
+    retry_at = (datetime.combine(date.min, window_end) + SNAPSHOT_RETRY_DELAY).time()
+    for attempt_at in (window_end, retry_at):
+        scheduler.add_job(
+            snapshot_job,
+            CronTrigger(hour=attempt_at.hour, minute=attempt_at.minute, timezone=timezone),
+            args=[deps, mefi_client],
+            id=f"snapshot_{attempt_at:%H%M}",
+            misfire_grace_time=int(SNAPSHOT_MISFIRE_GRACE.total_seconds()),
+        )
 
 
 def startup_announcement(app_version: str, dry_run: bool) -> str:
@@ -132,21 +161,12 @@ def startup_announcement(app_version: str, dry_run: bool) -> str:
 async def run_app(engine: AsyncEngine, config: AppConfig, app_settings: Settings) -> None:
     await seed_defaults(engine, app_settings.tenant_id)
     deps = create_report_deps(engine, config, app_settings, app_settings.dry_run)
-    mefi_client = MefiClient(
-        create_mefi_http_client(app_settings.mefi_base_url, app_settings.mefi_api_key)
+    mefi_http_client = create_mefi_http_client(
+        app_settings.mefi_base_url, app_settings.mefi_api_key
     )
-    time_settings = config.status_mapping.time
-    timezone = ZoneInfo(time_settings.timezone)
-    scheduler = AsyncIOScheduler(timezone=timezone)
-    window_end = time_settings.daily_window_end
-    retry_at = (datetime.combine(date.min, window_end) + SNAPSHOT_RETRY_DELAY).time()
-    for attempt_at in (window_end, retry_at):
-        scheduler.add_job(
-            snapshot_job,
-            CronTrigger(hour=attempt_at.hour, minute=attempt_at.minute, timezone=timezone),
-            args=[deps, mefi_client],
-            id=f"snapshot_{attempt_at:%H%M}",
-        )
+    mefi_client = MefiClient(mefi_http_client)
+    scheduler = AsyncIOScheduler(timezone=ZoneInfo(config.status_mapping.time.timezone))
+    schedule_snapshot_jobs(scheduler, deps, mefi_client)
     reschedule = partial(schedule_report_job, scheduler, deps, app_settings.backup_dir)
     for level, cron in (await enabled_schedules(engine, app_settings.tenant_id)).items():
         reschedule(level, cron)
@@ -156,6 +176,49 @@ async def run_app(engine: AsyncEngine, config: AppConfig, app_settings: Settings
         extra={"jobs": [job.id for job in scheduler.get_jobs()], "dry_run": app_settings.dry_run},
     )
     await notify_ops(deps.ops, startup_announcement(app_settings.app_version, app_settings.dry_run))
-    dispatcher = Dispatcher(deps=deps, reschedule=reschedule)
-    dispatcher.include_router(settings_router(app_settings.telegram_admin_ids))
-    await dispatcher.start_polling(deps.report_bot, allowed_updates=["message", "callback_query"])
+
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for stop_signal in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(stop_signal, stop.set)
+    health = PollingHealth()
+    deps.report_bot.session.middleware(health)
+    dispatcher = settings_dispatcher(deps, reschedule, app_settings.telegram_admin_ids)
+    start_polling = partial(
+        dispatcher.start_polling,
+        deps.report_bot,
+        allowed_updates=["message", "callback_query"],
+        handle_signals=False,
+        # Сессию бота отчётов делит раннер: перезапуск polling не должен её закрывать.
+        close_bot_session=False,
+    )
+    polling_tasks = [
+        asyncio.create_task(
+            supervise_polling(
+                start_polling,
+                health,
+                deps.ops,
+                stop,
+                POLLING_FIRST_RETRY_DELAY,
+                POLLING_MAX_RETRY_DELAY,
+            )
+        ),
+        asyncio.create_task(
+            watch_polling_silence(
+                health,
+                deps.ops,
+                stop,
+                POLLING_SILENCE_CHECK_INTERVAL,
+                POLLING_SILENCE_ALERT_AFTER,
+            )
+        ),
+    ]
+    await stop.wait()
+    logger.info("shutdown requested")
+    scheduler.shutdown(wait=False)
+    for task in polling_tasks:
+        task.cancel()
+    await asyncio.gather(*polling_tasks, return_exceptions=True)
+    await mefi_http_client.aclose()
+    await deps.report_bot.session.close()
+    await deps.ops.bot.session.close()

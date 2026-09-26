@@ -1,9 +1,10 @@
+import logging
 from collections.abc import Callable, Collection
 
-from aiogram import F, Router
+from aiogram import Dispatcher, F, Router
 from aiogram.enums import ChatType
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message, User
+from aiogram.types import CallbackQuery, ErrorEvent, InlineKeyboardMarkup, Message, User
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -26,11 +27,15 @@ from digest.config import SETTINGS_LEVELS, SettingsLevel
 from digest.db.schema import module_settings, schedules
 from digest.delivery.ops import notify_ops
 from digest.reports.runner import ReportDeps, module_enabled_overrides, modules_of_level
+from digest.snapshot import describe_error
+
+logger = logging.getLogger(__name__)
 
 RescheduleReport = Callable[[SettingsLevel, str], None]
 Menu = tuple[str, InlineKeyboardMarkup]
 
 STALE_MENU_TEXT = "Meniul e vechi, trimiteți /settings."
+HANDLER_ERROR_TEXT = "Nu s-a putut aplica. Încercați din nou mai târziu."
 
 
 def enabled_state(enabled: bool) -> str:
@@ -185,3 +190,20 @@ def settings_router(admin_ids: Collection[int]) -> Router:
     router.callback_query.register(open_send_time, SendTimeMenu.filter())
     router.callback_query.register(choose_send_time, SendTimeChoice.filter())
     return router
+
+
+async def report_handler_error(event: ErrorEvent, deps: ReportDeps) -> None:
+    logger.error("settings handler failed", extra={"error": describe_error(event.exception)})
+    await notify_ops(deps.ops, f"/settings: хендлер упал: {describe_error(event.exception)}.")
+    callback = event.update.callback_query
+    if callback is not None:
+        await callback.answer(HANDLER_ERROR_TEXT, show_alert=True)
+
+
+def settings_dispatcher(
+    deps: ReportDeps, reschedule: RescheduleReport, admin_ids: Collection[int]
+) -> Dispatcher:
+    dispatcher = Dispatcher(deps=deps, reschedule=reschedule)
+    dispatcher.errors.register(report_handler_error)
+    dispatcher.include_router(settings_router(admin_ids))
+    return dispatcher

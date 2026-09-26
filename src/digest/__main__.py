@@ -76,7 +76,10 @@ async def run_manual_snapshot(app_settings: Settings) -> int:
 async def run_service(app_settings: Settings) -> int:
     config = load_app_config(CONFIG_DIR)
     engine = create_database_engine(app_settings.database_url.get_secret_value())
-    await run_app(engine, config, app_settings)
+    try:
+        await run_app(engine, config, app_settings)
+    finally:
+        await engine.dispose()
     return 0
 
 
