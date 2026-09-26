@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -12,7 +12,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.backup_check import stale_backup_alert
-from digest.config import AppConfig
+from digest.config import SNAPSHOT_RETRY_DELAY, AppConfig
 from digest.db.schema import schedules
 from digest.delivery.ops import OpsChannel, notify_ops
 from digest.delivery.telegram import create_bot
@@ -32,7 +32,6 @@ DEFAULT_SCHEDULES: dict[ReportLevel, str] = {
     "monthly": "0 9 1 * *",
     "yearly": "0 9 5 1 *",
 }
-SNAPSHOT_RETRY_DELAY = timedelta(minutes=10)
 
 
 async def seed_defaults(engine: AsyncEngine, tenant_id: str) -> None:

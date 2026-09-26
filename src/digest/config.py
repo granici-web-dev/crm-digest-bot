@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import time
+from datetime import date, datetime, time, timedelta
 from itertools import pairwise
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self, get_args
@@ -23,6 +23,13 @@ Share = Annotated[float, Field(ge=0, le=1)]
 # Ключи причин, на которые ссылается metrics/: контракт между status-mapping.yaml и кодом.
 # Это наши имена категорий, а не статусы mefi (PRINCIPLES.md, «Комментарии и имена»).
 LOSS_REASONS_USED_BY_METRICS = ("IRELEVANT", "NU_RASPUNS", "BUGET", "PRODUS_NEPOTRIVIT", "STAND_BY")
+
+SNAPSHOT_RETRY_DELAY = timedelta(minutes=10)
+# Снапшот в конце окна, повтор через 10 минут, прогон при паузе 1.2 с на запрос идёт минуты:
+# daily раньше конца окна плюс полчаса прочитал бы вчерашний снапшот.
+DAILY_REPORT_EARLIEST_AFTER_WINDOW_END = timedelta(minutes=30)
+MODULE_LABEL_MAX_LENGTH = 28
+SettingsLevel = Literal["daily", "weekly", "monthly"]
 
 
 class StrictConfigModel(BaseModel):
@@ -206,6 +213,7 @@ KpiStatus = Literal["provisional", "calibrated"]
 
 class ReportModule(StrictConfigModel):
     name: str
+    label: Annotated[str, Field(min_length=1, max_length=MODULE_LABEL_MAX_LENGTH)]
     sources: list[SourceCode]
     enabled: bool
     params: dict[str, JsonValue] = {}
@@ -247,6 +255,7 @@ class ModuleRegistry(StrictConfigModel):
     monthly: dict[str, ReportModule]
     yearly: dict[str, ReportModule]
     chat: ChatSettings
+    send_times: dict[SettingsLevel, Annotated[list[time], Field(min_length=1)]]
 
     @property
     def all_modules(self) -> dict[str, ReportModule]:
@@ -290,6 +299,16 @@ class ModuleRegistry(StrictConfigModel):
         )
         if len(self.all_modules) != module_count:
             raise ValueError("id модуля повторяется в разных отчётах")
+        return self
+
+    @model_validator(mode="after")
+    def send_times_are_unique_per_level(self) -> Self:
+        for level in get_args(SettingsLevel):
+            if level not in self.send_times:
+                raise ValueError(f"send_times: нет вариантов для {level}")
+            options = self.send_times[level]
+            if len(set(options)) != len(options):
+                raise ValueError(f"send_times.{level}: варианты повторяются")
         return self
 
     @model_validator(mode="after")
@@ -508,6 +527,20 @@ class AppConfig(StrictConfigModel):
                     f"модуль {module_id} требует kpi.yaml status: {blockers.missing_kpi_status}, "
                     f"сейчас {self.kpi.status}"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def daily_send_times_follow_snapshot(self) -> Self:
+        window_end = self.status_mapping.time.daily_window_end
+        earliest = (
+            datetime.combine(date.min, window_end) + DAILY_REPORT_EARLIEST_AFTER_WINDOW_END
+        ).time()
+        too_early = [option for option in self.modules.send_times["daily"] if option < earliest]
+        if too_early:
+            raise ValueError(
+                f"send_times.daily: {[f'{option:%H:%M}' for option in too_early]} "
+                f"раньше {earliest:%H:%M}, снапшот ещё не готов"
+            )
         return self
 
     @model_validator(mode="after")

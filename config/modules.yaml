@@ -1,4 +1,5 @@
-# Реестр модулей отчётов. enabled — дефолт при первом запуске; дальше — таблица module_settings в Postgres через /settings.
+# Реестр модулей отчётов. label: название в /settings, до 28 символов, полный заголовок в docs/report-menu.md.
+# enabled — дефолт при первом запуске; дальше — таблица module_settings в Postgres через /settings.
 # Модуль нельзя включить, пока не подключены все его sources: проверяется при загрузке конфига.
 # requires_kpi_status: calibrated — модуль нельзя включить, пока kpi.yaml в status: provisional.
 
@@ -13,40 +14,41 @@ sources:
   H: { title: "LLM из заметок",                            connected: false }
 
 daily:            # 19:30, окно 19:00 вчера → 19:00 сегодня
-  d1: { name: seller_format_report,   sources: [A], enabled: true }
+  d1: { name: seller_format_report, label: "Raport format consilieri",   sources: [A], enabled: true }
   # last_contact_at у нового лида отстаёт от created_at до минуты (замер 25.09.2026: 982 точно, 14 до 60 с).
-  d2: { name: untouched_leads,        sources: [A], enabled: true,  params: { threshold_hours: 4, lookback_days: 3, touch_tolerance_seconds: 60 } }
-  d3: { name: overdue_revenire,       sources: [A], enabled: true }
+  d2: { name: untouched_leads, label: "Lead-uri neatinse azi",        sources: [A], enabled: true,  params: { threshold_hours: 4, lookback_days: 3, touch_tolerance_seconds: 60 } }
+  d3: { name: overdue_revenire, label: "Revenire depășită",       sources: [A], enabled: true }
   # Срок «висящей» оферты: kpi.yaml active_offer_stale_days, тот же, что в ACR.
-  d4: { name: stale_offers,           sources: [A], enabled: true }
+  d4: { name: stale_offers, label: "Oferte fără mișcare 14 zile",           sources: [A], enabled: true }
   # 646 лидов с Site за восемь месяцев, меньше трёх в день: порог 3 почти не срабатывал бы.
-  d5: { name: anomalies,              sources: [A], enabled: true,  params: { site_zero_min_average: 2, site_average_days: 7, irelevant_spike_min: 5 } }
-  d6: { name: same_weekday_compare,   sources: [A], enabled: true }
-  d7: { name: scr_rolling_30,         sources: [A], enabled: false }
-  d8: { name: instant_alerts,         sources: [A], enabled: false, params: { site_zero_by: "15:00" } }
+  d5: { name: anomalies, label: "Anomalii ale zilei",              sources: [A], enabled: true,  params: { site_zero_min_average: 2, site_average_days: 7, irelevant_spike_min: 5 } }
+  d6: { name: same_weekday_compare, label: "Comparație cu aceeași zi",   sources: [A], enabled: true }
+  d7: { name: scr_rolling_30, label: "Conversie 30 de zile",         sources: [A], enabled: false }
+  d8: { name: instant_alerts, label: "Alertă imediată",         sources: [A], enabled: false, params: { site_zero_by: "15:00" } }
 
 weekly:           # понедельник 09:00, пн–вс
-  w1:  { name: leads_day_showroom_source, sources: [A], enabled: true }
-  w2:  { name: showroom_visits,           sources: [A], enabled: true }
-  w3:  { name: weekly_funnel,             sources: [A], enabled: true }
-  w4:  { name: loss_reasons,              sources: [A], enabled: true }
-  w5:  { name: speed_to_lead,             sources: [A], enabled: false }
-  w6:  { name: irr_by_campaign,           sources: [A], enabled: false }
-  w7:  { name: missed_calls_no_lead,      sources: [C], enabled: false }
-  w8:  { name: week_over_week,            sources: [A], enabled: true }
-  w9:  { name: cost_per_lead_by_channel,  sources: [A, D], enabled: false }
-  w10: { name: spend_without_leads,       sources: [D], enabled: false }
-  w11: { name: sessions_to_leads,         sources: [A, E], enabled: false }
-  w12: { name: excel_attachment,          sources: [A], enabled: true }
+  w1:  { name: leads_day_showroom_source, label: "Lead-uri pe zi și showroom", sources: [A], enabled: true }
+  w2:  { name: showroom_visits, label: "Vizite în showroom",           sources: [A], enabled: true }
+  w3:  { name: weekly_funnel, label: "Pâlnia săptămânii",             sources: [A], enabled: true }
+  w4:  { name: loss_reasons, label: "Motive de pierdere",              sources: [A], enabled: true }
+  w5:  { name: speed_to_lead, label: "Viteza primului contact",             sources: [A], enabled: false }
+  w6:  { name: irr_by_campaign, label: "Campanii cu irelevanți",           sources: [A], enabled: false }
+  w7:  { name: missed_calls_no_lead, label: "Apeluri pierdute fără lead",      sources: [C], enabled: false }
+  w8:  { name: week_over_week, label: "Față de săptămâna trecută",            sources: [A], enabled: true }
+  w9:  { name: cost_per_lead_by_channel, label: "Cost per lead pe canal",  sources: [A, D], enabled: false }
+  w10: { name: spend_without_leads, label: "Campanii fără lead-uri",       sources: [D], enabled: false }
+  w11: { name: sessions_to_leads, label: "Trafic site → lead-uri",         sources: [A, E], enabled: false }
+  w12: { name: excel_attachment, label: "Fișier Excel",          sources: [A], enabled: true }
 
 monthly:          # 1-е число 09:00
-  m1:  { name: month_summary_image,   sources: [B],    enabled: false }
-  m2:  { name: funnel_by_showroom_image, sources: [A], enabled: true }
-  m3:  { name: trend_6m_image,        sources: [A],    enabled: true }
+  m1:  { name: month_summary_image, label: "Rezumatul lunii",   sources: [B],    enabled: false }
+  m2:  { name: funnel_by_showroom_image, label: "Pâlnia lunii pe showroom", sources: [A], enabled: true }
+  m3:  { name: trend_6m_image, label: "Trend 6 luni",        sources: [A],    enabled: true }
   # Ступени уровня SCR сверху вниз, имена порогов из kpi.yaml thresholds. Подписи из docs/report-menu.md m4,
   # не совпадают с уровнями SPI (проверяется при загрузке).
   m4:
     name: scr_with_targets
+    label: "Conversie SCR cu ținte"
     sources: [A]
     enabled: true
     params:
@@ -56,32 +58,38 @@ monthly:          # 1-е число 09:00
         - { threshold: scr_minim, label: "Minim" }
       below_label: "Sub minim"
   # Таблица 9 KPI по консультантам (docs/kpi-definitions.md) с целями, без SPI, баллов и уровней.
-  m5:  { name: manager_cockpit,       sources: [A],    enabled: true }
+  m5:  { name: manager_cockpit, label: "Manager Cockpit",       sources: [A],    enabled: true }
   # Баллы и SPI предварительные (ADR-002): включить можно только при kpi.yaml status: calibrated.
-  m6:  { name: spi_ranking,           sources: [A],    enabled: false, requires_kpi_status: calibrated }
-  m7:  { name: scr_by_source_campaign, sources: [A],   enabled: false }
-  m8:  { name: loss_reasons_trend,    sources: [A],    enabled: true }
-  m9:  { name: cohort_conversion,     sources: [A],    enabled: false }
-  m10: { name: contracts_avg_value,   sources: [B],    enabled: false }
-  m11: { name: repeat_clients,        sources: [A],    enabled: false }
-  m12: { name: cpo_cac_by_channel,    sources: [A, D], enabled: false }
-  m13: { name: ad_return,             sources: [B, D], enabled: false }
-  m14: { name: cash_margin,           sources: [B, G], enabled: false }
-  m15: { name: reoffers_cancellations, sources: [B],   enabled: false }
-  m16: { name: top_products,          sources: [B, G], enabled: false }
-  m17: { name: competitors_from_notes, sources: [H],   enabled: false }
-  m18: { name: models_in_demand,      sources: [H],    enabled: false }
-  m19: { name: excel_pdf_attachment,  sources: [A],    enabled: true }
+  m6:  { name: spi_ranking, label: "Clasament SPI",           sources: [A],    enabled: false, requires_kpi_status: calibrated }
+  m7:  { name: scr_by_source_campaign, label: "Conversie pe sursă", sources: [A],   enabled: false }
+  m8:  { name: loss_reasons_trend, label: "Motive de pierdere, evoluție",    sources: [A],    enabled: true }
+  m9:  { name: cohort_conversion, label: "Conversie de cohortă",     sources: [A],    enabled: false }
+  m10: { name: contracts_avg_value, label: "Contracte și valoare medie",   sources: [B],    enabled: false }
+  m11: { name: repeat_clients, label: "Clienți repetitivi",        sources: [A],    enabled: false }
+  m12: { name: cpo_cac_by_channel, label: "CPO și CAC pe canal",    sources: [A, D], enabled: false }
+  m13: { name: ad_return, label: "Randamentul reclamei",             sources: [B, D], enabled: false }
+  m14: { name: cash_margin, label: "Încasări, avansuri, marjă",           sources: [B, G], enabled: false }
+  m15: { name: reoffers_cancellations, label: "Reoferte, contracte anulate", sources: [B],   enabled: false }
+  m16: { name: top_products, label: "Top produse",          sources: [B, G], enabled: false }
+  m17: { name: competitors_from_notes, label: "Concurenți menționați", sources: [H],   enabled: false }
+  m18: { name: models_in_demand, label: "Modele cerute",      sources: [H],    enabled: false }
+  m19: { name: excel_pdf_attachment, label: "Fișier Excel + PDF",  sources: [A],    enabled: true }
 
 yearly:           # 5 января 09:00
-  y1: { name: seasonality,            sources: [A],    enabled: false }
-  y2: { name: year_over_year,         sources: [A, F], enabled: false }
-  y3: { name: showroom_manager_of_year, sources: [A],  enabled: false }
-  y4: { name: loss_reasons_by_quarter, sources: [A],   enabled: false }
-  y5: { name: sources_growth,         sources: [A],    enabled: false }
-  y6: { name: ad_budget_year,         sources: [D],    enabled: false }
-  y7: { name: contracts_cash_margin_year, sources: [B, G], enabled: false }
-  y8: { name: competitors_models_year, sources: [H],   enabled: false }
+  y1: { name: seasonality, label: "Sezonalitate",            sources: [A],    enabled: false }
+  y2: { name: year_over_year, label: "An față de an",         sources: [A, F], enabled: false }
+  y3: { name: showroom_manager_of_year, label: "Cei mai buni ai anului", sources: [A],  enabled: false }
+  y4: { name: loss_reasons_by_quarter, label: "Pierderi pe trimestre", sources: [A],   enabled: false }
+  y5: { name: sources_growth, label: "Surse în creștere, scădere",         sources: [A],    enabled: false }
+  y6: { name: ad_budget_year, label: "Buget reclamă pe an",         sources: [D],    enabled: false }
+  y7: { name: contracts_cash_margin_year, label: "Contracte, încasări, marjă", sources: [B, G], enabled: false }
+  y8: { name: competitors_models_year, label: "Concurenți și modele pe an", sources: [H],   enabled: false }
+
+# Варианты времени отправки в /settings. Кавычки обязательны: YAML читает 19:30 без кавычек как число.
+send_times:
+  daily:   ["19:30", "20:00", "20:30"]
+  weekly:  ["08:00", "09:00", "10:00"]
+  monthly: ["08:00", "09:00", "10:00"]
 
 chat:             # режим вопросов; включается целиком
   enabled: false

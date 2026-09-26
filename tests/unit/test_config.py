@@ -360,3 +360,28 @@ def test_site_sources_must_be_web() -> None:
 
     with pytest.raises(ValidationError, match="Telefon"):
         StatusMapping.model_validate(raw_mapping)
+
+
+def test_module_label_longer_than_28_characters_fails_config_load() -> None:
+    raw_modules = repository_yaml("modules.yaml")
+    raw_modules["daily"]["d1"]["label"] = "Raport automat în formatul consilierilor"
+
+    with pytest.raises(ValidationError, match="28"):
+        ModuleRegistry.model_validate(raw_modules)
+
+
+@pytest.mark.parametrize("too_early", ["19:10", "19:29"])
+def test_daily_send_time_before_snapshot_is_ready_fails_config_load(too_early: str) -> None:
+    raw_config = raw_repository_config()
+    raw_config["modules"]["send_times"]["daily"] = [too_early, "20:00"]
+
+    with pytest.raises(ValidationError, match=f"{too_early}.*19:30"):
+        AppConfig.model_validate(raw_config)
+
+
+def test_repeated_send_time_fails_config_load() -> None:
+    raw_modules = repository_yaml("modules.yaml")
+    raw_modules["send_times"]["weekly"] = ["09:00", "09:00"]
+
+    with pytest.raises(ValidationError, match=r"send_times\.weekly"):
+        ModuleRegistry.model_validate(raw_modules)

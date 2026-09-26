@@ -13,6 +13,7 @@ from fakes import TEST_BOT_TOKEN
 GROUP_CHAT_ID = -1001
 TEST_CHAT_ID = -1002
 OPS_CHAT_ID = -1003
+ADMIN_ID = 5001
 
 
 def make_settings(**overrides: Any) -> Settings:
@@ -26,6 +27,7 @@ def make_settings(**overrides: Any) -> Settings:
         "telegram_group_chat_id": GROUP_CHAT_ID,
         "telegram_test_chat_id": TEST_CHAT_ID,
         "telegram_ops_chat_id": OPS_CHAT_ID,
+        "telegram_admin_ids": [ADMIN_ID],
         **overrides,
     }
     return Settings(_env_file=None, **values)
@@ -56,3 +58,16 @@ def test_report_deps_carry_only_the_chosen_chat(
     assert deps.report_chat_id == chat_id
     other_chat_id = GROUP_CHAT_ID if dry_run else TEST_CHAT_ID
     assert other_chat_id not in [getattr(deps, field.name) for field in fields(deps)]
+
+
+def test_admin_ids_are_read_from_comma_separated_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TELEGRAM_ADMIN_IDS", "5001, 5002")
+    values = make_settings().model_dump()
+    del values["telegram_admin_ids"]
+
+    assert Settings(_env_file=None, **values).telegram_admin_ids == [5001, 5002]
+
+
+def test_empty_admin_ids_fail_settings_load() -> None:
+    with pytest.raises(ValidationError, match="telegram_admin_ids"):
+        make_settings(telegram_admin_ids="")

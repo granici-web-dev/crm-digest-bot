@@ -144,6 +144,8 @@ schedules = Table(
     Column("report_level", Text, nullable=False),
     Column("cron", Text, nullable=False),
     Column("enabled", Boolean, nullable=False),
+    Column("updated_at", TIMESTAMP(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_by", BigInteger),
     PrimaryKeyConstraint("tenant_id", "report_level"),
 )
 
