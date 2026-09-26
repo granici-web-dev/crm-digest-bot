@@ -35,7 +35,8 @@
 - Расхождение с дополнением к shape: там сказано, что 5 от API и 4 записанных при порогах по умолчанию это failed, но по записанным там же порогам (max(5, 0.5 %) недополучено, max(10, 1 %) пропущено) это success. Реализованы пороги; тест переименован в test_snapshot_below_thresholds_is_success_with_alert_data. Если 5/4 должно падать, пороги в status-mapping.yaml нужно ужесточить.
 - Незнакомые ключи лида (unknown_raw_key) пишутся в raw, не вырезаются; алерт шлёт раннер отчёта, только по ключам, которых не было в предыдущем успешном снапшоте. Остальные записи custom_field_mismatches (missing, unexpected_value, invalid_shape) в служебный бот пока не уходят.
 - Локально тесты идут с `TESTCONTAINERS_RYUK_DISABLED=true`: docker pull образа ryuk зависает.
-- Дальше: /settings по docs/first-sessions.md.
+- Сессия 8 (26.09.2026): shape /settings `docs/shapes/2026-09-26-settings.md`, ждёт согласования (три открытых вопроса в конце). Решения пользователя: без aiogram_dialog, CallbackData, polling в процессе app, chat_id группы только через .env, Chat и Yearly в меню нет.
+- Дальше: согласовать shape /settings, затем craft.
 
 ## Принятые решения (не обсуждать заново)
 
