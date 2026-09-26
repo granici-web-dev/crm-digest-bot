@@ -1,4 +1,4 @@
-{% from "_names.ro.j2" import manager %}
+{% from "_names.j2" import manager %}
 {# Румынское числительное: 1 zi, 2–19 zile, от 20 «de zile» (по двум последним цифрам: 100 de zile, 101 zile). #}
 {% macro days(count) %}{{ count }} {% if count == 1 %}zi{% elif count % 100 == 0 or count % 100 >= 20 %}de zile{% else %}zile{% endif %}{% endmacro %}
 {% if overdue.lead_count %}

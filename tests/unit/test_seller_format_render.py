@@ -1,10 +1,9 @@
 from datetime import date
 
-import pytest
 from syrupy.assertion import SnapshotAssertion
 
 from digest.metrics.daily import SellerFormatCounts, SellerFormatRow
-from digest.reports.render import ReportLanguage, render
+from digest.reports.render import render
 
 REPORT_DATE = date(2026, 8, 12)
 
@@ -30,16 +29,12 @@ def fixed_counts(has_previous_snapshot: bool, without_showroom: int) -> SellerFo
     )
 
 
-@pytest.mark.parametrize("language", ["ro", "ru"])
-def test_seller_format_matches_seller_whatsapp_layout(
-    language: ReportLanguage, snapshot: SnapshotAssertion
-) -> None:
+def test_seller_format_matches_seller_whatsapp_layout(snapshot: SnapshotAssertion) -> None:
     counts = fixed_counts(has_previous_snapshot=True, without_showroom=1)
 
     assert (
         render(
             "seller_format_report",
-            language,
             counts=counts,
             report_date=REPORT_DATE,
             tenant_display_name="Sofabelle",
@@ -48,16 +43,12 @@ def test_seller_format_matches_seller_whatsapp_layout(
     )
 
 
-@pytest.mark.parametrize("language", ["ro", "ru"])
-def test_seller_format_without_previous_snapshot_shows_dashes(
-    language: ReportLanguage, snapshot: SnapshotAssertion
-) -> None:
+def test_seller_format_without_previous_snapshot_shows_dashes(snapshot: SnapshotAssertion) -> None:
     counts = fixed_counts(has_previous_snapshot=False, without_showroom=0)
 
     assert (
         render(
             "seller_format_report",
-            language,
             counts=counts,
             report_date=REPORT_DATE,
             tenant_display_name="Sofabelle",

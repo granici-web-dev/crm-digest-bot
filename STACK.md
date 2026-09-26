@@ -19,7 +19,7 @@
 | Аналитика | pandas |
 | Графики | matplotlib (Agg → BytesIO → `send_photo`) |
 | Excel | xlsxwriter |
-| Шаблоны отчётов | Jinja2 (`templates/*.ro.j2`, `templates/*.ru.j2`) |
+| Шаблоны отчётов | Jinja2 (`templates/*.j2`, только румынский) |
 | Конфиги | PyYAML (`config/*.yaml`) → pydantic-модели |
 | Валидация, настройки | pydantic 2 + pydantic-settings |
 | HTTP | httpx |

@@ -22,10 +22,8 @@ from digest.reports.modules.monthly import (
 )
 from digest.reports.modules.weekly import showroom_label
 from digest.reports.modules.weekly_excel import LEAD_SHEET_COLUMNS, write_lead_sheet
-from digest.reports.render import ReportLanguage, render
+from digest.reports.render import render
 
-# Excel целиком на RO, как названия листов и колонок, независимо от языка текста отчёта.
-EXCEL_LANGUAGE: ReportLanguage = "ro"
 COUNT_HEADERS = (
     ("leads", "Lead-uri"),
     ("useful", "Utile"),
@@ -50,7 +48,7 @@ def write_share(
 
 
 def write_clienti_note(worksheet: Any, last_table_row: int) -> None:
-    worksheet.write(last_table_row + 2, 0, chart_labels(EXCEL_LANGUAGE).clienti_note)
+    worksheet.write(last_table_row + 2, 0, chart_labels().clienti_note)
 
 
 def write_manager_sheet(
@@ -135,8 +133,8 @@ def write_loss_sheet(
 ) -> None:
     worksheet = workbook.add_worksheet("Motive pierdere")
     losses = monthly_loss_reasons(lead_frame, context.report_date, context.config)
-    labels = loss_reason_labels(context.config, EXCEL_LANGUAGE)
-    month_labels = chart_labels(EXCEL_LANGUAGE)
+    labels = loss_reason_labels(context.config)
+    month_labels = chart_labels()
     worksheet.write_row(
         0,
         0,
@@ -211,6 +209,6 @@ def monthly_excel_attachment_report(
 ) -> ModuleResult:
     filename = f"{context.tenant_id}_{month_file_suffix(context.report_date)}.xlsx"
     return ModuleResult(
-        render("monthly_excel_attachment", context.language, filename=filename),
+        render("monthly_excel_attachment", filename=filename),
         document=ReportDocument(filename, monthly_workbook(lead_frame, context)),
     )

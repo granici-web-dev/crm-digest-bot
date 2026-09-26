@@ -143,6 +143,6 @@ def excel_attachment_report(lead_frame: pd.DataFrame, context: ReportContext) ->
     iso_year, iso_week, _ = context.report_date.isocalendar()
     filename = f"{context.tenant_id}_sapt{iso_week:02d}_{iso_year}.xlsx"
     return ModuleResult(
-        render("excel_attachment", context.language, filename=filename),
+        render("excel_attachment", filename=filename),
         document=ReportDocument(filename, weekly_workbook(lead_frame, context)),
     )

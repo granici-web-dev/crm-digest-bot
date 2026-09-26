@@ -1,7 +1,0 @@
-{% from "_names.ru.j2" import manager %}
-{% if untouched.lead_count %}
-⚠ Лиды без касания или не взятые: {{ untouched.lead_count }} (самый старый: {{ untouched.oldest_age_hours }} ч) · {% for group in untouched.groups %}{{ manager(group.manager_name) }} {{ group.lead_count }} ({{ group.oldest_age_hours }} ч){% if not loop.last %}, {% endif %}{% endfor %}
-
-{% else %}
-Лиды без касания или не взятые: нет
-{% endif %}

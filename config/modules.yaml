@@ -51,11 +51,10 @@ monthly:          # 1-е число 09:00
     enabled: true
     params:
       levels:
-        - { threshold: scr_elite, label_ro: "Elită", label_ru: "Элита" }
-        - { threshold: scr_bine,  label_ro: "Bine",  label_ru: "Хорошо" }
-        - { threshold: scr_minim, label_ro: "Minim", label_ru: "Минимум" }
-      below_label_ro: "Sub minim"
-      below_label_ru: "Ниже минимума"
+        - { threshold: scr_elite, label: "Elită" }
+        - { threshold: scr_bine,  label: "Bine" }
+        - { threshold: scr_minim, label: "Minim" }
+      below_label: "Sub minim"
   # Таблица 9 KPI по консультантам (docs/kpi-definitions.md) с целями, без SPI, баллов и уровней.
   m5:  { name: manager_cockpit,       sources: [A],    enabled: true }
   # Баллы и SPI предварительные (ADR-002): включить можно только при kpi.yaml status: calibrated.

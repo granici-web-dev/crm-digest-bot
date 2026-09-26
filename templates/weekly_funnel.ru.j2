@@ -1,5 +1,0 @@
-{% set counts = funnel.counts %}
-<b>Воронка недели</b> (лиды, созданные за неделю)
-Лиды {{ counts.leads }} → Полезные {{ counts.useful }} (нерелевантные {{ counts.irr_leads }}) → Оферты {{ counts.offers }} → Контракты {{ counts.clienti }}
-Лид→Оферта {{ funnel.kpis.l2o | percent }} · Оферта→Контракт {{ funnel.kpis.o2c | percent }}
-<i>Оферты и контракты по этим лидам ещё будут расти.</i>

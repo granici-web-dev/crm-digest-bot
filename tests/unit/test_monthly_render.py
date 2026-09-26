@@ -12,7 +12,6 @@ from digest.config import AppConfig
 from digest.metrics.frame import prepare_lead_frame
 from digest.reports.context import ReportContext
 from digest.reports.modules import IMPLEMENTED_MODULES
-from digest.reports.render import ReportLanguage
 from factories import BUCHAREST, make_snapshot_row
 
 MONTH_END = date(2026, 9, 30)
@@ -109,16 +108,15 @@ def month_frame(app_config: AppConfig) -> pd.DataFrame:
     return prepare_lead_frame(rows, app_config).assign(**CLIENT_DATA)
 
 
-def context(app_config: AppConfig, language: ReportLanguage) -> ReportContext:
-    return ReportContext(MONTH_END, None, None, app_config, "sofabelle", language)
+def context(app_config: AppConfig) -> ReportContext:
+    return ReportContext(MONTH_END, None, None, app_config, "sofabelle")
 
 
-@pytest.mark.parametrize("language", ["ro", "ru"])
 @pytest.mark.parametrize("module_id", MONTHLY_MODULES)
 def test_monthly_module_text(
-    app_config: AppConfig, language: ReportLanguage, module_id: str, snapshot: SnapshotAssertion
+    app_config: AppConfig, module_id: str, snapshot: SnapshotAssertion
 ) -> None:
-    result = IMPLEMENTED_MODULES[module_id](month_frame(app_config), context(app_config, language))
+    result = IMPLEMENTED_MODULES[module_id](month_frame(app_config), context(app_config))
 
     assert result.text == snapshot
     for value in CLIENT_DATA.values():
@@ -126,11 +124,11 @@ def test_monthly_module_text(
 
 
 def module_text(app_config: AppConfig, module_id: str) -> str:
-    return IMPLEMENTED_MODULES[module_id](month_frame(app_config), context(app_config, "ro")).text
+    return IMPLEMENTED_MODULES[module_id](month_frame(app_config), context(app_config)).text
 
 
 def test_funnel_text_and_photo(app_config: AppConfig) -> None:
-    result = IMPLEMENTED_MODULES["m2"](month_frame(app_config), context(app_config, "ro"))
+    result = IMPLEMENTED_MODULES["m2"](month_frame(app_config), context(app_config))
 
     assert "Brașov: 10 → 10 → 2 → 1" in result.text
     assert "Cluj: 2 → 2 → 1 → 0" in result.text
@@ -159,7 +157,7 @@ def test_useful_lead_without_showroom_alerts_ops_without_client_data(
         ]
     )
 
-    result = IMPLEMENTED_MODULES["m2"](frame, context(app_config, "ro"))
+    result = IMPLEMENTED_MODULES["m2"](frame, context(app_config))
 
     assert "2 lead-uri fără showroom, dintre care 1 irelevante" in result.text
     assert result.alerts == (
@@ -169,7 +167,7 @@ def test_useful_lead_without_showroom_alerts_ops_without_client_data(
 
 
 def test_trend_text_and_photo(app_config: AppConfig) -> None:
-    result = IMPLEMENTED_MODULES["m3"](month_frame(app_config), context(app_config, "ro"))
+    result = IMPLEMENTED_MODULES["m3"](month_frame(app_config), context(app_config))
 
     assert "Lead-uri: Apr 0 · Mai 1 · Iun 0 · Iul 0 · Aug 2 · Sep 13" in result.text
     assert "Contracte: Apr 0 · Mai 0 · Iun 0 · Iul 1 · Aug 0 · Sep 1" in result.text
@@ -196,7 +194,7 @@ def test_scr_text_shows_no_showroom_row_with_useful_leads(app_config: AppConfig)
         ]
     )
 
-    text = IMPLEMENTED_MODULES["m4"](frame, context(app_config, "ro")).text
+    text = IMPLEMENTED_MODULES["m4"](frame, context(app_config)).text
 
     assert "(fără showroom) 0,0% · Sub minim ✗" in text
 
@@ -210,14 +208,11 @@ def spi_words(app_config: AppConfig) -> set[str]:
     }
 
 
-@pytest.mark.parametrize("language", ["ro", "ru"])
 @pytest.mark.parametrize("module_id", ["m4", "m5"])
 def test_scr_and_cockpit_text_have_no_spi_levels_or_recommendations(
-    app_config: AppConfig, language: ReportLanguage, module_id: str
+    app_config: AppConfig, module_id: str
 ) -> None:
-    text = IMPLEMENTED_MODULES[module_id](
-        month_frame(app_config), context(app_config, language)
-    ).text
+    text = IMPLEMENTED_MODULES[module_id](month_frame(app_config), context(app_config)).text
 
     for word in spi_words(app_config):
         assert word not in text
@@ -246,7 +241,7 @@ def test_loss_reasons_text_compares_with_previous_month(app_config: AppConfig) -
 
 
 def workbook(app_config: AppConfig) -> tuple[str, Workbook]:
-    result = IMPLEMENTED_MODULES["m19"](month_frame(app_config), context(app_config, "ro"))
+    result = IMPLEMENTED_MODULES["m19"](month_frame(app_config), context(app_config))
     assert result.document is not None
     return result.document.filename, load_workbook(BytesIO(result.document.content))
 
@@ -327,15 +322,6 @@ def test_monthly_workbook_funnel_and_loss_sheets(app_config: AppConfig) -> None:
     assert losses[-1][4] == pytest.approx(0.0)
     irelevant = next(row for row in losses if row[0] == "Irelevant")
     assert irelevant[1:] == (1, 0.5, 0, "—")
-
-
-def test_monthly_workbook_is_romanian_in_russian_run(app_config: AppConfig) -> None:
-    result = IMPLEMENTED_MODULES["m19"](month_frame(app_config), context(app_config, "ru"))
-    assert result.document is not None
-    losses = sheet_rows(load_workbook(BytesIO(result.document.content)), "Motive pierdere")
-
-    assert losses[0] == ("Motiv", "Sep", "Pondere", "Aug", "Variație")
-    assert {row[0] for row in losses[1:]} == {"Buget", "Irelevant", "Nu a răspuns", "Total"}
 
 
 def test_monthly_workbook_lead_sheet_matches_funnel_without_client_data(

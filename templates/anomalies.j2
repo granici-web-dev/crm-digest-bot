@@ -1,4 +1,4 @@
-{% from "_names.ro.j2" import manager %}
+{% from "_names.j2" import manager %}
 {% if anomalies.site_zero_previous_average is not none %}
 🔴 0 lead-uri de pe site azi (media ultimelor {{ anomalies.site_average_days }} zile: {{ "%.1f" | format(anomalies.site_zero_previous_average) | replace(".", ",") }}), verificați formularul
 {% endif %}

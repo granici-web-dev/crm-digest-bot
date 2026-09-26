@@ -1,5 +1,0 @@
-{% macro by_month(values) %}{% for value in values %}{{ month_names[loop.index0] }} {{ value }}{% if not loop.last %} · {% endif %}{% endfor %}{% endmacro %}
-<b>Тренд за 6 месяцев</b>
-Лиды: {{ by_month(trend.leads) }}
-Контракты: {{ by_month(trend.contracts) }}
-<i>Лиды по дате создания, контракты по дате конверсии (converted_at).</i>

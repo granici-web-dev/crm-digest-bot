@@ -13,9 +13,8 @@ from digest.metrics.daily_checks import (
     UntouchedGroup,
     UntouchedLeads,
 )
-from digest.reports.render import ReportLanguage, render
+from digest.reports.render import render
 
-LANGUAGES = ["ro", "ru"]
 # Первая группа «не взяты» не самая старая: общий максимум печатается отдельно.
 UNTOUCHED = UntouchedLeads(
     lead_count=4,
@@ -37,22 +36,16 @@ OVERDUE = OverdueRevenire(
 )
 
 
-@pytest.mark.parametrize("language", LANGUAGES)
 @pytest.mark.parametrize(
     "untouched", [UNTOUCHED, UntouchedLeads(0, None, ())], ids=["found", "none"]
 )
-def test_untouched_leads_render(
-    language: ReportLanguage, untouched: UntouchedLeads, snapshot: SnapshotAssertion
-) -> None:
-    assert render("untouched_leads", language, untouched=untouched) == snapshot
+def test_untouched_leads_render(untouched: UntouchedLeads, snapshot: SnapshotAssertion) -> None:
+    assert render("untouched_leads", untouched=untouched) == snapshot
 
 
-@pytest.mark.parametrize("language", LANGUAGES)
 @pytest.mark.parametrize("overdue", [OVERDUE, OverdueRevenire(0, None, ())], ids=["found", "none"])
-def test_overdue_revenire_render(
-    language: ReportLanguage, overdue: OverdueRevenire, snapshot: SnapshotAssertion
-) -> None:
-    assert render("overdue_revenire", language, overdue=overdue) == snapshot
+def test_overdue_revenire_render(overdue: OverdueRevenire, snapshot: SnapshotAssertion) -> None:
+    assert render("overdue_revenire", overdue=overdue) == snapshot
 
 
 @pytest.mark.parametrize(
@@ -62,13 +55,12 @@ def test_overdue_revenire_render(
 def test_overdue_revenire_ro_day_numerals(days: int, expected: str) -> None:
     overdue = OverdueRevenire(1, days, (OverdueGroup("Marc Andra", 1, days),))
 
-    text = render("overdue_revenire", "ro", overdue=overdue)
+    text = render("overdue_revenire", overdue=overdue)
 
     assert f"(cea mai veche: {expected})" in text
     assert text.endswith(f"Marc Andra 1 ({expected})")
 
 
-@pytest.mark.parametrize("language", LANGUAGES)
 @pytest.mark.parametrize(
     "offers",
     [
@@ -80,13 +72,10 @@ def test_overdue_revenire_ro_day_numerals(days: int, expected: str) -> None:
     ],
     ids=["growth", "decline", "no_yesterday", "none", "none_after_decline"],
 )
-def test_stale_offers_render(
-    language: ReportLanguage, offers: StaleOffers, snapshot: SnapshotAssertion
-) -> None:
-    assert render("stale_offers", language, offers=offers, stale_days=14) == snapshot
+def test_stale_offers_render(offers: StaleOffers, snapshot: SnapshotAssertion) -> None:
+    assert render("stale_offers", offers=offers, stale_days=14) == snapshot
 
 
-@pytest.mark.parametrize("language", LANGUAGES)
 @pytest.mark.parametrize(
     "found",
     [
@@ -97,19 +86,14 @@ def test_stale_offers_render(
     ],
     ids=["both", "site_only", "spike_only", "none"],
 )
-def test_anomalies_render(
-    language: ReportLanguage, found: Anomalies, snapshot: SnapshotAssertion
-) -> None:
-    assert render("anomalies", language, anomalies=found) == snapshot
+def test_anomalies_render(found: Anomalies, snapshot: SnapshotAssertion) -> None:
+    assert render("anomalies", anomalies=found) == snapshot
 
 
-@pytest.mark.parametrize("language", LANGUAGES)
 @pytest.mark.parametrize(
     "week_ago_date", [date(2026, 9, 17), date(2026, 9, 20)], ids=["thursday", "sunday"]
 )
-def test_same_weekday_compare_render(
-    language: ReportLanguage, week_ago_date: date, snapshot: SnapshotAssertion
-) -> None:
+def test_same_weekday_compare_render(week_ago_date: date, snapshot: SnapshotAssertion) -> None:
     comparison = SameWeekdayComparison(week_ago_date, 11, 8, 1, 0)
 
-    assert render("same_weekday_compare", language, comparison=comparison) == snapshot
+    assert render("same_weekday_compare", comparison=comparison) == snapshot

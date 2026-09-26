@@ -19,7 +19,7 @@ from digest.reports.modules.weekly import (
     showroom_source_table,
     week_range_label,
 )
-from digest.reports.render import ReportLanguage, change_label, percent
+from digest.reports.render import change_label, percent
 from factories import BUCHAREST, make_snapshot_row, raw_repository_config
 
 SUNDAY = date(2026, 9, 27)
@@ -74,21 +74,18 @@ def week_frame(app_config: AppConfig) -> pd.DataFrame:
     return prepare_lead_frame(rows, app_config)
 
 
-def context(
-    app_config: AppConfig, language: ReportLanguage, lead_frame: pd.DataFrame
-) -> ReportContext:
+def context(app_config: AppConfig, lead_frame: pd.DataFrame) -> ReportContext:
     week_ago = PreviousSnapshot(SUNDAY - timedelta(days=7), lead_frame[lead_frame["lead_id"].eq(6)])
-    return ReportContext(SUNDAY, None, week_ago, app_config, "sofabelle", language)
+    return ReportContext(SUNDAY, None, week_ago, app_config, "sofabelle")
 
 
-@pytest.mark.parametrize("language", ["ro", "ru"])
 @pytest.mark.parametrize("module_id", WEEKLY_TEXT_MODULES)
 def test_weekly_module_text(
-    app_config: AppConfig, language: ReportLanguage, module_id: str, snapshot: SnapshotAssertion
+    app_config: AppConfig, module_id: str, snapshot: SnapshotAssertion
 ) -> None:
     lead_frame = week_frame(app_config)
 
-    result = IMPLEMENTED_MODULES[module_id](lead_frame, context(app_config, language, lead_frame))
+    result = IMPLEMENTED_MODULES[module_id](lead_frame, context(app_config, lead_frame))
 
     assert result.text == snapshot
 
@@ -152,10 +149,10 @@ def test_weekly_texts_follow_working_hours_sources_and_reason_labels_from_config
     raw = raw_repository_config()
     raw["status_mapping"]["time"]["working_hours"] = {"start": "09:00", "end": "18:00"}
     raw["status_mapping"]["sources"]["showroom_visit"] = ["Showroom", "Vizita"]
-    raw["status_mapping"]["categories"]["LOST"]["reasons"]["BUGET"]["label_ro"] = "Preț"
+    raw["status_mapping"]["categories"]["LOST"]["reasons"]["BUGET"]["label"] = "Preț"
     config = AppConfig.model_validate(raw)
     lead_frame = week_frame(config)
-    report_context = context(config, "ro", lead_frame)
+    report_context = context(config, lead_frame)
 
     leads_text = IMPLEMENTED_MODULES["w1"](lead_frame, report_context).text
     losses_text = IMPLEMENTED_MODULES["w4"](lead_frame, report_context).text
@@ -172,7 +169,7 @@ def test_weekly_texts_follow_working_hours_sources_and_reason_labels_from_config
 
 def test_funnel_and_week_over_week_numbers_on_render_path(app_config: AppConfig) -> None:
     lead_frame = week_frame(app_config)
-    report_context = context(app_config, "ro", lead_frame)
+    report_context = context(app_config, lead_frame)
 
     funnel_text = IMPLEMENTED_MODULES["w3"](lead_frame, report_context).text
     change_text = IMPLEMENTED_MODULES["w8"](lead_frame, report_context).text

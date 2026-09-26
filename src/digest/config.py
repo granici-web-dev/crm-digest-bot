@@ -57,8 +57,7 @@ class LossReason(StrictConfigModel):
     followup_field: str | None = None
     note: str | None = None
     excluded_from_useful: bool = False
-    label_ro: str
-    label_ru: str
+    label: str
 
 
 class LostCategory(StrictConfigModel):
@@ -227,14 +226,12 @@ class AnomalyParams(StrictConfigModel):
 
 class ScrLevel(StrictConfigModel):
     threshold: str
-    label_ro: str
-    label_ru: str
+    label: str
 
 
 class ScrLevelsParams(StrictConfigModel):
     levels: list[ScrLevel] = Field(min_length=1)
-    below_label_ro: str
-    below_label_ru: str
+    below_label: str
 
 
 class ChatSettings(StrictConfigModel):
@@ -510,11 +507,7 @@ class AppConfig(StrictConfigModel):
         # Уровни SPI в отчётах запрещены до калибровки (ADR-002): ступень SCR в m4 не должна
         # читаться как уровень SPI.
         params = self.modules.scr_levels_params
-        labels = [
-            *(label for level in params.levels for label in (level.label_ro, level.label_ru)),
-            params.below_label_ro,
-            params.below_label_ru,
-        ]
+        labels = [*(level.label for level in params.levels), params.below_label]
         spi_level_names = {level.name.casefold() for level in self.kpi.levels}
         clashing = [label for label in labels if label.casefold() in spi_level_names]
         if clashing:

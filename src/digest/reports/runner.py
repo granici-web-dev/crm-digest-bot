@@ -9,7 +9,6 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 from aiogram import Bot
 from markupsafe import Markup
-from pydantic import TypeAdapter
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -24,7 +23,6 @@ from digest.db.schema import (
     lead_snapshots,
     module_settings,
     report_runs,
-    settings,
     snapshot_runs,
 )
 from digest.delivery.ops import OpsChannel, notify_ops
@@ -41,7 +39,7 @@ from digest.metrics.weekly import DAYS_IN_WEEK
 from digest.reports.context import ReportContext, ReportDocument, ReportPhoto
 from digest.reports.modules import ReportModuleFunction
 from digest.reports.periods import ReportLevel, report_period
-from digest.reports.render import ReportLanguage, render
+from digest.reports.render import render
 from digest.snapshot import describe_error
 
 logger = logging.getLogger(__name__)
@@ -168,16 +166,6 @@ async def record_message_ids(deps: ReportDeps, run_id: int, message_ids: list[in
         await connection.execute(
             update(report_runs).where(report_runs.c.id == run_id).values(message_ids=message_ids)
         )
-
-
-async def report_language(deps: ReportDeps) -> ReportLanguage:
-    async with deps.engine.connect() as connection:
-        value = await connection.scalar(
-            select(settings.c.value).where(
-                settings.c.tenant_id == deps.tenant_id, settings.c.key == "report_language"
-            )
-        )
-    return TypeAdapter(ReportLanguage).validate_python(value)
 
 
 async def module_enabled_overrides(deps: ReportDeps) -> dict[str, bool]:
@@ -341,7 +329,6 @@ async def build_report(
     modules = await runnable_modules(deps, level)
     if not modules:
         return None
-    language = await report_language(deps)
     render_values = {
         "level": level,
         "period_label": period_label(level, period),
@@ -358,7 +345,6 @@ async def build_report(
         )
         text = render(
             "report",
-            language,
             blocks=[],
             snapshot_missing=True,
             unavailable_sources=[],
@@ -384,9 +370,7 @@ async def build_report(
         if runs_week_over_week
         else None
     )
-    context = ReportContext(
-        snapshot_date, previous, week_ago, deps.config, deps.tenant_id, language
-    )
+    context = ReportContext(snapshot_date, previous, week_ago, deps.config, deps.tenant_id)
     blocks: list[ModuleBlock] = []
     photos: list[ReportPhoto] = []
     documents: list[ReportDocument] = []
@@ -416,7 +400,6 @@ async def build_report(
             blocks.append(ModuleBlock(module_id, Markup(result.text)))
     text = render(
         "report",
-        language,
         blocks=blocks,
         snapshot_missing=False,
         unavailable_sources=sorted(unavailable_sources),

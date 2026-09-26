@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.backup_check import stale_backup_alert
 from digest.config import AppConfig
-from digest.db.schema import schedules, settings
+from digest.db.schema import schedules
 from digest.delivery.ops import OpsChannel, notify_ops
 from digest.delivery.telegram import create_bot
 from digest.mefi.client import MefiClient, create_mefi_http_client
@@ -32,7 +32,6 @@ DEFAULT_SCHEDULES: dict[ReportLevel, str] = {
     "monthly": "0 9 1 * *",
     "yearly": "0 9 5 1 *",
 }
-DEFAULT_REPORT_LANGUAGE = "ro"
 SNAPSHOT_RETRY_DELAY = timedelta(minutes=10)
 
 
@@ -46,11 +45,6 @@ async def seed_defaults(engine: AsyncEngine, tenant_id: str) -> None:
                     for level, cron in DEFAULT_SCHEDULES.items()
                 ]
             )
-            .on_conflict_do_nothing()
-        )
-        await connection.execute(
-            pg_insert(settings)
-            .values(tenant_id=tenant_id, key="report_language", value=DEFAULT_REPORT_LANGUAGE)
             .on_conflict_do_nothing()
         )
 

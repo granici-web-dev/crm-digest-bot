@@ -99,9 +99,9 @@ def test_missing_loss_reason_used_by_metrics_fails_config_load(reason_name: str)
 
 def test_loss_reason_without_label_fails_config_load() -> None:
     raw_mapping = repository_yaml("status-mapping.yaml")
-    del raw_mapping["categories"]["LOST"]["reasons"]["TIMP"]["label_ru"]
+    del raw_mapping["categories"]["LOST"]["reasons"]["TIMP"]["label"]
 
-    with pytest.raises(ValidationError, match="label_ru"):
+    with pytest.raises(ValidationError, match="label"):
         StatusMapping.model_validate(raw_mapping)
 
 
@@ -150,14 +150,11 @@ def test_repository_scr_levels_reference_kpi_thresholds(app_config: AppConfig) -
     levels = app_config.modules.scr_levels_params.levels
 
     assert [level.threshold for level in levels] == ["scr_elite", "scr_bine", "scr_minim"]
-    assert [level.label_ro for level in levels] == ["Elită", "Bine", "Minim"]
+    assert [level.label for level in levels] == ["Elită", "Bine", "Minim"]
 
 
 def scr_levels(*thresholds: str) -> list[dict[str, str]]:
-    return [
-        {"threshold": threshold, "label_ro": f"ro {threshold}", "label_ru": f"ru {threshold}"}
-        for threshold in thresholds
-    ]
+    return [{"threshold": threshold, "label": f"label {threshold}"} for threshold in thresholds]
 
 
 @pytest.mark.parametrize(
@@ -181,7 +178,7 @@ def test_scr_levels_must_be_known_descending_thresholds(
 @pytest.mark.parametrize("label", ["Elite", "gold", "COACHING"])
 def test_scr_level_label_cannot_repeat_spi_level_name(label: str) -> None:
     raw_config = raw_repository_config()
-    raw_config["modules"]["monthly"]["m4"]["params"]["levels"][0]["label_ru"] = label
+    raw_config["modules"]["monthly"]["m4"]["params"]["levels"][0]["label"] = label
 
     with pytest.raises(ValidationError, match="уровнями SPI"):
         AppConfig.model_validate(raw_config)

@@ -13,7 +13,14 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.app import DEFAULT_SCHEDULES, report_job, seed_defaults
 from digest.config import AppConfig
-from digest.db.schema import lead_snapshots, module_settings, report_runs, schedules, snapshot_runs
+from digest.db.schema import (
+    lead_snapshots,
+    module_settings,
+    report_runs,
+    schedules,
+    settings,
+    snapshot_runs,
+)
 from digest.delivery.ops import OpsChannel
 from digest.reports.context import ModuleResult, ReportContext, ReportDocument, ReportPhoto
 from digest.reports.modules import IMPLEMENTED_MODULES, ReportModuleFunction
@@ -442,6 +449,23 @@ async def test_seed_defaults_keeps_existing_values(engine: AsyncEngine) -> None:
         result = await connection.execute(select(schedules.c.report_level, schedules.c.cron))
         cron_by_level = {level: cron for level, cron in result}
     assert cron_by_level == {**DEFAULT_SCHEDULES, "daily": "0 20 * * *"}
+    async with engine.connect() as connection:
+        assert (await connection.execute(select(settings.c.key))).all() == []
+
+
+async def test_legacy_report_language_row_is_ignored(harness: Harness) -> None:
+    # Строка осталась в базах, где отчёты ещё были RO/RU; миграции нет, раннер её не читает.
+    async with harness.deps.engine.begin() as connection:
+        await connection.execute(
+            insert(settings).values(tenant_id=TENANT_ID, key="report_language", value="ru")
+        )
+    await store_snapshot(harness.deps.engine, REPORT_DATE, [todays_lead(1)])
+
+    outcome = await run_report("daily", NOW, harness.deps)
+
+    assert outcome == "success"
+    assert "<b>Raport zilnic Sofabelle</b>" in harness.group_text
+    assert "Lead-uri azi:" in harness.group_text
 
 
 async def test_send_failure_marks_run_failed_and_next_run_resends(harness: Harness) -> None:

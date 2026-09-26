@@ -1,97 +1,49 @@
 # serializer version: 1
-# name: test_anomalies_render[both-ro]
+# name: test_anomalies_render[both]
   '''
   🔴 0 lead-uri de pe site azi (media ultimelor 7 zile: 2,3), verificați formularul
   🔴 Val de IRELEVANT: Dragoi Mihaela 6, Nepreluate 5
   '''
 # ---
-# name: test_anomalies_render[both-ru]
-  '''
-  🔴 0 лидов с сайта сегодня (среднее за 7 дней: 2,3), проверьте форму
-  🔴 Всплеск IRELEVANT: Dragoi Mihaela 6, Не взяты 5
-  '''
-# ---
-# name: test_anomalies_render[none-ro]
+# name: test_anomalies_render[none]
   'Anomalii: nu'
 # ---
-# name: test_anomalies_render[none-ru]
-  'Аномалии: нет'
-# ---
-# name: test_anomalies_render[site_only-ro]
+# name: test_anomalies_render[site_only]
   '🔴 0 lead-uri de pe site azi (media ultimelor 7 zile: 3,0), verificați formularul'
 # ---
-# name: test_anomalies_render[site_only-ru]
-  '🔴 0 лидов с сайта сегодня (среднее за 7 дней: 3,0), проверьте форму'
-# ---
-# name: test_anomalies_render[spike_only-ro]
+# name: test_anomalies_render[spike_only]
   '🔴 Val de IRELEVANT: Marc Andra 5'
 # ---
-# name: test_anomalies_render[spike_only-ru]
-  '🔴 Всплеск IRELEVANT: Marc Andra 5'
-# ---
-# name: test_overdue_revenire_render[found-ro]
+# name: test_overdue_revenire_render[found]
   '⏰ Reveniri restante: 4 (cea mai veche: 26 de zile) · Nepreluate 1 (5 zile), Roibu Valeria 2 (26 de zile), Raileanu  Leon 1 (1 zi)'
 # ---
-# name: test_overdue_revenire_render[found-ru]
-  '⏰ Просроченные возвраты: 4 (самый старый: 26 дн.) · Не взяты 1 (5 дн.), Roibu Valeria 2 (26 дн.), Raileanu  Leon 1 (1 дн.)'
-# ---
-# name: test_overdue_revenire_render[none-ro]
+# name: test_overdue_revenire_render[none]
   'Reveniri restante: nu'
 # ---
-# name: test_overdue_revenire_render[none-ru]
-  'Просроченные возвраты: нет'
-# ---
-# name: test_same_weekday_compare_render[sunday-ro]
+# name: test_same_weekday_compare_render[sunday]
   'Lead-uri azi: 11 (duminica trecută: 8) · Contracte: 1 (0)'
 # ---
-# name: test_same_weekday_compare_render[sunday-ru]
-  'Лидов сегодня: 11 (в прошлое воскресенье: 8) · Контрактов: 1 (0)'
-# ---
-# name: test_same_weekday_compare_render[thursday-ro]
+# name: test_same_weekday_compare_render[thursday]
   'Lead-uri azi: 11 (joia trecută: 8) · Contracte: 1 (0)'
 # ---
-# name: test_same_weekday_compare_render[thursday-ru]
-  'Лидов сегодня: 11 (в прошлый четверг: 8) · Контрактов: 1 (0)'
-# ---
-# name: test_stale_offers_render[decline-ro]
+# name: test_stale_offers_render[decline]
   '📄 Oferte blocate >14 zile: 1 (față de ieri: -3) · Brașov 1'
 # ---
-# name: test_stale_offers_render[decline-ru]
-  '📄 Зависшие оферты >14 дней: 1 (к вчера: -3) · Brașov 1'
-# ---
-# name: test_stale_offers_render[growth-ro]
+# name: test_stale_offers_render[growth]
   '📄 Oferte blocate >14 zile: 15 (față de ieri: +2) · Brașov 5, Cluj 9, fără showroom 1'
 # ---
-# name: test_stale_offers_render[growth-ru]
-  '📄 Зависшие оферты >14 дней: 15 (к вчера: +2) · Brașov 5, Cluj 9, без шоурума 1'
-# ---
-# name: test_stale_offers_render[no_yesterday-ro]
+# name: test_stale_offers_render[no_yesterday]
   '📄 Oferte blocate >14 zile: 3 (față de ieri: —) · Brașov 2, București 1'
 # ---
-# name: test_stale_offers_render[no_yesterday-ru]
-  '📄 Зависшие оферты >14 дней: 3 (к вчера: —) · Brașov 2, București 1'
-# ---
-# name: test_stale_offers_render[none-ro]
+# name: test_stale_offers_render[none]
   'Oferte blocate >14 zile: nu'
 # ---
-# name: test_stale_offers_render[none-ru]
-  'Зависшие оферты >14 дней: нет'
-# ---
-# name: test_stale_offers_render[none_after_decline-ro]
+# name: test_stale_offers_render[none_after_decline]
   'Oferte blocate >14 zile: nu (față de ieri: -2)'
 # ---
-# name: test_stale_offers_render[none_after_decline-ru]
-  'Зависшие оферты >14 дней: нет (к вчера: -2)'
-# ---
-# name: test_untouched_leads_render[found-ro]
+# name: test_untouched_leads_render[found]
   '⚠ Lead-uri neatinse sau nepreluate: 4 (cel mai vechi: 26h) · Nepreluate 1 (5h), Roibu Valeria 2 (26h), Raileanu  Leon 1 (1h)'
 # ---
-# name: test_untouched_leads_render[found-ru]
-  '⚠ Лиды без касания или не взятые: 4 (самый старый: 26 ч) · Не взяты 1 (5 ч), Roibu Valeria 2 (26 ч), Raileanu  Leon 1 (1 ч)'
-# ---
-# name: test_untouched_leads_render[none-ro]
+# name: test_untouched_leads_render[none]
   'Lead-uri neatinse sau nepreluate: nu'
-# ---
-# name: test_untouched_leads_render[none-ru]
-  'Лиды без касания или не взятые: нет'
 # ---

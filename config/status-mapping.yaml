@@ -20,16 +20,16 @@ categories:
   LOST:
     reasons:
       # В mefi Stand BY — lifecycle active; LOST — наша категория по брифу §3.
-      # label_ro, label_ru: подписи причины в отчётах (w4), по docs/report-menu.md.
-      STAND_BY:          { statuses: ["Stand BY"], followup_field: "Data revenire", label_ro: "Stand BY", label_ru: "Stand BY" }
-      NU_RASPUNS:        { statuses: ["NU A RASPUNS"], label_ro: "Nu a răspuns", label_ru: "Не ответил" }
-      A_REFUZAT:         { statuses: ["A REFUZAT"], label_ro: "A refuzat", label_ru: "Отказ" }
-      PRODUS_NEPOTRIVIT: { statuses: ["PRODUS NEPOTRIVIT"], label_ro: "Produs nepotrivit", label_ru: "Продукт не подошёл" }
-      BUGET:             { statuses: ["BUGET"], label_ro: "Buget", label_ru: "Бюджет" }
-      CONCURENT:         { statuses: ["CONCURENTA"], label_ro: "Concurență", label_ru: "Конкурент" }
-      TIMP:              { statuses: ["TIMP"], note: "отказ из-за срока производства 1–2 мес.", label_ro: "Termen producție", label_ru: "Срок производства" }
+      # label: подпись причины в отчётах (w4), по docs/report-menu.md.
+      STAND_BY:          { statuses: ["Stand BY"], followup_field: "Data revenire", label: "Stand BY" }
+      NU_RASPUNS:        { statuses: ["NU A RASPUNS"], label: "Nu a răspuns" }
+      A_REFUZAT:         { statuses: ["A REFUZAT"], label: "A refuzat" }
+      PRODUS_NEPOTRIVIT: { statuses: ["PRODUS NEPOTRIVIT"], label: "Produs nepotrivit" }
+      BUGET:             { statuses: ["BUGET"], label: "Buget" }
+      CONCURENT:         { statuses: ["CONCURENTA"], label: "Concurență" }
+      TIMP:              { statuses: ["TIMP"], note: "отказ из-за срока производства 1–2 мес.", label: "Termen producție" }
       # SPAM есть в списке статусов mefi, в API-выборке 24.09.2026 не встречался.
-      IRELEVANT:         { statuses: ["IRELEVANT", "SPAM"], excluded_from_useful: true, label_ro: "Irelevant", label_ru: "Нерелевантный" }
+      IRELEVANT:         { statuses: ["IRELEVANT", "SPAM"], excluded_from_useful: true, label: "Irelevant" }
   PARTNERSHIP:
     statuses: ["DESIGNER", "INFLUENCER"]
     # Бриф §3: партнёрства не лиды, исключаются из LEADS и всех KPI (ADR-002).

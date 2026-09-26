@@ -46,7 +46,7 @@ def week_frame(app_config: AppConfig) -> pd.DataFrame:
 
 
 def workbook(app_config: AppConfig, tenant_id: str = "sofabelle") -> tuple[str, Workbook]:
-    context = ReportContext(SUNDAY, None, None, app_config, tenant_id, "ro")
+    context = ReportContext(SUNDAY, None, None, app_config, tenant_id)
     result = excel_attachment_report(week_frame(app_config), context)
     assert result.document is not None
     return result.document.filename, load_workbook(BytesIO(result.document.content))

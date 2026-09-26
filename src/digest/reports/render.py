@@ -1,13 +1,12 @@
 from functools import cache
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 TEMPLATES_DIR = Path(__file__).resolve().parents[3] / "templates"
 
-ReportLanguage = Literal["ro", "ru"]
-# Названия дней недели в таблицах недельного отчёта как в ручном отчёте, в обоих языках.
+# Названия дней недели в таблицах недельного отчёта как в ручном отчёте.
 RO_WEEKDAYS = ("Luni", "Marți", "Miercuri", "Joi", "Vineri", "Sâmbătă", "Duminică")
 
 
@@ -58,6 +57,6 @@ def template_environment() -> Environment:
     return environment
 
 
-def render(template_name: str, language: ReportLanguage, **values: Any) -> str:
-    template = template_environment().get_template(f"{template_name}.{language}.j2")
+def render(template_name: str, **values: Any) -> str:
+    template = template_environment().get_template(f"{template_name}.j2")
     return template.render(**values).strip()

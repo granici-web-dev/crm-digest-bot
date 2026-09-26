@@ -19,7 +19,7 @@ docs/first-sessions.md        ← порядок сессий 0–7 с гото�
 - `PRINCIPLES.md`, `STACK.md`, `TESTING.md` — пишет `/rigorous teach`
 - `docs/mefi-api-notes.md` — реальные id статусов/источников из разведки API
 - `tests/fixtures/etalon-2026-05.json` — из `SB KPi.xlsx`; положи Excel в `docs/reference/` перед сессией 4
-- `templates/*.ro.j2`, `*.ru.j2` — тексты отчётов
+- `templates/*.j2` — тексты отчётов, только румынский
 
 Что нужно от других людей (не блокирует сессии 0–7):
 - директор Sofabelle: письмо в mefi про API для Oferte/Contracte/Facturi; доступы в Meta BM / Google Ads / GA4 / TikTok BC; документы себестоимости

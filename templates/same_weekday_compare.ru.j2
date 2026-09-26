@@ -1,2 +1,0 @@
-{% set last_weekday = ["в прошлый понедельник", "в прошлый вторник", "в прошлую среду", "в прошлый четверг", "в прошлую пятницу", "в прошлую субботу", "в прошлое воскресенье"] %}
-Лидов сегодня: {{ comparison.leads }} ({{ last_weekday[comparison.week_ago_date.weekday()] }}: {{ comparison.leads_week_ago }}) · Контрактов: {{ comparison.contracts }} ({{ comparison.contracts_week_ago }})

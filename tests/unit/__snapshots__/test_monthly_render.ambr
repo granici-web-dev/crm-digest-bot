@@ -1,11 +1,8 @@
 # serializer version: 1
-# name: test_monthly_module_text[m19-ro]
+# name: test_monthly_module_text[m19]
   '📎 sofabelle_2026-09.xlsx: KPI consilieri, pâlnia pe showroom, motive de pierdere, lista lead-urilor lunii'
 # ---
-# name: test_monthly_module_text[m19-ru]
-  '📎 sofabelle_2026-09.xlsx: KPI консультантов, воронка по шоурумам, причины потерь, список лидов месяца'
-# ---
-# name: test_monthly_module_text[m2-ro]
+# name: test_monthly_module_text[m2]
   '''
   <b>Pâlnia lunii pe showroom</b> (lead-uri create în lună)
   Lead-uri → utile → oferte → Clienți
@@ -16,18 +13,7 @@
   <i>Clienți: din lead-urile lunii, status la data raportului. Ofertele și clienții din aceste lead-uri vor mai crește.</i>
   '''
 # ---
-# name: test_monthly_module_text[m2-ru]
-  '''
-  <b>Воронка месяца по шоурумам</b> (лиды, созданные в месяце)
-  Лиды → полезные → оферты → клиенты (Clienți)
-  Brașov: 10 → 10 → 2 → 1
-  Cluj: 2 → 2 → 1 → 0
-  <b>Итого: 13 → 12 → 3 → 1</b>
-  1 лидов без шоурума, из них 1 нерелевантных
-  <i>Клиенты (Clienți): из лидов месяца, статус на дату отчёта. Оферты и клиенты из этих лидов ещё будут расти.</i>
-  '''
-# ---
-# name: test_monthly_module_text[m3-ro]
+# name: test_monthly_module_text[m3]
   '''
   <b>Trend 6 luni</b>
   Lead-uri: Apr 0 · Mai 1 · Iun 0 · Iul 0 · Aug 2 · Sep 13
@@ -35,15 +21,7 @@
   <i>Lead-uri după data creării, contracte după data conversiei (converted_at).</i>
   '''
 # ---
-# name: test_monthly_module_text[m3-ru]
-  '''
-  <b>Тренд за 6 месяцев</b>
-  Лиды: Апр 0 · Май 1 · Июн 0 · Июл 0 · Авг 2 · Сен 13
-  Контракты: Апр 0 · Май 0 · Июн 0 · Июл 1 · Авг 0 · Сен 1
-  <i>Лиды по дате создания, контракты по дате конверсии (converted_at).</i>
-  '''
-# ---
-# name: test_monthly_module_text[m4-ro]
+# name: test_monthly_module_text[m4]
   '''
   <b>Conversie (SCR) pe showroom</b>, țintă ≥10,0%
   <i>Elită ≥10,0% · Bine ≥7,0% · Minim ≥5,0%</i>
@@ -52,16 +30,7 @@
   <b>Total 8,3% · Bine ✗</b>
   '''
 # ---
-# name: test_monthly_module_text[m4-ru]
-  '''
-  <b>Конверсия (SCR) по шоурумам</b>, цель ≥10,0%
-  <i>Элита ≥10,0% · Хорошо ≥7,0% · Минимум ≥5,0%</i>
-  Brașov 10,0% · Элита ✓
-  Cluj 0,0% · Ниже минимума ✗
-  <b>Итого 8,3% · Хорошо ✗</b>
-  '''
-# ---
-# name: test_monthly_module_text[m5-ro]
+# name: test_monthly_module_text[m5]
   '''
   <b>Manager Cockpit: 9 KPI pe consilier</b>
   <i>Ținte: SCR ≥10,0% · L2O ≥50,0% · O2C ≥20,0% · CDR ≥90,0% · PLR ≤25,0%</i>
@@ -99,59 +68,12 @@
   <code>SC — · PFR — · ACR — · IRR —</code>
   '''
 # ---
-# name: test_monthly_module_text[m5-ru]
-  '''
-  <b>Manager Cockpit: 9 KPI по консультантам</b>
-  <i>Цели: SCR ≥10,0% · L2O ≥50,0% · O2C ≥20,0% · CDR ≥90,0% · PLR ≤25,0%</i>
-  <i>Цели: SC ≥20,0% · PFR ≤10,0% · ACR ≤20,0% · IRR ≤20,0%</i>
-  <i>Клиенты (Clienți): из лидов месяца, статус на дату отчёта</i>
-  
-  <b>Roibu Valeria</b> · Brașov
-  <code>Лиды 8 · Полезные 8 · Оферты 0 · Клиенты 0</code>
-  <code>SCR 0,0% ✗ · L2O 0,0% ✗ · O2C — · CDR 100,0% ✓ · PLR 0,0% ✓</code>
-  <code>SC — · PFR 0,0% ✓ · ACR 0,0% ✓ · IRR 0,0% ✓</code>
-  
-  <b>Moaca Andreea</b> · Brașov
-  <code>Лиды 2 · Полезные 2 · Оферты 2 · Клиенты 1</code>
-  <code>SCR 50,0% ✓ · L2O 100,0% ✓ · O2C 50,0% ✓ · CDR 100,0% ✓ · PLR 0,0% ✓</code>
-  <code>SC — · PFR 0,0% ✓ · ACR 50,0% ✗ · IRR 0,0% ✓</code>
-  
-  <b>Godja Adina Maria</b> · Cluj
-  <code>Лиды 2 · Полезные 2 · Оферты 1 · Клиенты 0</code>
-  <code>SCR 0,0% ✗ · L2O 50,0% ✓ · O2C 0,0% ✗ · CDR 100,0% ✓ · PLR 50,0% ✗</code>
-  <code>SC — · PFR 0,0% ✓ · ACR 50,0% ✗ · IRR 0,0% ✓</code>
-  
-  <b>Marc Andra</b> · Cluj
-  <code>Лиды 0 · Полезные 0 · Оферты 0 · Клиенты 0</code>
-  <code>SCR — · L2O — · O2C — · CDR — · PLR —</code>
-  <code>SC — · PFR — · ACR — · IRR —</code>
-  
-  <b>Dragoi Mihaela</b> · București
-  <code>Лиды 1 · Полезные 0 · Оферты 0 · Клиенты 0</code>
-  <code>SCR — · L2O — · O2C — · CDR 100,0% ✓ · PLR —</code>
-  <code>SC — · PFR — · ACR 0,0% ✓ · IRR 100,0% ✗</code>
-  
-  <b>Raileanu  Leon</b> · București
-  <code>Лиды 0 · Полезные 0 · Оферты 0 · Клиенты 0</code>
-  <code>SCR — · L2O — · O2C — · CDR — · PLR —</code>
-  <code>SC — · PFR — · ACR — · IRR —</code>
-  '''
-# ---
-# name: test_monthly_module_text[m8-ro]
+# name: test_monthly_module_text[m8]
   '''
   <b>Motive de pierdere: Sep față de Aug</b>
   Pierdute 2 (Aug 2) (=)
   Buget 1 · 50% (Aug 1) (=)
   Irelevant 1 · 50% (Aug 0) (—)
   Nu a răspuns 0 · 0% (Aug 1) (−100%)
-  '''
-# ---
-# name: test_monthly_module_text[m8-ru]
-  '''
-  <b>Причины потерь: Сен против Авг</b>
-  Потеряно 2 (Авг 2) (=)
-  Бюджет 1 · 50% (Авг 1) (=)
-  Нерелевантный 1 · 50% (Авг 0) (—)
-  Не ответил 0 · 0% (Авг 1) (−100%)
   '''
 # ---

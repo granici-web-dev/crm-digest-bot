@@ -22,7 +22,6 @@ def seller_format_report(lead_frame: pd.DataFrame, context: ReportContext) -> Mo
         )
     text = render(
         "seller_format_report",
-        context.language,
         counts=counts,
         report_date=context.report_date,
         tenant_display_name=context.config.status_mapping.tenant_display_name,

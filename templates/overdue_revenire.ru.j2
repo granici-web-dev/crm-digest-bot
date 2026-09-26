@@ -1,7 +1,0 @@
-{% from "_names.ru.j2" import manager %}
-{% if overdue.lead_count %}
-⏰ Просроченные возвраты: {{ overdue.lead_count }} (самый старый: {{ overdue.max_days_overdue }} дн.) · {% for group in overdue.groups %}{{ manager(group.manager_name) }} {{ group.lead_count }} ({{ group.max_days_overdue }} дн.){% if not loop.last %}, {% endif %}{% endfor %}
-
-{% else %}
-Просроченные возвраты: нет
-{% endif %}

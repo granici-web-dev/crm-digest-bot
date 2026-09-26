@@ -1,11 +1,8 @@
 from datetime import date
 
-import pytest
-
 from digest.metrics.kpi import LeadCounts
 from digest.metrics.monthly import MonthlyFunnel, MonthlyTrend
-from digest.reports.charts import ChartLabels, chart_labels, funnel_chart, trend_chart
-from digest.reports.render import ReportLanguage
+from digest.reports.charts import chart_labels, funnel_chart, trend_chart
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
@@ -44,17 +41,15 @@ TREND = MonthlyTrend(
 )
 
 
-@pytest.mark.parametrize("language", ["ro", "ru"])
-def test_funnel_chart_returns_png_bytes(language: ReportLanguage) -> None:
-    image = funnel_chart(FUNNEL, chart_labels(language))
+def test_funnel_chart_returns_png_bytes() -> None:
+    image = funnel_chart(FUNNEL, chart_labels())
 
     assert image.startswith(PNG_SIGNATURE)
     assert len(image) > len(PNG_SIGNATURE)
 
 
-@pytest.mark.parametrize("language", ["ro", "ru"])
-def test_trend_chart_returns_png_bytes(language: ReportLanguage) -> None:
-    image = trend_chart(TREND, chart_labels(language))
+def test_trend_chart_returns_png_bytes() -> None:
+    image = trend_chart(TREND, chart_labels())
 
     assert image.startswith(PNG_SIGNATURE)
     assert len(image) > len(PNG_SIGNATURE)
@@ -65,13 +60,9 @@ def test_charts_render_empty_month() -> None:
     funnel = MonthlyFunnel(date(2026, 9, 1), empty, {"Brașov": empty, None: empty})
     trend = MonthlyTrend(TREND.months, (0,) * 6, (0,) * 6)
 
-    assert funnel_chart(funnel, chart_labels("ro")).startswith(PNG_SIGNATURE)
-    assert trend_chart(trend, chart_labels("ro")).startswith(PNG_SIGNATURE)
+    assert funnel_chart(funnel, chart_labels()).startswith(PNG_SIGNATURE)
+    assert trend_chart(trend, chart_labels()).startswith(PNG_SIGNATURE)
 
 
-def test_chart_labels_have_same_keys_in_both_languages() -> None:
-    romanian, russian = chart_labels("ro"), chart_labels("ru")
-
-    assert set(romanian.model_dump()) == set(russian.model_dump()) == set(ChartLabels.model_fields)
-    assert romanian.month_label(date(2026, 8, 1)) == "Aug 2026"
-    assert russian.month_label(date(2026, 8, 1)) == "Авг 2026"
+def test_chart_labels_format_month_in_romanian() -> None:
+    assert chart_labels().month_label(date(2026, 8, 1)) == "Aug 2026"

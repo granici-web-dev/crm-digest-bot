@@ -17,7 +17,7 @@ from digest.metrics.monthly import (
 from digest.reports.charts import chart_labels, funnel_chart, trend_chart
 from digest.reports.context import ModuleResult, ReportContext, ReportPhoto
 from digest.reports.modules.weekly import WITHOUT_SHOWROOM
-from digest.reports.render import ReportLanguage, render, target_label
+from digest.reports.render import render, target_label
 
 # m5 в Telegram: девять KPI не помещаются в одну строку <code> на телефоне.
 COCKPIT_KPI_LINES = (KPI_NAMES[:5], KPI_NAMES[5:])
@@ -29,7 +29,7 @@ def month_file_suffix(report_date: date) -> str:
 
 def funnel_by_showroom_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
     funnel = monthly_funnel(lead_frame, context.report_date, context.config)
-    labels = chart_labels(context.language)
+    labels = chart_labels()
     without_showroom = funnel.without_showroom
     alerts: tuple[str, ...] = ()
     if without_showroom.useful:
@@ -42,7 +42,6 @@ def funnel_by_showroom_report(lead_frame: pd.DataFrame, context: ReportContext) 
     return ModuleResult(
         render(
             "funnel_by_showroom",
-            context.language,
             funnel=funnel,
             without_showroom_note=labels.without_showroom_note(without_showroom),
             clienti_note=labels.clienti_note,
@@ -56,11 +55,10 @@ def funnel_by_showroom_report(lead_frame: pd.DataFrame, context: ReportContext) 
 
 def trend_6m_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
     trend = monthly_trend(lead_frame, context.report_date, context.config)
-    labels = chart_labels(context.language)
+    labels = chart_labels()
     return ModuleResult(
         render(
             "trend_6m",
-            context.language,
             trend=trend,
             month_names=[labels.month_name(month) for month in trend.months],
         ),
@@ -81,13 +79,9 @@ def target_labels(config: AppConfig) -> dict[str, str]:
 
 def scr_level_labels(context: ReportContext) -> dict[str, str]:
     params = context.config.modules.scr_levels_params
-    romanian = context.language == "ro"
     return {
-        **{
-            level.threshold: level.label_ro if romanian else level.label_ru
-            for level in params.levels
-        },
-        BELOW_ALL_LEVELS: params.below_label_ro if romanian else params.below_label_ru,
+        **{level.threshold: level.label for level in params.levels},
+        BELOW_ALL_LEVELS: params.below_label,
     }
 
 
@@ -97,7 +91,6 @@ def scr_with_targets_report(lead_frame: pd.DataFrame, context: ReportContext) ->
     return ModuleResult(
         render(
             "scr_with_targets",
-            context.language,
             scr=monthly_scr(funnel, config),
             # Строка без шоурума только с полезными лидами: у IRELEVANT-лидов SCR всегда «—».
             showrooms=[
@@ -128,32 +121,29 @@ def manager_cockpit_report(lead_frame: pd.DataFrame, context: ReportContext) -> 
     return ModuleResult(
         render(
             "manager_cockpit",
-            context.language,
             rows=manager_cockpit_rows(lead_frame, context),
             kpi_count=len(KPI_NAMES),
             kpi_lines=COCKPIT_KPI_LINES,
             targets=target_labels(context.config),
-            clienti_note=chart_labels(context.language).clienti_note,
+            clienti_note=chart_labels().clienti_note,
         )
     )
 
 
-def loss_reason_labels(config: AppConfig, language: ReportLanguage) -> dict[str, str]:
+def loss_reason_labels(config: AppConfig) -> dict[str, str]:
     return {
-        key: reason.label_ro if language == "ro" else reason.label_ru
-        for key, reason in config.status_mapping.categories.LOST.reasons.items()
+        key: reason.label for key, reason in config.status_mapping.categories.LOST.reasons.items()
     }
 
 
 def loss_reasons_trend_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
     losses = monthly_loss_reasons(lead_frame, context.report_date, context.config)
-    labels = chart_labels(context.language)
+    labels = chart_labels()
     return ModuleResult(
         render(
             "loss_reasons_trend",
-            context.language,
             losses=losses,
-            reason_labels=loss_reason_labels(context.config, context.language),
+            reason_labels=loss_reason_labels(context.config),
             month_name=labels.month_name(losses.month),
             previous_month_name=labels.month_name(losses.previous_month),
         )

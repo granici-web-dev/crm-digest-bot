@@ -13,7 +13,7 @@ from pydantic import Field
 from digest.config import StrictConfigModel
 from digest.metrics.kpi import LeadCounts
 from digest.metrics.monthly import MonthlyFunnel, MonthlyTrend
-from digest.reports.render import TEMPLATES_DIR, ReportLanguage
+from digest.reports.render import TEMPLATES_DIR
 
 SURFACE = "#fcfcfb"
 TEXT_PRIMARY = "#0b0b0b"
@@ -63,8 +63,8 @@ class ChartLabels(StrictConfigModel):
 
 
 @cache
-def chart_labels(language: ReportLanguage) -> ChartLabels:
-    with (TEMPLATES_DIR / f"charts.{language}.yaml").open(encoding="utf-8") as file:
+def chart_labels() -> ChartLabels:
+    with (TEMPLATES_DIR / "charts.yaml").open(encoding="utf-8") as file:
         return ChartLabels.model_validate(yaml.safe_load(file))
 
 

@@ -52,7 +52,7 @@ git add -A && git commit -m "chore: project setup kit"
 
 ## Сессия 6 · `/rigorous shape` — /settings
 
-> /rigorous shape Команда /settings для admin по Telegram ID: aiogram_dialog, уровни Daily/Weekly/Monthly/Yearly/Chat → модули ✅/⬜, серые для неподключённых источников, язык RO/RU, время отправки. Хранение в settings.
+> /rigorous shape Команда /settings для admin по Telegram ID: aiogram_dialog, уровни Daily/Weekly/Monthly/Yearly/Chat → модули ✅/⬜, серые для неподключённых источников, время отправки. Хранение в settings.
 
 ## Сессия 7 · `/rigorous harden` + деплой
 

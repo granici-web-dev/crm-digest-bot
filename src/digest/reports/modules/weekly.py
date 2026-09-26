@@ -119,7 +119,6 @@ def weekly_leads_report(lead_frame: pd.DataFrame, context: ReportContext) -> Mod
     return ModuleResult(
         render(
             "weekly_leads",
-            context.language,
             tables=tables,
             week_number=context.report_date.isocalendar().week,
             week_range=week_range_label(days),
@@ -138,7 +137,6 @@ def showroom_visits_report(lead_frame: pd.DataFrame, context: ReportContext) -> 
     return ModuleResult(
         render(
             "showroom_visits",
-            context.language,
             visits=visits,
             day_showroom_rows=text_rows(day_showroom_table(visits, "Zi")),
             without_showroom=WITHOUT_SHOWROOM,
@@ -148,20 +146,16 @@ def showroom_visits_report(lead_frame: pd.DataFrame, context: ReportContext) -> 
 
 def weekly_funnel_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
     funnel = weekly_funnel(lead_frame, context.report_date, context.config)
-    return ModuleResult(render("weekly_funnel", context.language, funnel=funnel))
+    return ModuleResult(render("weekly_funnel", funnel=funnel))
 
 
 def loss_reasons_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
     losses = weekly_loss_reasons(lead_frame, context.report_date, context.config)
     reason_config = context.config.status_mapping.categories.LOST.reasons
-    reason_labels = {
-        key: reason.label_ro if context.language == "ro" else reason.label_ru
-        for key, reason in reason_config.items()
-    }
+    reason_labels = {key: reason.label for key, reason in reason_config.items()}
     return ModuleResult(
         render(
             "loss_reasons",
-            context.language,
             losses=losses,
             reason_labels=reason_labels,
             without_showroom=WITHOUT_SHOWROOM,
@@ -174,7 +168,6 @@ def week_over_week_report(lead_frame: pd.DataFrame, context: ReportContext) -> M
     return ModuleResult(
         render(
             "week_over_week",
-            context.language,
             change=change,
             leads_change=relative_change(change.leads, change.leads_previous),
             showroom_visits_change=relative_change(
