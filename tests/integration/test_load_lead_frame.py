@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.config import AppConfig
-from digest.db.lead_frame import SnapshotMissingError, load_lead_frame
+from digest.db.lead_frame import SnapshotMissingError, load_lead_frame, success_snapshot_dates
 from digest.db.schema import lead_snapshots, snapshot_runs, tenants
 from digest.metrics.frame import prepare_lead_frame
 from factories import lead_snapshots_row, make_snapshot_row
@@ -102,3 +102,27 @@ async def test_missing_or_incomplete_snapshot_raises_instead_of_empty_frame(
 
     with pytest.raises(SnapshotMissingError):
         await load_lead_frame(engine, "sofabelle", SNAPSHOT_DATE, app_config)
+
+
+async def test_success_snapshot_dates_are_sorted_successes_of_tenant(engine: AsyncEngine) -> None:
+    runs = [
+        ("sofabelle", date(2026, 9, 24), 1, "success"),
+        ("sofabelle", date(2026, 9, 22), 1, "success"),
+        ("sofabelle", date(2026, 9, 23), 1, "failed"),
+        ("other", date(2026, 9, 21), 1, "success"),
+    ]
+    async with engine.begin() as connection:
+        await connection.execute(
+            pg_insert(tenants).values(id="other", name="Other").on_conflict_do_nothing()
+        )
+        for tenant_id, snapshot_date, attempt, status in runs:
+            await connection.execute(
+                insert(snapshot_runs).values(
+                    tenant_id=tenant_id, snapshot_date=snapshot_date, attempt=attempt, status=status
+                )
+            )
+
+    assert await success_snapshot_dates(engine, "sofabelle") == (
+        date(2026, 9, 22),
+        date(2026, 9, 24),
+    )

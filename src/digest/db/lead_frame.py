@@ -62,3 +62,13 @@ async def previous_success_snapshot_date(
             )
         )
     return previous_date
+
+
+async def success_snapshot_dates(engine: AsyncEngine, tenant_id: str) -> tuple[date, ...]:
+    async with engine.connect() as connection:
+        result = await connection.execute(
+            select(snapshot_runs.c.snapshot_date)
+            .where(snapshot_runs.c.tenant_id == tenant_id, snapshot_runs.c.status == "success")
+            .order_by(snapshot_runs.c.snapshot_date)
+        )
+        return tuple(result.scalars())

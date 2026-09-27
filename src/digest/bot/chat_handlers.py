@@ -3,7 +3,7 @@ import re
 import time
 from collections.abc import Callable, Collection
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from datetime import time as clock_time
 
 import anthropic
@@ -17,7 +17,7 @@ from digest.chat.loop import CANNOT_ANSWER_NOW_TEXT, ChatAnswer, answer_question
 from digest.chat.state import chat_enabled
 from digest.chat.tools import ToolData
 from digest.config import ChatSettings
-from digest.db.lead_frame import load_lead_frame, previous_success_snapshot_date
+from digest.db.lead_frame import load_lead_frame, success_snapshot_dates
 from digest.delivery.ops import notify_ops
 from digest.reports.runner import ReportDeps
 from digest.snapshot import describe_error
@@ -123,12 +123,7 @@ async def answer_in_group(
         return await load_lead_frame(deps.engine, deps.tenant_id, snapshot_date, deps.config)
 
     data = ToolData(
-        today,
-        await previous_success_snapshot_date(
-            deps.engine, deps.tenant_id, today + timedelta(days=1)
-        ),
-        load_frame,
-        deps.config,
+        today, await success_snapshot_dates(deps.engine, deps.tenant_id), load_frame, deps.config
     )
     try:
         answer = await answer_question(question.text, chat.anthropic_client, chat.model, data)

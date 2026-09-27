@@ -35,13 +35,13 @@ def lead_frame(config: AppConfig) -> pd.DataFrame:
     return prepare_lead_frame(rows, config)
 
 
-def tool_data(config: AppConfig, latest_snapshot_date: date = TODAY) -> ToolData:
+def tool_data(config: AppConfig, snapshot_dates: tuple[date, ...] = (TODAY,)) -> ToolData:
     frame = lead_frame(config)
 
     async def load_frame(snapshot_date: date) -> pd.DataFrame:
         return frame
 
-    return ToolData(TODAY, latest_snapshot_date, load_frame, config)
+    return ToolData(TODAY, snapshot_dates, load_frame, config)
 
 
 async def test_question_routes_to_tool_with_arguments(app_config: AppConfig) -> None:
@@ -87,7 +87,7 @@ async def test_stale_snapshot_is_stated_in_signature(app_config: AppConfig) -> N
     )
 
     answer = await answer_question(
-        "Câte lead-uri?", api.client, MODEL, tool_data(app_config, date(2026, 9, 22))
+        "Câte lead-uri?", api.client, MODEL, tool_data(app_config, (date(2026, 9, 22),))
     )
 
     assert answer.text.endswith("<i>Date din snapshotul din 22.09.2026</i>")
@@ -193,3 +193,19 @@ async def test_model_text_is_html_escaped(app_config: AppConfig) -> None:
     answer = await answer_question("?", api.client, MODEL, tool_data(app_config))
 
     assert answer.text == "Nu știu &lt;b&gt;asta&lt;/b&gt;."
+
+
+async def test_substituted_snapshot_of_closed_period_is_disclosed(app_config: AppConfig) -> None:
+    api = scripted_anthropic(
+        tool_use_message(("funnel", {"period": "ieri", "showroom": "toate"})),
+        text_message("Ieri au fost 3 lead-uri."),
+    )
+
+    answer = await answer_question(
+        "Câte lead-uri ieri?", api.client, MODEL, tool_data(app_config, (TODAY,))
+    )
+
+    assert answer.status == "answered"
+    assert answer.text.endswith(
+        "<i>Date din snapshotul din 23.09.2026 (nu există snapshot pentru 22.09.2026)</i>"
+    )

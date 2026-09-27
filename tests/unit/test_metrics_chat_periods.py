@@ -85,16 +85,36 @@ def test_last_30_days_cross_dst_end_at_19_local(app_config: AppConfig) -> None:
         ("ieri", date(2026, 9, 22)),
         ("saptamana_trecuta", date(2026, 9, 20)),
         ("luna_trecuta", date(2026, 8, 31)),
-        ("azi", date(2026, 9, 21)),
-        ("saptamana_curenta", date(2026, 9, 21)),
-        ("luna_curenta", date(2026, 9, 21)),
-        ("ultimele_30_zile", date(2026, 9, 21)),
+        ("azi", date(2026, 9, 22)),
+        ("saptamana_curenta", date(2026, 9, 22)),
+        ("luna_curenta", date(2026, 9, 22)),
+        ("ultimele_30_zile", date(2026, 9, 22)),
     ],
 )
 def test_closed_period_reads_snapshot_of_its_end_and_current_reads_latest(
     period: ChatPeriod, expected: date
 ) -> None:
-    assert period_snapshot_date(period, WEDNESDAY, date(2026, 9, 21)) == expected
+    dates = (date(2026, 8, 31), date(2026, 9, 20), date(2026, 9, 21), date(2026, 9, 22))
+    assert period_snapshot_date(period, WEDNESDAY, dates) == expected
+
+
+def test_closed_period_uses_snapshot_of_its_last_day_when_present() -> None:
+    dates = (date(2026, 8, 30), date(2026, 8, 31), date(2026, 9, 25))
+    assert period_snapshot_date("luna_trecuta", WEDNESDAY, dates) == date(2026, 8, 31)
+
+
+def test_closed_period_without_last_day_snapshot_uses_first_later_one() -> None:
+    dates = (date(2026, 8, 30), date(2026, 9, 25), date(2026, 9, 26))
+    assert period_snapshot_date("luna_trecuta", WEDNESDAY, dates) == date(2026, 9, 25)
+
+
+def test_closed_period_without_last_day_or_later_snapshot_has_none() -> None:
+    dates = (date(2026, 8, 29), date(2026, 8, 30))
+    assert period_snapshot_date("luna_trecuta", WEDNESDAY, dates) is None
+
+
+def test_no_snapshots_at_all_gives_none_for_every_period() -> None:
+    assert all(period_snapshot_date(period, WEDNESDAY, ()) is None for period in CHAT_PERIODS)
 
 
 def test_every_period_has_a_window(app_config: AppConfig) -> None:

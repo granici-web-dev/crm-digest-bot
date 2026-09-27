@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from datetime import date, timedelta
 from typing import Literal, get_args
 
@@ -48,10 +49,17 @@ def named_period_window(period: ChatPeriod, today: date, time_settings: TimeSett
     )
 
 
-def period_snapshot_date(period: ChatPeriod, today: date, latest_snapshot_date: date) -> date:
+def period_snapshot_date(
+    period: ChatPeriod, today: date, snapshot_dates: Sequence[date]
+) -> date | None:
     # Закрытый период читается из снапшота своего последнего дня, по которому ушёл отчёт: в
     # последнем снапшоте когорта прошлой недели уже дозрела, а лиды со сменой статуса выпали из
     # потерь прошлого месяца (status_changed_at хранит только последнее изменение, CLAUDE.md).
-    if period in CLOSED_PERIODS:
-        return period_days(period, today)[1]
-    return latest_snapshot_date
+    # Снапшота за этот день нет: первый успешный после него, подпись говорит о подмене
+    # (docs/kpi-definitions.md, «Режим вопросов»).
+    if not snapshot_dates:
+        return None
+    if period not in CLOSED_PERIODS:
+        return max(snapshot_dates)
+    last_day = period_days(period, today)[1]
+    return min((day for day in snapshot_dates if day >= last_day), default=None)

@@ -2,6 +2,6 @@
 {% for line in lines %}
 <i>{{ line }}</i>
 {% endfor %}
-{% if data_as_of %}
-<i>Date din snapshotul din {{ data_as_of }}</i>
-{% endif %}
+{% for note in notes %}
+<i>{{ note }}</i>
+{% endfor %}

@@ -1,5 +1,4 @@
 import json
-from dataclasses import replace
 from datetime import date, timedelta
 from itertools import product
 from typing import Any
@@ -60,15 +59,20 @@ def lead_frame(etalon_config: AppConfig) -> pd.DataFrame:
     return prepare_lead_frame(rows, etalon_config)
 
 
+SNAPSHOT_DATES = (END_OF_MAY, date(2026, 6, 2), TODAY)
+
+
 def tool_data(
-    config: AppConfig, lead_frame: pd.DataFrame, missing: frozenset[date] = frozenset()
+    config: AppConfig,
+    lead_frame: pd.DataFrame,
+    snapshot_dates: tuple[date, ...] = SNAPSHOT_DATES,
 ) -> ToolData:
     async def load_frame(snapshot_date: date) -> pd.DataFrame:
-        if snapshot_date in missing:
+        if snapshot_date not in snapshot_dates:
             raise SnapshotMissingError(str(snapshot_date))
         return lead_frame
 
-    return ToolData(TODAY, TODAY, load_frame, config)
+    return ToolData(TODAY, snapshot_dates, load_frame, config)
 
 
 async def run(
@@ -304,7 +308,7 @@ async def test_tool_results_contain_no_lead_ids_or_client_data(
 async def test_current_period_before_first_snapshot_of_it_has_no_data(
     etalon_config: AppConfig, lead_frame: pd.DataFrame
 ) -> None:
-    data = replace(tool_data(etalon_config, lead_frame), latest_snapshot_date=TODAY - timedelta(1))
+    data = tool_data(etalon_config, lead_frame, SNAPSHOT_DATES[:2])
 
     outcome = await run_tool("funnel", {"period": "azi", "showroom": ALL_SHOWROOMS}, data)
 
@@ -317,20 +321,52 @@ async def test_current_period_before_first_snapshot_of_it_has_no_data(
 async def test_partial_period_states_snapshot_date(
     etalon_config: AppConfig, lead_frame: pd.DataFrame
 ) -> None:
-    data = replace(tool_data(etalon_config, lead_frame), latest_snapshot_date=TODAY - timedelta(1))
+    data = tool_data(etalon_config, lead_frame, SNAPSHOT_DATES[:2])
 
     outcome = await run_tool(
         "funnel", {"period": "saptamana_curenta", "showroom": ALL_SHOWROOMS}, data
     )
 
-    assert outcome.data_as_of == date(2026, 6, 2)
+    assert outcome.snapshot_notes == ("Date din snapshotul din 02.06.2026",)
     assert outcome.content["data_as_of"] == "02.06.2026"
 
 
-async def test_closed_period_without_its_snapshot_has_no_data_and_no_substitute(
+async def test_closed_period_with_its_snapshot_has_no_note(
     etalon_config: AppConfig, lead_frame: pd.DataFrame
 ) -> None:
-    data = tool_data(etalon_config, lead_frame, missing=frozenset({END_OF_MAY}))
+    outcome = await run_tool(
+        "loss_reasons",
+        {"period": "luna_trecuta", "showroom": ALL_SHOWROOMS},
+        tool_data(etalon_config, lead_frame),
+    )
+
+    assert outcome.snapshot_dates == (END_OF_MAY,)
+    assert outcome.snapshot_notes == ()
+    assert outcome.content["missing_snapshot_for"] is None
+
+
+async def test_closed_period_without_its_snapshot_uses_first_later_one_with_note(
+    etalon_config: AppConfig, lead_frame: pd.DataFrame
+) -> None:
+    data = tool_data(etalon_config, lead_frame, SNAPSHOT_DATES[1:])
+
+    outcome = await run_tool(
+        "loss_reasons", {"period": "luna_trecuta", "showroom": ALL_SHOWROOMS}, data
+    )
+
+    assert not outcome.is_error
+    assert outcome.snapshot_dates == (date(2026, 6, 2),)
+    assert outcome.snapshot_notes == (
+        "Date din snapshotul din 02.06.2026 (nu există snapshot pentru 31.05.2026)",
+    )
+    assert outcome.content["snapshot_date"] == "02.06.2026"
+    assert outcome.content["missing_snapshot_for"] == "31.05.2026"
+
+
+async def test_closed_period_without_its_or_later_snapshot_has_no_data(
+    etalon_config: AppConfig, lead_frame: pd.DataFrame
+) -> None:
+    data = tool_data(etalon_config, lead_frame, (date(2026, 5, 30),))
 
     outcome = await run_tool(
         "loss_reasons", {"period": "luna_trecuta", "showroom": ALL_SHOWROOMS}, data

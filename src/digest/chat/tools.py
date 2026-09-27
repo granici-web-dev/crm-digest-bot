@@ -47,7 +47,8 @@ FrameLoader = Callable[[date], Awaitable[pd.DataFrame]]
 @dataclass(frozen=True)
 class ToolData:
     today: date
-    latest_snapshot_date: date | None
+    # Даты успешных снапшотов по возрастанию.
+    snapshot_dates: tuple[date, ...]
     # Бросает SnapshotMissingError, если за дату нет успешного снапшота.
     load_frame: FrameLoader
     config: AppConfig
@@ -60,8 +61,8 @@ class ToolOutcome:
     # Начало строки подписи: период(ы) или дата снапшота; имя функции дописывает цикл.
     scope: str | None = None
     snapshot_dates: tuple[date, ...] = ()
-    # Снапшот старше конца периода: цифры на эту дату, подпись говорит об этом.
-    data_as_of: date | None = None
+    # Строки подписи о снапшоте, если он не за последний день периода.
+    snapshot_notes: tuple[str, ...] = ()
 
 
 class NoDataError(Exception):
@@ -213,7 +214,20 @@ class PeriodFrame:
     window: Period
     snapshot_date: date
     frame: pd.DataFrame
+    # Снапшот раньше конца периода: цифры частичные, на эту дату.
     data_as_of: date | None
+    # Снапшота за последний день закрытого периода нет, взят более поздний.
+    missing_snapshot_for: date | None
+
+    @property
+    def snapshot_note(self) -> str | None:
+        used = date_label(self.snapshot_date)
+        if self.missing_snapshot_for is not None:
+            missing = date_label(self.missing_snapshot_for)
+            return f"Date din snapshotul din {used} (nu există snapshot pentru {missing})"
+        if self.data_as_of is not None:
+            return f"Date din snapshotul din {used}"
+        return None
 
 
 async def load_snapshot(data: ToolData, snapshot_date: date) -> pd.DataFrame:
@@ -223,16 +237,23 @@ async def load_snapshot(data: ToolData, snapshot_date: date) -> pd.DataFrame:
         raise NoDataError(f"Nu există snapshot pentru {date_label(snapshot_date)}.") from error
 
 
+NO_SNAPSHOT_TEXT = "Nu există încă niciun snapshot."
+
+
 def latest_snapshot_date(data: ToolData) -> date:
-    if data.latest_snapshot_date is None:
-        raise NoDataError("Nu există încă niciun snapshot.")
-    return data.latest_snapshot_date
+    if not data.snapshot_dates:
+        raise NoDataError(NO_SNAPSHOT_TEXT)
+    return max(data.snapshot_dates)
 
 
 async def period_frame(data: ToolData, period: ChatPeriod) -> PeriodFrame:
     first_day, last_day = period_days(period, data.today)
     label = days_label(first_day, last_day)
-    snapshot_date = period_snapshot_date(period, data.today, latest_snapshot_date(data))
+    snapshot_date = period_snapshot_date(period, data.today, data.snapshot_dates)
+    if snapshot_date is None:
+        if not data.snapshot_dates:
+            raise NoDataError(NO_SNAPSHOT_TEXT)
+        raise NoDataError(f"Nu există snapshot pentru {date_label(last_day)}.")
     if snapshot_date < first_day:
         raise NoDataError(
             f"Nu există încă date pentru {label}: ultimul snapshot este din "
@@ -244,7 +265,8 @@ async def period_frame(data: ToolData, period: ChatPeriod) -> PeriodFrame:
         named_period_window(period, data.today, data.config.status_mapping.time),
         snapshot_date,
         await load_snapshot(data, snapshot_date),
-        snapshot_date if snapshot_date < last_day else None,
+        data_as_of=snapshot_date if snapshot_date < last_day else None,
+        missing_snapshot_for=last_day if snapshot_date > last_day else None,
     )
 
 
@@ -255,6 +277,11 @@ def period_header(period_frame: PeriodFrame) -> dict[str, Any]:
         "snapshot_date": date_label(period_frame.snapshot_date),
         "data_as_of": (
             None if period_frame.data_as_of is None else date_label(period_frame.data_as_of)
+        ),
+        "missing_snapshot_for": (
+            None
+            if period_frame.missing_snapshot_for is None
+            else date_label(period_frame.missing_snapshot_for)
         ),
     }
 
@@ -292,14 +319,14 @@ def funnel_counts(
 
 
 def outcome(content: dict[str, Any], *period_frames: PeriodFrame) -> ToolOutcome:
-    as_of_dates = [frame.data_as_of for frame in period_frames if frame.data_as_of is not None]
+    notes = [frame.snapshot_note for frame in period_frames]
     return ToolOutcome(
         content,
         is_error=False,
         scope="Perioada: "
         + " vs ".join(f"{frame.label} ({frame.period})" for frame in period_frames),
         snapshot_dates=tuple(frame.snapshot_date for frame in period_frames),
-        data_as_of=min(as_of_dates, default=None),
+        snapshot_notes=tuple(dict.fromkeys(note for note in notes if note is not None)),
     )
 
 

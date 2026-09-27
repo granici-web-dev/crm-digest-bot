@@ -14,7 +14,6 @@ from digest.chat.tools import (
     ALL_SHOWROOMS,
     ToolData,
     ToolOutcome,
-    date_label,
     run_tool,
     tool_definitions,
 )
@@ -102,13 +101,11 @@ def call_label(call: ExecutedToolCall) -> str:
 
 def signature(calls: list[ExecutedToolCall]) -> str:
     successful = [call for call in calls if not call.outcome.is_error]
-    as_of_dates = [
-        call.outcome.data_as_of for call in successful if call.outcome.data_as_of is not None
-    ]
+    notes = dict.fromkeys(note for call in successful for note in call.outcome.snapshot_notes)
     return render(
         "chat_signature",
         lines=[f"{call.outcome.scope} · {call_label(call)}" for call in successful],
-        data_as_of=date_label(min(as_of_dates)) if as_of_dates else None,
+        notes=list(notes),
     )
 
 
