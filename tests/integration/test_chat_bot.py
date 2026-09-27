@@ -1,9 +1,9 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
 from aiogram.types import Chat, Message, MessageEntity, Update, User
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.bot.chat_handlers import DAILY_LIMIT_TEXT, ChatDeps
@@ -29,6 +29,10 @@ ASKER_ID = 7001
 TODAY = date(2026, 9, 23)
 MENTION = f"@{BOT_USER.username}"
 FUNNEL_TODAY = ("funnel", {"period": "azi", "showroom": "toate"})
+REPORT_MESSAGE_ID = 9_001
+OTHER_USER_ID = 7002
+WEEK_BUCURESTI = ("funnel", {"period": "saptamana_curenta", "showroom": "București"})
+WEEK_CLUJ = ("funnel", {"period": "saptamana_curenta", "showroom": "Cluj"})
 
 
 class ChatHarness:
@@ -67,7 +71,8 @@ class ChatHarness:
         text: str,
         chat_id: int = TEST_CHAT_ID,
         chat_type: str = "supergroup",
-        reply_to_bot: bool = False,
+        reply_to_bot_message: int | None = None,
+        user_id: int = ASKER_ID,
     ) -> int:
         self.update_id += 1
         entities = (
@@ -77,13 +82,13 @@ class ChatHarness:
         )
         replied = (
             Message(
-                message_id=1,
+                message_id=reply_to_bot_message,
                 date=datetime.now(UTC),
                 chat=Chat(id=chat_id, type=chat_type),
                 from_user=BOT_USER,
                 text="Raport zilnic",
             )
-            if reply_to_bot
+            if reply_to_bot_message is not None
             else None
         )
         message_id = 100 + self.update_id
@@ -91,7 +96,7 @@ class ChatHarness:
             message_id=message_id,
             date=datetime.now(UTC),
             chat=Chat(id=chat_id, type=chat_type),
-            from_user=User(id=ASKER_ID, is_bot=False, first_name="Director"),
+            from_user=User(id=user_id, is_bot=False, first_name="Director"),
             text=text,
             entities=entities,
             reply_to_message=replied,
@@ -180,7 +185,7 @@ async def test_reply_to_bot_message_triggers(
     api = scripted_anthropic(text_message("Pot răspunde doar despre date."))
     harness = ChatHarness(enabled_chat, app_config, api)
 
-    await harness.send("și ieri?", reply_to_bot=True)
+    await harness.send("și ieri?", reply_to_bot_message=REPORT_MESSAGE_ID)
 
     assert harness.replies == ["Pot răspunde doar despre date."]
 
@@ -328,3 +333,115 @@ async def test_numbers_without_tool_are_not_sent_to_group(
     assert "40" not in reply
     [row] = await logged_questions(enabled_chat)
     assert row["status"] == "blocked_numbers"
+
+
+async def age_questions(engine: AsyncEngine, minutes: int) -> None:
+    async with engine.begin() as connection:
+        await connection.execute(
+            update(chat_questions).values(
+                created_at=chat_questions.c.created_at - timedelta(minutes=minutes)
+            )
+        )
+
+
+async def ask_about_bucuresti(harness: ChatHarness) -> None:
+    await harness.send(f"{MENTION} câte lead-uri am avut săptămâna aceasta în București?")
+
+
+def bucuresti_script(*follow_up: dict[str, Any]) -> ScriptedAnthropic:
+    return scripted_anthropic(
+        tool_use(WEEK_BUCURESTI), text_message("În București: 3 lead-uri."), *follow_up
+    )
+
+
+def first_user_turn(api: ScriptedAnthropic, request_index: int) -> Any:
+    return api.requests[request_index]["messages"][0]["content"]
+
+
+async def test_follow_up_within_ten_minutes_reuses_period_and_changes_showroom(
+    enabled_chat: AsyncEngine, app_config: AppConfig
+) -> None:
+    api = bucuresti_script(tool_use(WEEK_CLUJ), text_message("În Cluj: 0 lead-uri."))
+    harness = ChatHarness(enabled_chat, app_config, api)
+    await ask_about_bucuresti(harness)
+    await age_questions(enabled_chat, 2)
+
+    await harness.send(f"{MENTION} Dar Cluj?")
+
+    context, question = first_user_turn(api, 2)
+    assert question == {"type": "text", "text": "Dar Cluj?"}
+    assert "săptămâna aceasta în București" in context["text"]
+    assert 'funnel {"period": "saptamana_curenta", "showroom": "București"}' in context["text"]
+    assert "3 lead-uri" not in context["text"]
+    first, follow_up = await logged_questions(enabled_chat)
+    assert follow_up["tool_calls"] == [{"name": "funnel", "input": WEEK_CLUJ[1], "ok": True}]
+    assert follow_up["status"] == "answered"
+    assert follow_up["context_question_id"] == first["id"]
+    assert first["context_question_id"] is None
+
+
+async def test_follow_up_after_eleven_minutes_has_no_context(
+    enabled_chat: AsyncEngine, app_config: AppConfig
+) -> None:
+    api = bucuresti_script(text_message("Despre ce perioadă și ce întrebare?"))
+    harness = ChatHarness(enabled_chat, app_config, api)
+    await ask_about_bucuresti(harness)
+    await age_questions(enabled_chat, 11)
+
+    await harness.send(f"{MENTION} Dar Cluj?")
+
+    assert first_user_turn(api, 2) == "Dar Cluj?"
+    assert (await logged_questions(enabled_chat))[1]["context_question_id"] is None
+
+
+async def test_question_of_another_user_is_not_context(
+    enabled_chat: AsyncEngine, app_config: AppConfig
+) -> None:
+    api = bucuresti_script(text_message("Despre ce perioadă?"))
+    harness = ChatHarness(enabled_chat, app_config, api)
+    await ask_about_bucuresti(harness)
+
+    await harness.send(f"{MENTION} Dar Cluj?", user_id=OTHER_USER_ID)
+
+    assert first_user_turn(api, 2) == "Dar Cluj?"
+
+
+async def test_reply_to_bot_answer_uses_that_question_regardless_of_age(
+    enabled_chat: AsyncEngine, app_config: AppConfig
+) -> None:
+    api = bucuresti_script(tool_use(WEEK_CLUJ), text_message("În Cluj: 0 lead-uri."))
+    harness = ChatHarness(enabled_chat, app_config, api)
+    await ask_about_bucuresti(harness)
+    await age_questions(enabled_chat, 180)
+    [first] = await logged_questions(enabled_chat)
+
+    await harness.send(
+        "Dar Cluj?", reply_to_bot_message=first["reply_message_id"], user_id=OTHER_USER_ID
+    )
+
+    context, _ = first_user_turn(api, 2)
+    assert "București" in context["text"]
+    assert (await logged_questions(enabled_chat))[1]["context_question_id"] == first["id"]
+
+
+async def test_reply_to_bot_report_falls_back_to_recent_question(
+    enabled_chat: AsyncEngine, app_config: AppConfig
+) -> None:
+    api = bucuresti_script(tool_use(WEEK_CLUJ), text_message("În Cluj: 0 lead-uri."))
+    harness = ChatHarness(enabled_chat, app_config, api)
+    await ask_about_bucuresti(harness)
+
+    await harness.send("Dar Cluj?", reply_to_bot_message=REPORT_MESSAGE_ID)
+
+    context, _ = first_user_turn(api, 2)
+    assert "București" in context["text"]
+
+
+async def test_reply_message_id_is_logged(enabled_chat: AsyncEngine, app_config: AppConfig) -> None:
+    harness = ChatHarness(enabled_chat, app_config, bucuresti_script())
+
+    await ask_about_bucuresti(harness)
+
+    [reply] = harness.telegram.sent
+    [row] = await logged_questions(enabled_chat)
+    assert row["reply_message_id"] == reply.message_id

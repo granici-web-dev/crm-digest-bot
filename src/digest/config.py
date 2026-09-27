@@ -280,6 +280,7 @@ class ChatSettings(StrictConfigModel):
     tools: Annotated[dict[ChatToolName, str], Field(min_length=1)]
     trigger: Annotated[list[Literal["mention", "reply"]], Field(min_length=1)]
     daily_question_limit: PositiveInt
+    context_minutes: PositiveInt
 
 
 class ModuleRegistry(StrictConfigModel):

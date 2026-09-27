@@ -44,6 +44,26 @@ class ExecutedToolCall:
 
 
 @dataclass(frozen=True)
+class PreviousExchange:
+    question_id: int
+    question: str
+    # Успешные вызовы (имя, аргументы). Ни текста ответа, ни результатов: модель вызывает
+    # инструмент заново, страж сверяет только с текущими результатами.
+    tool_calls: tuple[tuple[str, dict[str, Any]], ...]
+
+
+def previous_exchange_text(previous: PreviousExchange) -> str:
+    return render(
+        "chat_context",
+        question=previous.question,
+        calls=[
+            f"{name} {json.dumps(arguments, ensure_ascii=False)}"
+            for name, arguments in previous.tool_calls
+        ],
+    )
+
+
+@dataclass(frozen=True)
 class ChatAnswer:
     # HTML для reply: текст модели экранирован, подпись курсивом.
     text: str
@@ -120,9 +140,23 @@ def outcome_text(outcome: ToolOutcome) -> str:
 
 
 async def answer_question(
-    question: str, client: AsyncAnthropic, model: str, data: ToolData
+    question: str,
+    client: AsyncAnthropic,
+    model: str,
+    data: ToolData,
+    previous: PreviousExchange | None = None,
 ) -> ChatAnswer:
-    messages: list[MessageParam] = [{"role": "user", "content": question}]
+    messages: list[MessageParam] = [
+        {
+            "role": "user",
+            "content": question
+            if previous is None
+            else [
+                {"type": "text", "text": previous_exchange_text(previous)},
+                {"type": "text", "text": question},
+            ],
+        }
+    ]
     calls: list[ExecutedToolCall] = []
     input_tokens = output_tokens = 0
     tools = tool_definitions(data.config)

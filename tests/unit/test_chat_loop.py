@@ -9,6 +9,7 @@ from digest.chat.loop import (
     CANNOT_ANSWER_NOW_TEXT,
     MAX_ANSWER_TOKENS,
     UNVERIFIED_NUMBERS_TEXT,
+    PreviousExchange,
     answer_question,
 )
 from digest.chat.tools import ToolData
@@ -326,3 +327,43 @@ async def test_month_without_year_resolves_to_last_august(app_config: AppConfig)
     assert (tool_result["period"], tool_result["days"]) == ("august 2026", "01.08–31.08.2026")
     assert tool_result["snapshot_date"] == "31.08.2026"
     assert answer.text.endswith("<i>Perioada: august 2026 · funnel()</i>")
+
+
+BUCURESTI_EARLIER = PreviousExchange(
+    41,
+    "câte lead-uri am avut săptămâna aceasta în București?",
+    (FUNNEL_THIS_WEEK,),
+)
+FUNNEL_CLUJ = ("funnel", {"period": "saptamana_curenta", "showroom": "Cluj"})
+
+
+async def test_previous_exchange_precedes_question_in_one_user_turn(app_config: AppConfig) -> None:
+    api = scripted_anthropic(tool_use_message(FUNNEL_CLUJ), text_message("În Cluj: 0 lead-uri."))
+
+    answer = await answer_question(
+        "Dar Cluj?", api.client, MODEL, tool_data(app_config), BUCURESTI_EARLIER
+    )
+
+    [first_turn] = api.requests[0]["messages"]
+    context, question = first_turn["content"]
+    assert first_turn["role"] == "user"
+    assert question == {"type": "text", "text": "Dar Cluj?"}
+    assert "«câte lead-uri am avut săptămâna aceasta în București?»" in context["text"]
+    assert 'funnel {"period": "saptamana_curenta", "showroom": "București"}' in context["text"]
+    assert answer.status == "answered"
+    assert [(call.name, call.arguments) for call in answer.tool_calls] == [FUNNEL_CLUJ]
+
+
+async def test_number_from_previous_answer_is_blocked(app_config: AppConfig) -> None:
+    # Прошлый ответ был «7 lead-uri»; текущий вызов по Cluj семёрку не содержит.
+    api = scripted_anthropic(
+        tool_use_message(FUNNEL_CLUJ), text_message("În Cluj 0 lead-uri, în București 7.")
+    )
+
+    answer = await answer_question(
+        "Dar Cluj?", api.client, MODEL, tool_data(app_config), BUCURESTI_EARLIER
+    )
+
+    assert answer.status == "unverified_numbers"
+    assert answer.unverified_number == "7"
+    assert answer.text == UNVERIFIED_NUMBERS_TEXT

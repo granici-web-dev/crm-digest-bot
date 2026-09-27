@@ -1,0 +1,9 @@
+{# Контекст уточняющего вопроса для модели, не HTML: без экранирования. Ни ответа, ни результатов. #}
+{% autoescape false %}
+Întrebarea anterioară din acest grup: «{{ question }}».
+Pentru ea s-au apelat:
+{% for call in calls %}
+- {{ call }}
+{% endfor %}
+Dacă întrebarea de mai jos o continuă (de exemplu „Dar Cluj?”), apelezi din nou instrumentul și schimbi doar ce cere întrebarea nouă. Numerele le iei numai din rezultatele noilor apeluri.
+{% endautoescape %}

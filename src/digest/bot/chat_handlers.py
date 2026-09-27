@@ -12,7 +12,7 @@ from aiogram import Bot, F, Router
 from aiogram.types import Message, User
 from anthropic import AsyncAnthropic
 
-from digest.chat.log import AskedQuestion, questions_since, record_question
+from digest.chat.log import AskedQuestion, previous_exchange, questions_since, record_question
 from digest.chat.loop import CANNOT_ANSWER_NOW_TEXT, ChatAnswer, answer_question, call_label
 from digest.chat.state import chat_enabled
 from digest.chat.tools import ToolData
@@ -64,6 +64,13 @@ def question_without_mention(text: str, me: User) -> str:
     return re.sub(rf"@{re.escape(me.username)}\b", "", text, flags=re.IGNORECASE).strip()
 
 
+def replied_bot_message_id(message: Message, me: User) -> int | None:
+    replied = message.reply_to_message
+    if replied is None or replied.from_user is None or replied.from_user.id != me.id:
+        return None
+    return replied.message_id
+
+
 def answer_alert(question: AskedQuestion, answer: ChatAnswer) -> str | None:
     calls = ", ".join(call_label(call) for call in answer.tool_calls) or "без инструментов"
     if answer.status == "unverified_numbers":
@@ -108,7 +115,7 @@ async def answer_in_group(
     midnight = datetime.combine(today, clock_time(), tzinfo=now.tzinfo)
     asked_today = await questions_since(deps.engine, deps.tenant_id, question.chat_id, midnight)
     if asked_today >= deps.config.modules.chat.daily_question_limit:
-        await message.reply(DAILY_LIMIT_TEXT)
+        sent = await message.reply(DAILY_LIMIT_TEXT)
         await record_question(
             deps.engine,
             deps.tenant_id,
@@ -116,8 +123,17 @@ async def answer_in_group(
             "rate_limited",
             DAILY_LIMIT_TEXT,
             elapsed_ms(started),
+            reply_message_id=sent.message_id,
         )
         return
+    previous = await previous_exchange(
+        deps.engine,
+        deps.tenant_id,
+        question,
+        replied_bot_message_id(message, me),
+        deps.config.modules.chat.context_minutes,
+    )
+    context_question_id = None if previous is None else previous.question_id
 
     async def load_frame(snapshot_date: date) -> pd.DataFrame:
         return await load_lead_frame(deps.engine, deps.tenant_id, snapshot_date, deps.config)
@@ -130,14 +146,16 @@ async def answer_in_group(
         deps.lead_links,
     )
     try:
-        answer = await answer_question(question.text, chat.anthropic_client, chat.model, data)
+        answer = await answer_question(
+            question.text, chat.anthropic_client, chat.model, data, previous
+        )
     except anthropic.APIError as error:
         logger.error("chat question failed", extra={"error": describe_error(error)})
         await notify_ops(
             deps.ops,
             f"Chat: API Anthropic недоступен: {describe_error(error)}. Вопрос: {question.text}.",
         )
-        await message.reply(CANNOT_ANSWER_NOW_TEXT)
+        sent = await message.reply(CANNOT_ANSWER_NOW_TEXT)
         await record_question(
             deps.engine,
             deps.tenant_id,
@@ -145,9 +163,11 @@ async def answer_in_group(
             "api_error",
             CANNOT_ANSWER_NOW_TEXT,
             elapsed_ms(started),
+            reply_message_id=sent.message_id,
+            context_question_id=context_question_id,
         )
         return
-    await message.reply(answer.text)
+    sent = await message.reply(answer.text)
     await record_question(
         deps.engine,
         deps.tenant_id,
@@ -156,11 +176,14 @@ async def answer_in_group(
         answer.text,
         elapsed_ms(started),
         answer,
+        reply_message_id=sent.message_id,
+        context_question_id=context_question_id,
     )
     logger.info(
         "chat question answered",
         extra={
             "question": question.text,
+            "context_question_id": context_question_id,
             "status": answer.status,
             "tools": [call_label(call) for call in answer.tool_calls],
             "snapshot_dates": [str(day) for day in answer.snapshot_dates],

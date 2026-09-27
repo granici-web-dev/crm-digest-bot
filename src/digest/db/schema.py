@@ -196,6 +196,9 @@ chat_questions = Table(
     Column("duration_ms", Integer, nullable=False),
     Column("status", Text, nullable=False),
     Column("created_at", TIMESTAMP(timezone=True), nullable=False, server_default=func.now()),
+    # Сообщение бота с ответом: reply на него берёт этот вопрос контекстом.
+    Column("reply_message_id", BigInteger),
+    Column("context_question_id", BigInteger, ForeignKey("chat_questions.id")),
     CheckConstraint(f"status IN ({_sql_in_list(CHAT_QUESTION_STATUSES)})", name="status"),
     Index(None, "tenant_id", "chat_id", "created_at"),
 )
