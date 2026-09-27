@@ -273,6 +273,16 @@ def converted_count(lead_frame: pd.DataFrame, window: Period) -> int:
     return int((converted_at.ge(window.start) & converted_at.lt(window.end)).sum())
 
 
+def converted_count_by_showroom(
+    lead_frame: pd.DataFrame, window: Period, config: AppConfig
+) -> dict[str | None, int]:
+    # docs/kpi-definitions.md, «Режим вопросов», контракты по шоуруму.
+    converted_at = lead_frame["converted_at"]
+    converted = lead_frame[converted_at.ge(window.start) & converted_at.lt(window.end)]
+    totals = Counter(map(key_or_none, converted["showroom"]))
+    return {showroom: totals[showroom] for showroom in showroom_keys(converted["showroom"], config)}
+
+
 def week_over_week(
     lead_frame: pd.DataFrame,
     week_ago: PreviousSnapshot | None,

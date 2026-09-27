@@ -10,6 +10,8 @@ from digest.metrics.daily import PreviousSnapshot, daily_window
 from digest.metrics.frame import prepare_lead_frame
 from digest.metrics.weekly import (
     LEAD_ROW_COLUMNS,
+    converted_count,
+    converted_count_by_showroom,
     daily_window_days,
     relative_change,
     week_over_week,
@@ -19,6 +21,7 @@ from digest.metrics.weekly import (
     weekly_loss_reasons,
     weekly_showroom_visit_rows,
     weekly_showroom_visits,
+    weekly_window,
     working_days,
 )
 from factories import BUCHAREST, make_snapshot_row
@@ -401,3 +404,27 @@ def test_totals_by_showroom_day_and_reason_come_from_metrics(app_config: AppConf
     assert losses.showroom_total("Cluj") == 3
     assert losses.reasons_by_count[0] == "BUGET"
     assert set(losses.reasons_by_count) == {"BUGET", "TIMP", "NU_RASPUNS"}
+
+
+def test_converted_count_by_showroom_sums_to_converted_count(app_config: AppConfig) -> None:
+    lead_frame = frame(
+        app_config,
+        lead(1, at(date(2026, 8, 1), 11), converted_at=at(SUNDAY, 17)),
+        lead(2, at(date(2026, 8, 1), 11), converted_at=at(MONDAY, 9), showroom="Cluj"),
+        lead(3, at(date(2026, 8, 1), 11), converted_at=at(SUNDAY, 18), showroom=None),
+        lead(4, at(date(2026, 8, 1), 11), converted_at=at(SUNDAY, 18), showroom="Iași"),
+        lead(5, at(date(2026, 8, 1), 11), converted_at=at(SUNDAY, 19)),
+    )
+    window = weekly_window(SUNDAY, app_config.status_mapping.time)
+
+    by_showroom = converted_count_by_showroom(lead_frame, window, app_config)
+
+    expected: dict[str | None, int] = {
+        **dict.fromkeys(app_config.status_mapping.showrooms, 0),
+        "București": 1,
+        "Cluj": 1,
+        "Iași": 1,
+        None: 1,
+    }
+    assert by_showroom == expected
+    assert sum(by_showroom.values()) == converted_count(lead_frame, window) == 4
