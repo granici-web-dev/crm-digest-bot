@@ -278,6 +278,8 @@ class ChatSettings(StrictConfigModel):
     enabled: bool
     # Описание инструмента для модели (RO): продуктовый текст, живёт в конфиге, не в коде.
     tools: Annotated[dict[ChatToolName, str], Field(min_length=1)]
+    # Описание параметра по имени, для всех инструментов с этим параметром.
+    parameters: dict[str, str]
     trigger: Annotated[list[Literal["mention", "reply"]], Field(min_length=1)]
     daily_question_limit: PositiveInt
     context_minutes: PositiveInt

@@ -19,7 +19,7 @@ from digest.reports.modules.weekly import (
     showroom_source_table,
     week_range_label,
 )
-from digest.reports.render import change_label, percent
+from digest.reports.render import change_label, percent, signed_percent_one_decimal
 from factories import BUCHAREST, make_lead_links, make_snapshot_row, raw_repository_config
 
 SUNDAY = date(2026, 9, 27)
@@ -185,3 +185,10 @@ def test_funnel_and_week_over_week_numbers_on_render_path(app_config: AppConfig)
     assert "Vizite 1 (—)" in change_text
     assert "Oferte 1" in change_text
     assert "Contracte 1 (—)" in change_text
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"), [(0.174, "+17,4%"), (-0.15, "−15,0%"), (0.0, "0,0%")]
+)
+def test_signed_percent_one_decimal(value: float, expected: str) -> None:
+    assert signed_percent_one_decimal(value) == expected

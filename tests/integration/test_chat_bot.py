@@ -6,9 +6,10 @@ from aiogram.types import Chat, Message, MessageEntity, Update, User
 from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from digest.bot import chat_handlers
 from digest.bot.chat_handlers import DAILY_LIMIT_TEXT, ChatDeps
 from digest.bot.dispatcher import bot_dispatcher
-from digest.chat.log import AskedQuestion, record_question
+from digest.chat.log import AskedQuestion, questions_since, record_question
 from digest.chat.loop import CANNOT_ANSWER_NOW_TEXT, UNVERIFIED_NUMBERS_TEXT
 from digest.chat.state import store_chat_enabled
 from digest.config import AppConfig
@@ -300,6 +301,24 @@ async def test_api_failure_answers_cannot_answer_now_and_alerts_ops(
     assert "câte lead-uri?" in alert
     [row] = await logged_questions(enabled_chat)
     assert row["status"] == "api_error"
+
+
+async def test_question_over_deadline_answers_cannot_answer_now_and_counts(
+    enabled_chat: AsyncEngine, app_config: AppConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(chat_handlers, "QUESTION_DEADLINE_SECONDS", 0)
+    api = scripted_anthropic(tool_use(FUNNEL_TODAY), text_message("Azi au fost 3 lead-uri."))
+    harness = ChatHarness(enabled_chat, app_config, api)
+
+    await harness.send(f"{MENTION} câte lead-uri azi?")
+
+    assert harness.replies == [CANNOT_ANSWER_NOW_TEXT]
+    [alert] = harness.ops_texts
+    assert alert == "Chat: ответ не уложился в 0 с. Вопрос: câte lead-uri azi?."
+    [row] = await logged_questions(enabled_chat)
+    assert row["status"] == "api_error"
+    epoch = datetime(1970, 1, 1, tzinfo=UTC)
+    assert await questions_since(enabled_chat, TENANT_ID, row["chat_id"], epoch) == 1
 
 
 async def test_unverified_number_is_blocked_and_alert_names_it(

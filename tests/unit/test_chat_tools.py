@@ -1,7 +1,7 @@
 import json
 from datetime import date, timedelta
 from itertools import product
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 import pytest
@@ -178,7 +178,9 @@ async def test_compare_periods_matches_lead_counts_of_both_windows(
         week_leads,
         month_leads,
     )
-    assert content["change_a_vs_b"].startswith("(−")
+    # 93 lead-uri în ultima săptămână din mai față de 300 în mai: 93 / 300 − 1 = −69,0%.
+    assert (week_leads, month_leads) == (93, 300)
+    assert content["change"] == "25.05–31.05.2026 față de 01.05–31.05.2026: −69,0%"
 
 
 async def test_compare_periods_of_kpi_gives_no_relative_change(
@@ -198,7 +200,7 @@ async def test_compare_periods_of_kpi_gives_no_relative_change(
 
     month_counts = lead_counts(lead_frame, may(etalon_config), END_OF_MAY, etalon_config)
     assert content["period_b"]["value"] == percent_one_decimal(kpis_from(month_counts).scr)
-    assert content["change_a_vs_b"] is None
+    assert content["change"] is None
 
 
 async def test_loss_reasons_match_metrics(
@@ -572,3 +574,14 @@ def test_period_schema_is_anyof_of_enum_day_and_month(app_config: AppConfig) -> 
         for variant in (day, month):
             assert variant["required"] == list(variant["properties"])
             assert variant["additionalProperties"] is False
+
+
+def test_compared_periods_are_described_as_evaluated_and_base(etalon_config: AppConfig) -> None:
+    [compare] = [
+        tool for tool in tool_definitions(etalon_config) if tool["name"] == "compare_periods"
+    ]
+    properties = cast(dict[str, dict[str, str]], dict(compare["input_schema"])["properties"])
+
+    assert properties["period_a"]["description"].startswith("Perioada evaluată")
+    assert properties["period_b"]["description"].startswith("Baza comparației")
+    assert "period_a este perioada evaluată" in compare["description"]

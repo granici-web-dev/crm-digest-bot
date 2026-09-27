@@ -109,7 +109,9 @@ chat:             # режим вопросов; включается целик
       fiecărui KPI este atinsă.
     compare_periods: >-
       Compară o singură metrică între două perioade (de ex. lead-uri săptămâna aceasta față de
-      săptămâna trecută) și dă schimbarea relativă. Opțional pentru un singur showroom.
+      săptămâna trecută). period_a este perioada evaluată (de obicei cea mai recentă), period_b
+      este baza comparației. Câmpul change dă direcția gata formulată („august 2026 față de iulie
+      2026: +17,4%”); o citezi exact. Opțional pentru un singur showroom.
     loss_reasons: >-
       Lead-uri pierdute într-o perioadă, pe motive (Nu a răspuns, Buget, Produs nepotrivit etc.)
       și pe showroom. Opțional pentru un singur showroom.
@@ -119,3 +121,7 @@ chat:             # режим вопросов; включается целик
     untouched_leads: >-
       Lead-uri noi neatinse de consultant (fără schimbare de status, contact sau ofertă) după
       pragul de ore, pe consultant, din ultimele zile.
+  # Описания параметров по имени, для каждого инструмента с таким параметром.
+  parameters:
+    period_a: Perioada evaluată, de obicei cea mai recentă (de ex. august în „august față de iulie”).
+    period_b: Baza comparației, de obicei perioada mai veche (de ex. iulie în „august față de iulie”).

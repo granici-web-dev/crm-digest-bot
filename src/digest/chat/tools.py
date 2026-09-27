@@ -47,7 +47,12 @@ from digest.metrics.weekly import (
     loss_reasons_in_window,
 )
 from digest.reports.lead_links import LeadLinks
-from digest.reports.render import RO_MONTHS, change_label, percent_one_decimal, target_label
+from digest.reports.render import (
+    RO_MONTHS,
+    percent_one_decimal,
+    signed_percent_one_decimal,
+    target_label,
+)
 
 ALL_SHOWROOMS = "toate"
 ALL_MANAGERS = "toti"
@@ -307,12 +312,22 @@ def tool_definitions(config: AppConfig) -> list[ToolParam]:
         "overdue_followups": {"manager": enum_property((ALL_MANAGERS, *consultants))},
         "untouched_leads": {},
     }
+    parameter_descriptions = config.modules.chat.parameters
     return [
         {
             "name": name,
             "description": description,
             "strict": True,
-            "input_schema": strict_object(properties[name]),
+            "input_schema": strict_object(
+                {
+                    parameter: (
+                        {**schema, "description": parameter_descriptions[parameter]}
+                        if parameter in parameter_descriptions
+                        else schema
+                    )
+                    for parameter, schema in properties[name].items()
+                }
+            ),
         }
         for name, description in config.modules.chat.tools.items()
     ]
@@ -521,6 +536,20 @@ def kpi_value(
     return value
 
 
+def compared_period_title(period_frame: PeriodFrame) -> str:
+    if isinstance(period_frame.period, ChatMonth):
+        return period_title(period_frame.period, period_frame.label)
+    return period_frame.label
+
+
+def change_text(frame_a: PeriodFrame, frame_b: PeriodFrame, delta: float | None) -> str:
+    # Направление формулирует код, модель цитирует: иначе она путает, что с чем сравнивается.
+    titles = f"{compared_period_title(frame_a)} față de {compared_period_title(frame_b)}"
+    if delta is None:
+        return f"{titles}: nu se calculează, baza este 0"
+    return f"{titles}: {signed_percent_one_decimal(delta)}"
+
+
 async def compare_periods(data: ToolData, arguments: ComparePeriodsArguments) -> ToolOutcome:
     frame_a = await period_frame(data, arguments.period_a)
     frame_b = await period_frame(data, arguments.period_b)
@@ -538,14 +567,14 @@ async def compare_periods(data: ToolData, arguments: ComparePeriodsArguments) ->
         count_a = count_value(frame_a, metric, showroom, data.config)
         count_b = count_value(frame_b, metric, showroom, data.config)
         values = (count_a, count_b)
-        change = change_label(period_delta(count_a, count_b))
+        change = change_text(frame_a, frame_b, period_delta(count_a, count_b))
     return outcome(
         {
             "metric": metric,
             "showroom": showroom,
             "period_a": {**period_header(frame_a), "value": values[0]},
             "period_b": {**period_header(frame_b), "value": values[1]},
-            "change_a_vs_b": change,
+            "change": change,
         },
         frame_a,
         frame_b,

@@ -38,6 +38,12 @@ def percent_one_decimal(value: float | None) -> str:
     return "—" if value is None else f"{value * 100:.1f}%".replace(".", ",")
 
 
+def signed_percent_one_decimal(value: float) -> str:
+    if value == 0:
+        return percent_one_decimal(value)
+    return ("+" if value > 0 else "−") + percent_one_decimal(abs(value))
+
+
 TARGET_DIRECTION_SIGNS = {"higher": "≥", "lower": "≤"}
 
 

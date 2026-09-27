@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 import time
@@ -25,6 +26,9 @@ from digest.snapshot import describe_error
 logger = logging.getLogger(__name__)
 
 DAILY_LIMIT_TEXT = "Am atins limita de întrebări pentru azi în acest grup. Revin mâine cu plăcere."
+# Таймаут клиента на каждый запрос, а вопрос это до четырёх запросов с повторами и снапшоты:
+# без общего дедлайна группа ждала бы ответа минутами.
+QUESTION_DEADLINE_SECONDS = 60
 
 
 @dataclass(frozen=True)
@@ -83,6 +87,16 @@ def answer_alert(question: AskedQuestion, answer: ChatAnswer) -> str | None:
     return None
 
 
+def failure_alert(question: AskedQuestion, error: Exception) -> str:
+    if isinstance(error, anthropic.APIError):
+        reason = f"API Anthropic недоступен: {describe_error(error)}"
+    elif isinstance(error, TimeoutError):
+        reason = f"ответ не уложился в {QUESTION_DEADLINE_SECONDS} с"
+    else:
+        reason = f"сбой при ответе: {describe_error(error)}"
+    return f"Chat: {reason}. Вопрос: {question.text}."
+
+
 def elapsed_ms(started: float) -> int:
     return round((time.monotonic() - started) * 1000)
 
@@ -126,35 +140,37 @@ async def answer_in_group(
             reply_message_id=sent.message_id,
         )
         return
-    previous = await previous_exchange(
-        deps.engine,
-        deps.tenant_id,
-        question,
-        replied_bot_message_id(message, me),
-        deps.config.modules.chat.context_minutes,
-    )
-    context_question_id = None if previous is None else previous.question_id
 
     async def load_frame(snapshot_date: date) -> pd.DataFrame:
         return await load_lead_frame(deps.engine, deps.tenant_id, snapshot_date, deps.config)
 
-    data = ToolData(
-        today,
-        await success_snapshot_dates(deps.engine, deps.tenant_id),
-        load_frame,
-        deps.config,
-        deps.lead_links,
-    )
+    context_question_id: int | None = None
+    # Единственное место, где ловится сбой вопроса: группа получает отказ без цифр, вопрос
+    # пишется в журнал и входит в дневной лимит (токены уже потрачены), ops получает алерт.
     try:
-        answer = await answer_question(
-            question.text, chat.anthropic_client, chat.model, data, previous
-        )
-    except anthropic.APIError as error:
+        async with asyncio.timeout(QUESTION_DEADLINE_SECONDS):
+            previous = await previous_exchange(
+                deps.engine,
+                deps.tenant_id,
+                question,
+                replied_bot_message_id(message, me),
+                deps.config.modules.chat.context_minutes,
+            )
+            context_question_id = None if previous is None else previous.question_id
+            data = ToolData(
+                today,
+                await success_snapshot_dates(deps.engine, deps.tenant_id),
+                load_frame,
+                deps.config,
+                deps.lead_links,
+            )
+            answer = await answer_question(
+                question.text, chat.anthropic_client, chat.model, data, previous
+            )
+        sent = await message.reply(answer.text)
+    except Exception as error:
         logger.error("chat question failed", extra={"error": describe_error(error)})
-        await notify_ops(
-            deps.ops,
-            f"Chat: API Anthropic недоступен: {describe_error(error)}. Вопрос: {question.text}.",
-        )
+        await notify_ops(deps.ops, failure_alert(question, error))
         sent = await message.reply(CANNOT_ANSWER_NOW_TEXT)
         await record_question(
             deps.engine,
@@ -167,7 +183,6 @@ async def answer_in_group(
             context_question_id=context_question_id,
         )
         return
-    sent = await message.reply(answer.text)
     await record_question(
         deps.engine,
         deps.tenant_id,
