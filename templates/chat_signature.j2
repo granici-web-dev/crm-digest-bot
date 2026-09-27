@@ -1,0 +1,7 @@
+{# Подпись строит код, не модель: период и вызванная функция под каждым ответом (инвариант 2). #}
+{% for line in lines %}
+<i>{{ line }}</i>
+{% endfor %}
+{% if data_as_of %}
+<i>Date din snapshotul din {{ data_as_of }}</i>
+{% endif %}

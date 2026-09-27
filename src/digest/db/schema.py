@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal, get_args
 
 from sqlalchemy import (
     BigInteger,
@@ -33,6 +34,17 @@ metadata = MetaData(
 
 LEAD_CATEGORIES = ("WON", "ACTIVE", "ACTIVE_FOLLOWUP", "LOST", "PARTNERSHIP", "UNMAPPED")
 SNAPSHOT_RUN_STATUSES = ("running", "success", "failed")
+ChatQuestionStatus = Literal[
+    "answered",
+    "no_tool",
+    "blocked_numbers",
+    "unverified_numbers",
+    "rate_limited",
+    "api_error",
+    "max_tokens",
+    "refusal",
+]
+CHAT_QUESTION_STATUSES: tuple[ChatQuestionStatus, ...] = get_args(ChatQuestionStatus)
 
 
 def _tenant_id_column() -> Column[str]:
@@ -165,4 +177,25 @@ report_runs = Table(
     Column("error", Text),
     Column("message_ids", JSONB),
     UniqueConstraint("tenant_id", "report_level", "period_start", "chat_id"),
+)
+
+chat_questions = Table(
+    "chat_questions",
+    metadata,
+    Column("id", BigInteger, Identity(), primary_key=True),
+    _tenant_id_column(),
+    Column("chat_id", BigInteger, nullable=False),
+    Column("user_id", BigInteger, nullable=False),
+    Column("message_id", BigInteger, nullable=False),
+    Column("question", Text, nullable=False),
+    Column("answer", Text),
+    Column("tool_calls", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    Column("snapshot_dates", ARRAY(Date)),
+    Column("input_tokens", Integer),
+    Column("output_tokens", Integer),
+    Column("duration_ms", Integer, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("created_at", TIMESTAMP(timezone=True), nullable=False, server_default=func.now()),
+    CheckConstraint(f"status IN ({_sql_in_list(CHAT_QUESTION_STATUSES)})", name="status"),
+    Index(None, "tenant_id", "chat_id", "created_at"),
 )

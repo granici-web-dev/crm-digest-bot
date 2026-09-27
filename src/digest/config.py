@@ -247,10 +247,23 @@ class ScrLevelsParams(StrictConfigModel):
     below_label: str
 
 
+ChatToolName = Literal[
+    "funnel",
+    "manager_kpi",
+    "compare_periods",
+    "loss_reasons",
+    "overdue_followups",
+    "untouched_leads",
+]
+CHAT_TOOL_NAMES: tuple[ChatToolName, ...] = get_args(ChatToolName)
+
+
 class ChatSettings(StrictConfigModel):
     enabled: bool
-    tools: list[str]
-    trigger: list[Literal["mention", "reply"]]
+    # Описание инструмента для модели (RO): продуктовый текст, живёт в конфиге, не в коде.
+    tools: Annotated[dict[ChatToolName, str], Field(min_length=1)]
+    trigger: Annotated[list[Literal["mention", "reply"]], Field(min_length=1)]
+    daily_question_limit: PositiveInt
 
 
 class ModuleRegistry(StrictConfigModel):

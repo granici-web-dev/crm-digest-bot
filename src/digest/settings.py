@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     telegram_ops_chat_id: int
     telegram_admin_ids: Annotated[list[int], NoDecode, Field(min_length=1)]
     dry_run: bool = False
+    # Без ключа режим вопросов не включается (переключатель в /settings серый).
+    anthropic_api_key: SecretStr | None = None
+    anthropic_model: str = "claude-sonnet-5"
     log_level: str = "INFO"
     # APP_VERSION задаёт образ (git sha из build-аргумента), вне образа версия "dev".
     app_version: str = "dev"

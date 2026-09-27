@@ -91,7 +91,30 @@ send_times:
   weekly:  ["08:00", "09:00", "10:00"]
   monthly: ["08:00", "09:00", "10:00"]
 
-chat:             # режим вопросов; включается целиком
+chat:             # режим вопросов; включается целиком, переключатель в /settings
   enabled: false
-  tools: [get_metric, get_funnel, compare_periods, get_loss_reasons, list_overdue_followups, get_cohort, manager_kpi, untouched_leads]
   trigger: [mention, reply]
+  daily_question_limit: 30   # на чат за календарный день по Бухаресту
+  # Реестр инструментов: ключ — имя инструмента в коде (digest/chat/tools.py), значение —
+  # описание для модели на румынском. Убрать ключ = выключить инструмент.
+  tools:
+    funnel: >-
+      Pâlnia de vânzări pentru o perioadă: lead-uri, lead-uri utile, irelevante, vizite în showroom,
+      oferte, clienți, nu a răspuns, buget, produs nepotrivit, contracte semnate și KPI (SCR, L2O,
+      O2C, CDR, PLR, SC, PFR, ACR, IRR). Lead-urile sunt cele create în perioadă, cu statusul din
+      snapshot. Opțional pentru un singur showroom.
+    manager_kpi: >-
+      KPI-urile unui consultant pentru o perioadă: numărătorile pâlniei, cei 9 KPI și dacă ținta
+      fiecărui KPI este atinsă.
+    compare_periods: >-
+      Compară o singură metrică între două perioade (de ex. lead-uri săptămâna aceasta față de
+      săptămâna trecută) și dă schimbarea relativă. Opțional pentru un singur showroom.
+    loss_reasons: >-
+      Lead-uri pierdute într-o perioadă, pe motive (Nu a răspuns, Buget, Produs nepotrivit etc.)
+      și pe showroom. Opțional pentru un singur showroom.
+    overdue_followups: >-
+      Lead-uri cu Data revenire depășită, pe consultant, cu numărul maxim de zile de întârziere.
+      Opțional pentru un singur consultant.
+    untouched_leads: >-
+      Lead-uri noi neatinse de consultant (fără schimbare de status, contact sau ofertă) după
+      pragul de ore, pe consultant, din ultimele zile.

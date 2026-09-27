@@ -1,8 +1,10 @@
+import json
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
 
+import httpx2
 from aiogram import Bot
 from aiogram.client.session.base import BaseSession
 from aiogram.methods import (
@@ -22,6 +24,7 @@ from aiogram.types import (
     Message,
     PhotoSize,
 )
+from anthropic import AsyncAnthropic, DefaultAsyncHttpxClient
 
 from digest.delivery.telegram import create_bot
 
@@ -196,3 +199,64 @@ def recording_bot() -> tuple[Bot, RecordingSession]:
     bot = create_bot(TEST_BOT_TOKEN)
     bot.session = session
     return bot, session
+
+
+@dataclass
+class ScriptedAnthropic:
+    # Настоящий AsyncAnthropic поверх MockTransport: ответы API заданы заранее, запросы записаны.
+    client: AsyncAnthropic
+    requests: list[dict[str, Any]]
+
+
+def scripted_anthropic(*responses: dict[str, Any] | int) -> ScriptedAnthropic:
+    remaining = list(responses)
+    requests: list[dict[str, Any]] = []
+
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        requests.append(json.loads(request.content))
+        response = remaining.pop(0)
+        if isinstance(response, int):
+            return httpx2.Response(
+                response,
+                json={"type": "error", "error": {"type": "api_error", "message": "scripted"}},
+            )
+        return httpx2.Response(200, json=response)
+
+    client = AsyncAnthropic(
+        api_key="test",
+        max_retries=0,
+        http_client=DefaultAsyncHttpxClient(transport=httpx2.MockTransport(handle)),
+    )
+    return ScriptedAnthropic(client, requests)
+
+
+def anthropic_message(
+    content: list[dict[str, Any]],
+    stop_reason: str,
+    input_tokens: int = 100,
+    output_tokens: int = 20,
+) -> dict[str, Any]:
+    return {
+        "id": "msg_test",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-sonnet-5",
+        "content": content,
+        "stop_reason": stop_reason,
+        "stop_sequence": None,
+        "usage": {"input_tokens": input_tokens, "output_tokens": output_tokens},
+    }
+
+
+def tool_use_message(*calls: tuple[str, dict[str, Any]]) -> dict[str, Any]:
+    return anthropic_message(
+        [
+            {"type": "tool_use", "id": f"toolu_{index}", "name": name, "input": arguments}
+            for index, (name, arguments) in enumerate(calls)
+        ],
+        "tool_use",
+    )
+
+
+def text_message(text: str, stop_reason: str = "end_turn") -> dict[str, Any]:
+    return anthropic_message([{"type": "text", "text": text}], stop_reason)

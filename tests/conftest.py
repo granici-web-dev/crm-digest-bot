@@ -20,6 +20,7 @@ TABLES_TRUNCATED_BETWEEN_TESTS = (
     "module_settings",
     "schedules",
     "report_runs",
+    "chat_questions",
 )
 
 
