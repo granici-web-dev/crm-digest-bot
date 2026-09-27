@@ -271,7 +271,6 @@ ChatToolName = Literal[
     "overdue_followups",
     "untouched_leads",
 ]
-CHAT_TOOL_NAMES: tuple[ChatToolName, ...] = get_args(ChatToolName)
 
 
 class ChatSettings(StrictConfigModel):
@@ -283,6 +282,9 @@ class ChatSettings(StrictConfigModel):
     trigger: Annotated[list[Literal["mention", "reply"]], Field(min_length=1)]
     daily_question_limit: PositiveInt
     context_minutes: PositiveInt
+    max_tool_calls: PositiveInt
+    max_answer_tokens: PositiveInt
+    specific_date_history_years: PositiveInt
 
 
 class ModuleRegistry(StrictConfigModel):

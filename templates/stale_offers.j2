@@ -1,4 +1,4 @@
-{# links: showroom → строка ссылок, пустая, если лиды шоурума не попали в десятку блока. #}
+{# links: showroom → строка ссылок, пустая, если лиды шоурума не попали в лимит блока. #}
 {% if offers.total %}
 📄 Oferte blocate >{{ stale_days }} zile: {{ offers.total }} (față de ieri: {{ "—" if offers.change_since_yesterday is none else "%+d" | format(offers.change_since_yesterday) }})
 {% for showroom, count in offers.by_showroom.items() if count %}

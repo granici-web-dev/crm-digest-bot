@@ -52,12 +52,11 @@ from digest.reports.render import (
     percent_one_decimal,
     signed_percent_one_decimal,
     target_label,
+    text,
 )
 
 ALL_SHOWROOMS = "toate"
 ALL_MANAGERS = "toti"
-NOT_TAKEN_LABEL = "Nepreluate"
-WITHOUT_SHOWROOM_LABEL = "fără showroom"
 CONTRACTS_METRIC = "contracts"
 COMPARABLE_METRICS: tuple[str, ...] = (*COUNT_NAMES, *KPI_NAMES, CONTRACTS_METRIC)
 
@@ -79,10 +78,8 @@ class ToolData:
 class ToolOutcome:
     content: dict[str, Any]
     is_error: bool
-    # Начало строки подписи: период(ы) или дата снапшота; имя функции дописывает цикл.
     scope: str | None = None
     snapshot_dates: tuple[date, ...] = ()
-    # Строки подписи о снапшоте, если он не за последний день периода.
     snapshot_notes: tuple[str, ...] = ()
     # id лидов для строки ссылок под ответом, самые старые первыми. Модели не передаются
     # (инвариант 7): в content их нет.
@@ -126,10 +123,10 @@ class DayArgument(BaseModel):
     @classmethod
     def day_is_in_range(cls, value: date, info: ValidationInfo) -> date:
         if value > context_today(info):
-            raise ValueError(f"data {date_label(value)} este în viitor")
+            raise ValueError(text("day_in_future", day=date_label(value)))
         earliest_day = context_earliest_day(info)
         if earliest_day is not None and value < earliest_day:
-            raise ValueError(f"nu există date înainte de {date_label(earliest_day)}")
+            raise ValueError(text("no_data_before", day=date_label(earliest_day)))
         return value
 
 
@@ -143,13 +140,13 @@ class MonthArgument(BaseModel):
     def month_is_in_range(self, info: ValidationInfo) -> "MonthArgument":
         today = context_today(info)
         if (self.year, self.month) > (today.year, today.month):
-            raise ValueError(f"luna {self.month:02d}.{self.year} este în viitor")
+            raise ValueError(text("month_in_future", month=f"{self.month:02d}.{self.year}"))
         earliest_day = context_earliest_day(info)
         if earliest_day is not None and (self.year, self.month) < (
             earliest_day.year,
             earliest_day.month,
         ):
-            raise ValueError(f"nu există date înainte de {earliest_day:%m.%Y}")
+            raise ValueError(text("no_data_before", day=f"{earliest_day:%m.%Y}"))
         return self
 
 
@@ -191,14 +188,14 @@ class ToolArguments(BaseModel):
     def showroom_is_configured(cls, value: str, info: ValidationInfo) -> str:
         config = context_config(info)
         if value != ALL_SHOWROOMS and value not in config.status_mapping.showrooms:
-            raise ValueError(f"showroom necunoscut: {value}")
+            raise ValueError(text("unknown_showroom", showroom=value))
         return value
 
     @field_validator("manager", mode="after", check_fields=False)
     @classmethod
     def manager_is_consultant(cls, value: str, info: ValidationInfo) -> str:
         if value != ALL_MANAGERS and value not in consultant_names(context_config(info)):
-            raise ValueError(f"consultant necunoscut: {value}")
+            raise ValueError(text("unknown_consultant", manager=value))
         return value
 
 
@@ -215,7 +212,7 @@ class ManagerKpiArguments(ToolArguments):
     @classmethod
     def manager_is_named(cls, value: str) -> str:
         if value == ALL_MANAGERS:
-            raise ValueError("manager_kpi cere un singur consultant")
+            raise ValueError(text("one_consultant_required"))
         return value
 
 
@@ -229,7 +226,7 @@ class ComparePeriodsArguments(ToolArguments):
     @classmethod
     def metric_is_known(cls, value: str) -> str:
         if value not in COMPARABLE_METRICS:
-            raise ValueError(f"metrică necunoscută: {value}")
+            raise ValueError(text("unknown_metric", metric=value))
         return value
 
 
@@ -370,9 +367,9 @@ class PeriodFrame:
         used = date_label(self.snapshot_date)
         if self.missing_snapshot_for is not None:
             missing = date_label(self.missing_snapshot_for)
-            return f"Date din snapshotul din {used} (nu există snapshot pentru {missing})"
+            return text("snapshot_substituted", used=used, missing=missing)
         if self.data_as_of is not None:
-            return f"Date din snapshotul din {used}"
+            return text("snapshot_used", used=used)
         return None
 
 
@@ -380,15 +377,12 @@ async def load_snapshot(data: ToolData, snapshot_date: date) -> pd.DataFrame:
     try:
         return await data.load_frame(snapshot_date)
     except SnapshotMissingError as error:
-        raise NoDataError(f"Nu există snapshot pentru {date_label(snapshot_date)}.") from error
-
-
-NO_SNAPSHOT_TEXT = "Nu există încă niciun snapshot."
+        raise NoDataError(text("no_snapshot_for", day=date_label(snapshot_date))) from error
 
 
 def latest_snapshot_date(data: ToolData) -> date:
     if not data.snapshot_dates:
-        raise NoDataError(NO_SNAPSHOT_TEXT)
+        raise NoDataError(text("no_snapshot_yet"))
     return max(data.snapshot_dates)
 
 
@@ -398,16 +392,12 @@ async def period_frame(
     period = chosen_period(argument, data.today)
     first_day, last_day = period_days(period, data.today)
     label = days_label(first_day, last_day)
+    latest_snapshot_date(data)
     snapshot_date = period_snapshot_date(period, data.today, data.snapshot_dates)
     if snapshot_date is None:
-        if not data.snapshot_dates:
-            raise NoDataError(NO_SNAPSHOT_TEXT)
-        raise NoDataError(f"Nu există snapshot pentru {date_label(last_day)}.")
+        raise NoDataError(text("no_snapshot_for", day=date_label(last_day)))
     if snapshot_date < first_day:
-        raise NoDataError(
-            f"Nu există încă date pentru {label}: ultimul snapshot este din "
-            f"{date_label(snapshot_date)}."
-        )
+        raise NoDataError(text("no_data_yet", days=label, snapshot=date_label(snapshot_date)))
     return PeriodFrame(
         period,
         label,
@@ -439,15 +429,6 @@ def period_header(period_frame: PeriodFrame) -> dict[str, Any]:
     }
 
 
-def counts_content(counts: LeadCounts) -> dict[str, int]:
-    return {name: getattr(counts, name) for name in COUNT_NAMES}
-
-
-def kpis_content(counts: LeadCounts) -> dict[str, str]:
-    kpis = kpis_from(counts)
-    return {name: percent_one_decimal(getattr(kpis, name)) for name in KPI_NAMES}
-
-
 def selected_showroom(showroom: str) -> str | None:
     return None if showroom == ALL_SHOWROOMS else showroom
 
@@ -476,8 +457,10 @@ def outcome(content: dict[str, Any], *period_frames: PeriodFrame) -> ToolOutcome
     return ToolOutcome(
         content,
         is_error=False,
-        scope="Perioada: "
-        + " vs ".join(period_title(frame.period, frame.label) for frame in period_frames),
+        scope=text(
+            "period_scope",
+            titles=[period_title(frame.period, frame.label) for frame in period_frames],
+        ),
         snapshot_dates=tuple(frame.snapshot_date for frame in period_frames),
         snapshot_notes=tuple(dict.fromkeys(note for note in notes if note is not None)),
     )
@@ -487,13 +470,14 @@ async def funnel(data: ToolData, arguments: FunnelArguments) -> ToolOutcome:
     frame = await period_frame(data, arguments.period)
     showroom = selected_showroom(arguments.showroom)
     counts, contracts = funnel_counts(frame, showroom, data.config)
+    kpis = kpis_from(counts)
     return outcome(
         {
             **period_header(frame),
             "showroom": showroom,
-            "counts": counts_content(counts),
+            "counts": {name: getattr(counts, name) for name in COUNT_NAMES},
             "contracts": contracts,
-            "kpis": kpis_content(counts),
+            "kpis": {name: percent_one_decimal(getattr(kpis, name)) for name in KPI_NAMES},
         },
         frame,
     )
@@ -544,10 +528,12 @@ def compared_period_title(period_frame: PeriodFrame) -> str:
 
 def change_text(frame_a: PeriodFrame, frame_b: PeriodFrame, delta: float | None) -> str:
     # Направление формулирует код, модель цитирует: иначе она путает, что с чем сравнивается.
-    titles = f"{compared_period_title(frame_a)} față de {compared_period_title(frame_b)}"
+    title_a, title_b = compared_period_title(frame_a), compared_period_title(frame_b)
     if delta is None:
-        return f"{titles}: nu se calculează, baza este 0"
-    return f"{titles}: {signed_percent_one_decimal(delta)}"
+        return text("change_from_zero", period_a=title_a, period_b=title_b)
+    return text(
+        "change", period_a=title_a, period_b=title_b, change=signed_percent_one_decimal(delta)
+    )
 
 
 async def compare_periods(data: ToolData, arguments: ComparePeriodsArguments) -> ToolOutcome:
@@ -598,21 +584,18 @@ async def loss_reasons(data: ToolData, arguments: LossReasonsArguments) -> ToolO
             "total": losses.total,
             "by_reason": {labels[key]: losses.reason_total(key) for key in losses.reasons_by_count},
             "by_showroom": {
-                (key or WITHOUT_SHOWROOM_LABEL): {
+                (key or text("without_showroom")): {
                     "total": losses.showroom_total(key),
-                    "by_reason": {
-                        labels[reason]: count for reason, count in by_reason.items() if count
-                    },
+                    "by_reason": nonzero_reasons(by_reason, labels),
                 }
                 for key, by_reason in losses.by_showroom.items()
                 if losses.showroom_total(key)
             },
         }
     else:
-        by_reason = losses.by_showroom[showroom]
         content = {
-            "total": sum(by_reason.values()),
-            "by_reason": nonzero_reasons(by_reason, labels),
+            "total": losses.showroom_total(showroom),
+            "by_reason": nonzero_reasons(losses.by_showroom[showroom], labels),
         }
     return outcome({**period_header(frame), "showroom": showroom, **content}, frame)
 
@@ -623,50 +606,41 @@ def snapshot_outcome(
     return ToolOutcome(
         {"snapshot_date": date_label(snapshot_date), **content},
         is_error=False,
-        scope=f"Snapshot: {date_label(snapshot_date)}",
+        scope=text("snapshot_scope", day=date_label(snapshot_date)),
         snapshot_dates=(snapshot_date,),
         lead_ids=lead_ids,
     )
 
 
 def manager_label(manager_name: str | None) -> str:
-    return manager_name or NOT_TAKEN_LABEL
+    return manager_name or text("not_taken")
 
 
 async def overdue_followups(data: ToolData, arguments: OverdueFollowupsArguments) -> ToolOutcome:
     snapshot_date = latest_snapshot_date(data)
     frame = await load_snapshot(data, snapshot_date)
     overdue = overdue_revenire_by_manager(frame, snapshot_date, data.config)
-    groups = [
-        {
-            "manager": manager_label(group.manager_name),
-            "lead_count": group.lead_count,
-            "max_days_overdue": group.max_days_overdue,
-        }
-        for group in overdue.groups
-        if arguments.manager in (ALL_MANAGERS, group.manager_name)
-    ]
-    lead_ids = (
-        overdue.lead_ids
-        if arguments.manager == ALL_MANAGERS
-        else next(
-            (group.lead_ids for group in overdue.groups if group.manager_name == arguments.manager),
-            (),
-        )
-    )
     if arguments.manager == ALL_MANAGERS:
         content: dict[str, Any] = {
             "lead_count": overdue.lead_count,
             "max_days_overdue": overdue.max_days_overdue,
-            "by_manager": groups,
+            "by_manager": [
+                {
+                    "manager": manager_label(group.manager_name),
+                    "lead_count": group.lead_count,
+                    "max_days_overdue": group.max_days_overdue,
+                }
+                for group in overdue.groups
+            ],
         }
-    else:
-        content = {
-            "manager": arguments.manager,
-            "lead_count": groups[0]["lead_count"] if groups else 0,
-            "max_days_overdue": groups[0]["max_days_overdue"] if groups else None,
-        }
-    return snapshot_outcome(content, snapshot_date, lead_ids)
+        return snapshot_outcome(content, snapshot_date, overdue.lead_ids)
+    of_manager = overdue.of_manager(arguments.manager)
+    content = {
+        "manager": arguments.manager,
+        "lead_count": of_manager.lead_count,
+        "max_days_overdue": of_manager.max_days_overdue,
+    }
+    return snapshot_outcome(content, snapshot_date, of_manager.lead_ids)
 
 
 async def untouched_leads_tool(data: ToolData, arguments: UntouchedLeadsArguments) -> ToolOutcome:
@@ -709,7 +683,7 @@ async def run_tool(name: str, arguments: object, data: ToolData) -> ToolOutcome:
     # Аргументы tool-call это граница (PRINCIPLES «Ошибки и валидация»): модель может прислать
     # что угодно, ошибка возвращается ей как tool_result с is_error.
     if name not in data.config.modules.chat.tools:
-        return ToolOutcome({"error": f"Instrument necunoscut: {name}."}, is_error=True)
+        return ToolOutcome({"error": text("unknown_tool", name=name)}, is_error=True)
     try:
         validated = ARGUMENT_MODELS[name].model_validate(
             arguments,
@@ -717,13 +691,17 @@ async def run_tool(name: str, arguments: object, data: ToolData) -> ToolOutcome:
                 "config": data.config,
                 "today": data.today,
                 "earliest_day": (
-                    earliest_specific_day(data.snapshot_dates[0]) if data.snapshot_dates else None
+                    earliest_specific_day(
+                        data.snapshot_dates[0], data.config.modules.chat.specific_date_history_years
+                    )
+                    if data.snapshot_dates
+                    else None
                 ),
             },
         )
         return await TOOL_FUNCTIONS[name](data, validated)
     except ValidationError as error:
         problems = "; ".join(str(problem["msg"]) for problem in error.errors())
-        return ToolOutcome({"error": f"Argumente invalide: {problems}."}, is_error=True)
+        return ToolOutcome({"error": text("invalid_arguments", problems=problems)}, is_error=True)
     except NoDataError as error:
         return ToolOutcome({"error": str(error)}, is_error=True, no_data=True)

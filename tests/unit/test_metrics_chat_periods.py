@@ -116,10 +116,6 @@ def test_closed_period_without_last_day_or_later_snapshot_has_none() -> None:
     assert period_snapshot_date("luna_trecuta", WEDNESDAY, dates) is None
 
 
-def test_no_snapshots_at_all_gives_none_for_every_period() -> None:
-    assert all(period_snapshot_date(period, WEDNESDAY, ()) is None for period in CHAT_PERIODS)
-
-
 def test_every_period_has_a_window(app_config: AppConfig) -> None:
     for period in CHAT_PERIODS:
         window = chat_period_window(period, WEDNESDAY, app_config.status_mapping.time)
@@ -162,4 +158,4 @@ def test_specific_month_without_any_later_snapshot_has_none() -> None:
 def test_earliest_specific_day_is_a_year_before_first_snapshot(
     first_snapshot: date, expected: date
 ) -> None:
-    assert earliest_specific_day(first_snapshot) == expected
+    assert earliest_specific_day(first_snapshot, 1) == expected

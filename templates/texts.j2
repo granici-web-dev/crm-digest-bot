@@ -1,0 +1,27 @@
+{# Короткие тексты, которые код вставляет в ответы чата, в ошибки инструментов для модели и в строки ссылок. Только RO. #}
+{% macro cannot_answer_now() %}Nu pot răspunde acum, încercați mai târziu.{% endmacro %}
+{% macro unverified_numbers() %}Nu pot formula un răspuns exact la această întrebare. Reformulați, vă rog.{% endmacro %}
+{% macro daily_limit() %}Am atins limita de întrebări pentru azi în acest grup. Revin mâine cu plăcere.{% endmacro %}
+{% macro tool_call_limit() %}Limita de apeluri pentru această întrebare a fost atinsă.{% endmacro %}
+{% macro links_line(links) %}Lead-uri: {{ links }}{% endmacro %}
+{% macro more_leads(links, hidden_count) %}{{ links }} și încă {{ hidden_count }}{% endmacro %}
+{% macro not_taken() %}Nepreluate{% endmacro %}
+{% macro without_showroom() %}fără showroom{% endmacro %}
+{% macro day_in_future(day) %}data {{ day }} este în viitor{% endmacro %}
+{% macro month_in_future(month) %}luna {{ month }} este în viitor{% endmacro %}
+{% macro no_data_before(day) %}nu există date înainte de {{ day }}{% endmacro %}
+{% macro unknown_showroom(showroom) %}showroom necunoscut: {{ showroom }}{% endmacro %}
+{% macro unknown_consultant(manager) %}consultant necunoscut: {{ manager }}{% endmacro %}
+{% macro one_consultant_required() %}manager_kpi cere un singur consultant{% endmacro %}
+{% macro unknown_metric(metric) %}metrică necunoscută: {{ metric }}{% endmacro %}
+{% macro unknown_tool(name) %}Instrument necunoscut: {{ name }}.{% endmacro %}
+{% macro invalid_arguments(problems) %}Argumente invalide: {{ problems }}.{% endmacro %}
+{% macro snapshot_used(used) %}Date din snapshotul din {{ used }}{% endmacro %}
+{% macro snapshot_substituted(used, missing) %}Date din snapshotul din {{ used }} (nu există snapshot pentru {{ missing }}){% endmacro %}
+{% macro no_snapshot_yet() %}Nu există încă niciun snapshot.{% endmacro %}
+{% macro no_snapshot_for(day) %}Nu există snapshot pentru {{ day }}.{% endmacro %}
+{% macro no_data_yet(days, snapshot) %}Nu există încă date pentru {{ days }}: ultimul snapshot este din {{ snapshot }}.{% endmacro %}
+{% macro period_scope(titles) %}Perioada: {{ titles | join(" vs ") }}{% endmacro %}
+{% macro snapshot_scope(day) %}Snapshot: {{ day }}{% endmacro %}
+{% macro change(period_a, period_b, change) %}{{ period_a }} față de {{ period_b }}: {{ change }}{% endmacro %}
+{% macro change_from_zero(period_a, period_b) %}{{ period_a }} față de {{ period_b }}: nu se calculează, baza este 0{% endmacro %}

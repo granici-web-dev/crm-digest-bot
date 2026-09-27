@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
+from markupsafe import Markup
 
 TEMPLATES_DIR = Path(__file__).resolve().parents[3] / "templates"
 
@@ -80,3 +81,8 @@ def template_environment() -> Environment:
 def render(template_name: str, **values: Any) -> str:
     template = template_environment().get_template(f"{template_name}.j2")
     return template.render(**values).strip()
+
+
+def text(macro_name: str, **values: Any) -> Markup:
+    macro = getattr(template_environment().get_template("texts.j2").module, macro_name)
+    return Markup(macro(**values))

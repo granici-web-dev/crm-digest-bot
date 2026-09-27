@@ -575,3 +575,18 @@ def test_every_check_is_empty_on_empty_frame(app_config: AppConfig) -> None:
     assert same_weekday_comparison(lead_frame, REPORT_DATE, app_config) == SameWeekdayComparison(
         date(2026, 9, 18), 0, 0, 0, 0
     )
+
+
+def test_overdue_of_one_manager_keeps_only_that_group(app_config: AppConfig) -> None:
+    godja = {"assigned_to_id": 10, "assigned_to_name": "Godja Adina Maria"}
+    rows = [
+        make_snapshot_row(lead_id=1, data_revenire=date(2026, 9, 19), **godja),
+        make_snapshot_row(lead_id=2, data_revenire=date(2026, 9, 24), **godja),
+        make_snapshot_row(lead_id=3, data_revenire=date(2026, 9, 23)),
+    ]
+    overdue = overdue_revenire_by_manager(frame(rows, app_config), REPORT_DATE, app_config)
+
+    assert overdue.of_manager("Godja Adina Maria") == OverdueRevenire(
+        2, 6, (OverdueGroup("Godja Adina Maria", 2, 6, (1, 2)),), (1, 2)
+    )
+    assert overdue.of_manager("Moaca Andreea") == OverdueRevenire(0, None, (), ())

@@ -7,7 +7,6 @@ import pytest
 
 from digest.chat.loop import (
     CANNOT_ANSWER_NOW_TEXT,
-    MAX_ANSWER_TOKENS,
     UNVERIFIED_NUMBERS_TEXT,
     PreviousExchange,
     allowed_numbers,
@@ -69,7 +68,7 @@ async def test_question_routes_to_tool_with_arguments(app_config: AppConfig) -> 
     assert [(call.name, call.arguments) for call in answer.tool_calls] == [FUNNEL_THIS_WEEK]
     first_request = api.requests[0]
     assert first_request["model"] == MODEL
-    assert first_request["max_tokens"] == MAX_ANSWER_TOKENS
+    assert first_request["max_tokens"] == app_config.modules.chat.max_answer_tokens == 600
     assert first_request["tool_choice"] == {"type": "auto"}
     assert first_request["thinking"] == {"type": "disabled"}
     tool_result = api.requests[1]["messages"][-1]["content"][0]

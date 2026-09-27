@@ -1,7 +1,7 @@
 import json
 from datetime import date, timedelta
 from itertools import product
-from typing import Any, cast
+from typing import Any, cast, get_args
 
 import pandas as pd
 import pytest
@@ -14,10 +14,9 @@ from digest.chat.tools import (
     run_tool,
     tool_definitions,
 )
-from digest.config import CHAT_TOOL_NAMES, KPI_NAMES, AppConfig, Manager, ManagerRoster
+from digest.config import KPI_NAMES, AppConfig, ChatToolName, Manager, ManagerRoster
 from digest.db.lead_frame import SnapshotMissingError
 from digest.metrics.chat_periods import CHAT_PERIODS, chat_period_window
-from digest.metrics.cockpit import manager_cockpit_table
 from digest.metrics.daily import daily_window
 from digest.metrics.daily_checks import overdue_revenire_by_manager, untouched_leads
 from digest.metrics.frame import prepare_lead_frame
@@ -136,7 +135,7 @@ async def test_last_week_funnel_matches_weekly_report(
     assert content["counts"]["offers"] == weekly.offers
 
 
-async def test_manager_kpi_matches_cockpit_row(
+async def test_manager_kpi_matches_etalon_consultant(
     etalon_config: AppConfig, lead_frame: pd.DataFrame
 ) -> None:
     content = await run(
@@ -146,13 +145,33 @@ async def test_manager_kpi_matches_cockpit_row(
         lead_frame,
     )
 
-    table = manager_cockpit_table(lead_frame, may(etalon_config), END_OF_MAY, etalon_config)
-    row = table[table["name"].eq("Dragoi Mihaela")].iloc[0]
-    assert content["counts"] == {name: int(row[name]) for name in COUNT_NAMES}
-    assert content["kpis"] == {name: percent_one_decimal(row[name]) for name in KPI_NAMES}
-    assert content["meets_target"] == {
-        name: row[f"{name}_meets_target"] for name in etalon_config.kpi.targets
+    # Эталон мая, expected_by_agent["Dragoi Mihaela"], сверен вручную с mefi.
+    assert content["counts"] == {
+        "leads": 76,
+        "irr_leads": 13,
+        "useful": 63,
+        "clienti": 2,
+        "offers": 23,
+        "nar": 13,
+        "buget": 25,
+        "pnp": 7,
+        "showroom_visits": 36,
+        "clienti_from_showroom": 2,
+        "active_offers_14": 0,
+        "unmapped": 0,
     }
+    assert content["kpis"] == {
+        "scr": "3,2%",
+        "l2o": "36,5%",
+        "o2c": "8,7%",
+        "cdr": "82,9%",
+        "plr": "50,0%",
+        "sc": "5,6%",
+        "pfr": "11,1%",
+        "acr": "0,0%",
+        "irr": "17,1%",
+    }
+    assert set(content["meets_target"]) == set(etalon_config.kpi.targets)
 
 
 async def test_compare_periods_matches_lead_counts_of_both_windows(
@@ -249,12 +268,20 @@ async def test_overdue_followups_for_one_manager(
     etalon_config: AppConfig, lead_frame: pd.DataFrame
 ) -> None:
     content = await run(
+        "overdue_followups", {"manager": "Dragoi Mihaela"}, etalon_config, lead_frame
+    )
+
+    assert (content["lead_count"], content["max_days_overdue"]) == (5, 22)
+
+
+async def test_overdue_followups_for_manager_without_overdue_is_zero(
+    etalon_config: AppConfig, lead_frame: pd.DataFrame
+) -> None:
+    content = await run(
         "overdue_followups", {"manager": "Moaca Andreea"}, etalon_config, lead_frame
     )
 
-    overdue = overdue_revenire_by_manager(lead_frame, TODAY, etalon_config)
-    expected = [group for group in overdue.groups if group.manager_name == "Moaca Andreea"]
-    assert content["lead_count"] == (expected[0].lead_count if expected else 0)
+    assert (content["lead_count"], content["max_days_overdue"]) == (0, None)
 
 
 async def test_untouched_leads_match_metrics(
@@ -406,7 +433,7 @@ async def test_invalid_arguments_are_tool_errors(
 
 
 def test_every_tool_name_has_a_function() -> None:
-    assert set(TOOL_FUNCTIONS) == set(CHAT_TOOL_NAMES)
+    assert set(TOOL_FUNCTIONS) == set(get_args(ChatToolName))
 
 
 def test_tool_definitions_are_strict_with_config_enums(app_config: AppConfig) -> None:

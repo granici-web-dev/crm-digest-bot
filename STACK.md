@@ -26,7 +26,7 @@
 | LLM | anthropic SDK, ручной tool-use цикл |
 | Логи | `logging` из stdlib с JSON-форматтером |
 | Время | `zoneinfo` из stdlib, `Europe/Bucharest` всегда явно |
-| Тесты | pytest, pytest-asyncio, testcontainers, respx, syrupy |
+| Тесты | pytest, pytest-asyncio, testcontainers, respx, syrupy; httpx2 (anthropic SDK построен на нём, `MockTransport` заскриптованного Anthropic берётся оттуда) |
 | Хостинг | VPS Hetzner CPX12 (Nuremberg) + Docker Compose; линейка CX недоступна, в ADR-001 записан CX22 |
 | CI | GitHub Actions: ruff, mypy, pytest с testcontainers, сборка образа; без секретов |
 

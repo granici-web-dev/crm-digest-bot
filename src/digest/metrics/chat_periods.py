@@ -21,7 +21,6 @@ ChatPeriod = Literal[
 CHAT_PERIODS: tuple[ChatPeriod, ...] = get_args(ChatPeriod)
 CLOSED_PERIODS: frozenset[ChatPeriod] = frozenset({"ieri", "saptamana_trecuta", "luna_trecuta"})
 LAST_DAYS_PERIOD_LENGTH = 30
-SPECIFIC_DATE_HISTORY_YEARS = 1
 
 
 @dataclass(frozen=True)
@@ -37,9 +36,9 @@ class ChatMonth:
 ChatPeriodChoice = ChatPeriod | ChatDay | ChatMonth
 
 
-def earliest_specific_day(first_snapshot_date: date) -> date:
-    # Снапшот хранит и старые лиды, поэтому конкретная дата допустима за год до первого снапшота.
-    year = first_snapshot_date.year - SPECIFIC_DATE_HISTORY_YEARS
+def earliest_specific_day(first_snapshot_date: date, history_years: int) -> date:
+    # Снапшот хранит и старые лиды, поэтому конкретная дата допустима и до первого снапшота.
+    year = first_snapshot_date.year - history_years
     month = first_snapshot_date.month
     return date(year, month, min(first_snapshot_date.day, monthrange(year, month)[1]))
 
@@ -88,8 +87,6 @@ def period_snapshot_date(
     # Снапшота за этот день нет: первый успешный после него, подпись говорит о подмене
     # (docs/kpi-definitions.md, «Режим вопросов»). Конкретные день и месяц закрытые: сегодняшний
     # день и текущий месяц приходят сюда уже как azi и luna_curenta.
-    if not snapshot_dates:
-        return None
     if isinstance(period, str) and period not in CLOSED_PERIODS:
         return max(snapshot_dates)
     last_day = period_days(period, today)[1]

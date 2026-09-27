@@ -1,4 +1,4 @@
-from collections.abc import Collection, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Self
 from urllib.parse import urlsplit
@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 from markupsafe import Markup
 
 from digest.config import LeadLinkSettings
+from digest.reports.render import text
 
 LINK_SEPARATOR = Markup(", ")
 
@@ -32,23 +33,18 @@ class LeadLinks:
 
     def line(self, visible_ids: Sequence[int], hidden_count: int) -> Markup:
         links = LINK_SEPARATOR.join(self.link(lead_id) for lead_id in visible_ids)
-        return links + Markup(" și încă {}").format(hidden_count) if hidden_count else links
+        return text("more_leads", links=links, hidden_count=hidden_count) if hidden_count else links
 
     def capped_line(self, ordered_ids: Sequence[int]) -> Markup:
         return self.line(ordered_ids[: self.limit], max(len(ordered_ids) - self.limit, 0))
 
-    def block_ids(self, ordered_ids: Sequence[int]) -> frozenset[int]:
-        # Лимит на весь блок отчёта: ссылки получают самые старые лиды блока.
-        return frozenset(ordered_ids[: self.limit])
-
-    def group_line(self, group_ids: Sequence[int], block_ids: Collection[int]) -> Markup:
-        visible = [lead_id for lead_id in group_ids if lead_id in block_ids]
-        if not visible:
-            return Markup()
-        return self.line(visible, len(group_ids) - len(visible))
-
     def block_lines(
         self, block_ordered_ids: Sequence[int], groups_ids: Sequence[Sequence[int]]
     ) -> list[Markup]:
-        block_ids = self.block_ids(block_ordered_ids)
-        return [self.group_line(group_ids, block_ids) for group_ids in groups_ids]
+        # Лимит на весь блок отчёта: ссылки получают самые старые лиды блока.
+        block_ids = frozenset(block_ordered_ids[: self.limit])
+        lines = []
+        for group_ids in groups_ids:
+            visible = [lead_id for lead_id in group_ids if lead_id in block_ids]
+            lines.append(self.line(visible, len(group_ids) - len(visible)) if visible else Markup())
+        return lines

@@ -53,6 +53,16 @@ class OverdueRevenire:
     groups: tuple[OverdueGroup, ...]
     lead_ids: tuple[int, ...]
 
+    def of_manager(self, manager_name: str) -> "OverdueRevenire":
+        # Консультант без просроченных это ноль по построению, а не отсутствие группы.
+        groups = tuple(group for group in self.groups if group.manager_name == manager_name)
+        return OverdueRevenire(
+            sum(group.lead_count for group in groups),
+            max(group.max_days_overdue for group in groups) if groups else None,
+            groups,
+            tuple(lead_id for group in groups for lead_id in group.lead_ids),
+        )
+
 
 @dataclass(frozen=True)
 class StaleOffers:

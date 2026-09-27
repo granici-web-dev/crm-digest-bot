@@ -20,12 +20,13 @@ from digest.chat.tools import ToolData
 from digest.config import ChatSettings
 from digest.db.lead_frame import load_lead_frame, success_snapshot_dates
 from digest.delivery.ops import notify_ops
+from digest.reports.render import text
 from digest.reports.runner import ReportDeps
 from digest.snapshot import describe_error
 
 logger = logging.getLogger(__name__)
 
-DAILY_LIMIT_TEXT = "Am atins limita de întrebări pentru azi în acest grup. Revin mâine cu plăcere."
+DAILY_LIMIT_TEXT = text("daily_limit")
 # Таймаут клиента на каждый запрос, а вопрос это до четырёх запросов с повторами и снапшоты:
 # без общего дедлайна группа ждала бы ответа минутами.
 QUESTION_DEADLINE_SECONDS = 60

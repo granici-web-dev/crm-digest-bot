@@ -1,5 +1,5 @@
 {% from "_names.j2" import manager %}
-{# links: строка ссылок на каждую группу, пустая, если лиды группы не попали в десятку блока. #}
+{# links: строка ссылок на каждую группу, пустая, если лиды группы не попали в лимит блока. #}
 {% if untouched.lead_count %}
 ⚠ Lead-uri neatinse sau nepreluate: {{ untouched.lead_count }} (cel mai vechi: {{ untouched.oldest_age_hours }}h)
 {% for group in untouched.groups %}

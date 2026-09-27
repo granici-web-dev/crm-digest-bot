@@ -9,7 +9,6 @@ from typing import Any
 
 from anthropic import AsyncAnthropic
 from anthropic.types import MessageParam, ToolResultBlockParam
-from markupsafe import Markup
 
 from digest.chat.tools import (
     ALL_MANAGERS,
@@ -22,16 +21,11 @@ from digest.chat.tools import (
 )
 from digest.db.schema import ChatQuestionStatus
 from digest.reports.lead_links import LeadLinks
-from digest.reports.render import TEMPLATES_DIR, render
+from digest.reports.render import TEMPLATES_DIR, render, text
 
-MAX_TOOL_CALLS = 3
-MAX_ANSWER_TOKENS = 600
 PERIOD_ARGUMENTS = frozenset({"period", "period_a", "period_b"})
-CANNOT_ANSWER_NOW_TEXT = "Nu pot răspunde acum, încercați mai târziu."
-UNVERIFIED_NUMBERS_TEXT = (
-    "Nu pot formula un răspuns exact la această întrebare. Reformulați, vă rog."
-)
-TOOL_LIMIT_TEXT = "Limita de apeluri pentru această întrebare a fost atinsă."
+CANNOT_ANSWER_NOW_TEXT = text("cannot_answer_now")
+UNVERIFIED_NUMBERS_TEXT = text("unverified_numbers")
 # Знак и «%» часть числа: «+15%» при результате «(−15%)» это другое число, как и счётчик 15,
 # поданный как «15%». Знак только в начале слова: «top-3» это 3, а не −3.
 NUMBER = re.compile(r"(?:(?<![\w.,])[+\-\u2212])?\d+(?:[.,]\d+)*(?:[ \u00a0]?%)?")
@@ -95,7 +89,6 @@ def previous_exchange_text(previous: PreviousExchange) -> str:
 
 @dataclass(frozen=True)
 class ChatAnswer:
-    # HTML для reply: текст модели экранирован, подпись курсивом.
     text: str
     status: ChatQuestionStatus
     tool_calls: tuple[ExecutedToolCall, ...]
@@ -206,15 +199,17 @@ async def answer_question(
     calls: list[ExecutedToolCall] = []
     input_tokens = output_tokens = 0
     tools = tool_definitions(data.config)
+    chat_settings = data.config.modules.chat
     while True:
         response = await client.messages.create(
             model=model,
-            max_tokens=MAX_ANSWER_TOKENS,
+            max_tokens=chat_settings.max_answer_tokens,
             system=system_prompt(data.today),
             tools=tools,
-            # Лимит вызовов исчерпан: последний раунд только текстом.
-            tool_choice={"type": "auto"} if len(calls) < MAX_TOOL_CALLS else {"type": "none"},
-            # Маршрутизация по enum: рассуждение съело бы бюджет ответа в 600 токенов.
+            tool_choice=(
+                {"type": "auto"} if len(calls) < chat_settings.max_tool_calls else {"type": "none"}
+            ),
+            # Маршрутизация по enum: рассуждение съело бы бюджет короткого ответа.
             thinking={"type": "disabled"},
             messages=messages,
         )
@@ -235,11 +230,11 @@ async def answer_question(
         for block in response.content:
             if block.type != "tool_use":
                 continue
-            if len(calls) < MAX_TOOL_CALLS:
+            if len(calls) < chat_settings.max_tool_calls:
                 outcome = await run_tool(block.name, block.input, data)
                 calls.append(ExecutedToolCall(block.name, dict(block.input), outcome))
             else:
-                outcome = ToolOutcome({"error": TOOL_LIMIT_TEXT}, is_error=True)
+                outcome = ToolOutcome({"error": text("tool_call_limit")}, is_error=True)
             results.append(
                 {
                     "type": "tool_result",
@@ -250,9 +245,9 @@ async def answer_question(
             )
         messages.append({"role": "user", "content": results})
 
-    text = "".join(block.text for block in response.content if block.type == "text").strip()
+    model_text = "".join(block.text for block in response.content if block.type == "text").strip()
     return checked_answer(
-        question, text, tuple(calls), input_tokens, output_tokens, data.lead_links
+        question, model_text, tuple(calls), input_tokens, output_tokens, data.lead_links
     )
 
 
@@ -264,12 +259,12 @@ def links_line(calls: tuple[ExecutedToolCall, ...], lead_links: LeadLinks) -> st
     )
     if not lead_ids:
         return ""
-    return str(Markup("Lead-uri: ") + lead_links.capped_line(list(lead_ids)))
+    return str(text("links_line", links=lead_links.capped_line(list(lead_ids))))
 
 
 def checked_answer(
     question: str,
-    text: str,
+    model_text: str,
     calls: tuple[ExecutedToolCall, ...],
     input_tokens: int,
     output_tokens: int,
@@ -279,18 +274,18 @@ def checked_answer(
     # ответа должно найтись в его результатах, в вопросе или в подписи.
     answered_calls = [call for call in calls if call.outcome.answered]
     if not answered_calls:
-        if number_tokens(text):
+        if number_tokens(model_text):
             return ChatAnswer(
                 render("chat_refusal"), "blocked_numbers", calls, input_tokens, output_tokens
             )
-        if not text:
+        if not model_text:
             return ChatAnswer(render("chat_refusal"), "no_tool", calls, input_tokens, output_tokens)
-        return ChatAnswer(html.escape(text), "no_tool", calls, input_tokens, output_tokens)
+        return ChatAnswer(html.escape(model_text), "no_tool", calls, input_tokens, output_tokens)
     signature_text = signature(list(calls))
     allowed = allowed_numbers(
         signature_text, [question, *(outcome_text(call.outcome) for call in answered_calls)]
     )
-    unverified = first_unverified_number(text, allowed)
+    unverified = first_unverified_number(model_text, allowed)
     if unverified is not None:
         return ChatAnswer(
             UNVERIFIED_NUMBERS_TEXT,
@@ -300,7 +295,7 @@ def checked_answer(
             output_tokens,
             unverified,
         )
-    answer = html.escape(text)
+    answer = html.escape(model_text)
     footer = "\n".join(part for part in (signature_text, links_line(calls, lead_links)) if part)
     return ChatAnswer(
         f"{answer}\n\n{footer}" if footer else answer,

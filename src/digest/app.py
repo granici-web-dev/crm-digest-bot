@@ -36,6 +36,7 @@ from digest.snapshot import describe_error, run_daily_snapshot
 logger = logging.getLogger(__name__)
 
 CHAT_API_TIMEOUT_SECONDS = 30
+CHAT_API_MAX_RETRIES = 2
 
 # Отчёт, опоздавший до получаса, руководству ещё полезен; позже его отправляют вручную.
 REPORT_MISFIRE_GRACE = timedelta(minutes=30)
@@ -211,7 +212,7 @@ def create_anthropic_client(app_settings: Settings) -> AsyncAnthropic | None:
     return AsyncAnthropic(
         api_key=app_settings.anthropic_api_key.get_secret_value(),
         timeout=CHAT_API_TIMEOUT_SECONDS,
-        max_retries=2,
+        max_retries=CHAT_API_MAX_RETRIES,
     )
 
 
