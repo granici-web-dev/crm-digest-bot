@@ -12,7 +12,7 @@ from digest.config import AppConfig
 from digest.metrics.frame import prepare_lead_frame
 from digest.reports.context import ReportContext
 from digest.reports.modules import IMPLEMENTED_MODULES
-from factories import BUCHAREST, make_snapshot_row
+from factories import BUCHAREST, make_lead_links, make_snapshot_row
 
 MONTH_END = date(2026, 9, 30)
 MONTHLY_MODULES = ("m2", "m3", "m4", "m5", "m8", "m19")
@@ -109,7 +109,9 @@ def month_frame(app_config: AppConfig) -> pd.DataFrame:
 
 
 def context(app_config: AppConfig) -> ReportContext:
-    return ReportContext(MONTH_END, None, None, app_config, "sofabelle")
+    return ReportContext(
+        MONTH_END, None, None, app_config, "sofabelle", make_lead_links(app_config.status_mapping)
+    )
 
 
 @pytest.mark.parametrize("module_id", MONTHLY_MODULES)

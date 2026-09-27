@@ -14,6 +14,7 @@ from pydantic import (
     PositiveInt,
     PrivateAttr,
     ValidationError,
+    field_validator,
     model_validator,
 )
 
@@ -157,12 +158,27 @@ class SourceGroups(StrictConfigModel):
         return self
 
 
+class LeadLinkSettings(StrictConfigModel):
+    path: str
+    limit: PositiveInt
+
+    @field_validator("path")
+    @classmethod
+    def path_has_one_lead_id_placeholder(cls, value: str) -> str:
+        if not value.startswith("/") or value.count("{lead_id}") != 1:
+            raise ValueError("lead_links.path: путь от корня с ровно одним {lead_id}")
+        if value.replace("{lead_id}", "").count("{"):
+            raise ValueError("lead_links.path: кроме {lead_id} подстановок нет")
+        return value
+
+
 class StatusMapping(StrictConfigModel):
     categories: Categories
     custom_fields: CustomFields
     sources: SourceGroups
     showrooms: list[str]
     tenant_display_name: str
+    lead_links: LeadLinkSettings
     time: TimeSettings
     raw_strip: list[str]
     raw_known_keys: frozenset[str]

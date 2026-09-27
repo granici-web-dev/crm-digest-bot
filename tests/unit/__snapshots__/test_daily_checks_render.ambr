@@ -15,7 +15,12 @@
   '🔴 Val de IRELEVANT: Marc Andra 5'
 # ---
 # name: test_overdue_revenire_render[found]
-  '⏰ Reveniri restante: 4 (cea mai veche: 26 de zile) · Nepreluate 1 (5 zile), Roibu Valeria 2 (26 de zile), Raileanu  Leon 1 (1 zi)'
+  '''
+  ⏰ Reveniri restante: 4 (cea mai veche: 26 de zile)
+  Nepreluate 1 (5 zile): <a href="https://bellesofa.meficrm.com/admin/leads/index/501">#501</a>
+  Roibu Valeria 2 (26 de zile): <a href="https://bellesofa.meficrm.com/admin/leads/index/101">#101</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/102">#102</a>
+  Raileanu  Leon 1 (1 zi): <a href="https://bellesofa.meficrm.com/admin/leads/index/601">#601</a>
+  '''
 # ---
 # name: test_overdue_revenire_render[none]
   'Reveniri restante: nu'
@@ -27,13 +32,25 @@
   'Lead-uri azi: 11 (joia trecută: 8) · Contracte: 1 (0)'
 # ---
 # name: test_stale_offers_render[decline]
-  '📄 Oferte blocate >14 zile: 1 (față de ieri: -3) · Brașov 1'
+  '''
+  📄 Oferte blocate >14 zile: 1 (față de ieri: -3)
+  Brașov 1: <a href="https://bellesofa.meficrm.com/admin/leads/index/1">#1</a>
+  '''
 # ---
 # name: test_stale_offers_render[growth]
-  '📄 Oferte blocate >14 zile: 15 (față de ieri: +2) · Brașov 5, Cluj 9, fără showroom 1'
+  '''
+  📄 Oferte blocate >14 zile: 15 (față de ieri: +2)
+  Brașov 5: <a href="https://bellesofa.meficrm.com/admin/leads/index/1">#1</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/3">#3</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/5">#5</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/7">#7</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/9">#9</a>
+  Cluj 9: <a href="https://bellesofa.meficrm.com/admin/leads/index/2">#2</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/4">#4</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/6">#6</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/8">#8</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/10">#10</a> și încă 4
+  fără showroom 1
+  '''
 # ---
 # name: test_stale_offers_render[no_yesterday]
-  '📄 Oferte blocate >14 zile: 3 (față de ieri: —) · Brașov 2, București 1'
+  '''
+  📄 Oferte blocate >14 zile: 3 (față de ieri: —)
+  Brașov 2: <a href="https://bellesofa.meficrm.com/admin/leads/index/1">#1</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/2">#2</a>
+  București 1: <a href="https://bellesofa.meficrm.com/admin/leads/index/3">#3</a>
+  '''
 # ---
 # name: test_stale_offers_render[none]
   'Oferte blocate >14 zile: nu'
@@ -42,7 +59,12 @@
   'Oferte blocate >14 zile: nu (față de ieri: -2)'
 # ---
 # name: test_untouched_leads_render[found]
-  '⚠ Lead-uri neatinse sau nepreluate: 4 (cel mai vechi: 26h) · Nepreluate 1 (5h), Roibu Valeria 2 (26h), Raileanu  Leon 1 (1h)'
+  '''
+  ⚠ Lead-uri neatinse sau nepreluate: 14 (cel mai vechi: 26h)
+  Nepreluate 1 (5h)
+  Roibu Valeria 12 (26h): <a href="https://bellesofa.meficrm.com/admin/leads/index/101">#101</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/102">#102</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/103">#103</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/104">#104</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/105">#105</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/106">#106</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/107">#107</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/108">#108</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/109">#109</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/110">#110</a> și încă 2
+  Raileanu  Leon 1 (1h)
+  '''
 # ---
 # name: test_untouched_leads_render[none]
   'Lead-uri neatinse sau nepreluate: nu'

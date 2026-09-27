@@ -38,7 +38,7 @@ from digest.delivery.ops import OpsChannel
 from digest.reports.modules import IMPLEMENTED_MODULES
 from digest.reports.periods import ReportLevel
 from digest.reports.runner import ReportDeps, run_report
-from factories import BUCHAREST, lead_snapshots_row, make_snapshot_row
+from factories import BUCHAREST, lead_snapshots_row, make_lead_links, make_snapshot_row
 from fakes import recording_bot, scripted_anthropic
 
 TENANT_ID = "sofabelle"
@@ -66,6 +66,7 @@ class SettingsHarness:
             ops=OpsChannel(ops_bot, OPS_CHAT_ID),
             report_chat_id=GROUP_CHAT_ID,
             modules=IMPLEMENTED_MODULES,
+            lead_links=make_lead_links(config.status_mapping),
         )
         self.scheduler = AsyncIOScheduler(timezone=BUCHAREST)
         self.reschedule: Callable[[ReportLevel, str], None] = partial(

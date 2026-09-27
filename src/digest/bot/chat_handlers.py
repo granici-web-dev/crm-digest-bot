@@ -123,7 +123,11 @@ async def answer_in_group(
         return await load_lead_frame(deps.engine, deps.tenant_id, snapshot_date, deps.config)
 
     data = ToolData(
-        today, await success_snapshot_dates(deps.engine, deps.tenant_id), load_frame, deps.config
+        today,
+        await success_snapshot_dates(deps.engine, deps.tenant_id),
+        load_frame,
+        deps.config,
+        deps.lead_links,
     )
     try:
         answer = await answer_question(question.text, chat.anthropic_client, chat.model, data)

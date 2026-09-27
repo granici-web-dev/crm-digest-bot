@@ -10,7 +10,7 @@ from digest.config import AppConfig
 from digest.metrics.frame import prepare_lead_frame
 from digest.reports.context import ReportContext
 from digest.reports.modules.weekly_excel import excel_attachment_report
-from factories import BUCHAREST, make_snapshot_row
+from factories import BUCHAREST, make_lead_links, make_snapshot_row
 
 SUNDAY = date(2026, 9, 27)
 MONDAY = date(2026, 9, 21)
@@ -46,7 +46,9 @@ def week_frame(app_config: AppConfig) -> pd.DataFrame:
 
 
 def workbook(app_config: AppConfig, tenant_id: str = "sofabelle") -> tuple[str, Workbook]:
-    context = ReportContext(SUNDAY, None, None, app_config, tenant_id)
+    context = ReportContext(
+        SUNDAY, None, None, app_config, tenant_id, make_lead_links(app_config.status_mapping)
+    )
     result = excel_attachment_report(week_frame(app_config), context)
     assert result.document is not None
     return result.document.filename, load_workbook(BytesIO(result.document.content))

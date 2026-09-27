@@ -20,7 +20,7 @@ from digest.reports.modules.weekly import (
     week_range_label,
 )
 from digest.reports.render import change_label, percent
-from factories import BUCHAREST, make_snapshot_row, raw_repository_config
+from factories import BUCHAREST, make_lead_links, make_snapshot_row, raw_repository_config
 
 SUNDAY = date(2026, 9, 27)
 MONDAY = date(2026, 9, 21)
@@ -76,7 +76,9 @@ def week_frame(app_config: AppConfig) -> pd.DataFrame:
 
 def context(app_config: AppConfig, lead_frame: pd.DataFrame) -> ReportContext:
     week_ago = PreviousSnapshot(SUNDAY - timedelta(days=7), lead_frame[lead_frame["lead_id"].eq(6)])
-    return ReportContext(SUNDAY, None, week_ago, app_config, "sofabelle")
+    return ReportContext(
+        SUNDAY, None, week_ago, app_config, "sofabelle", make_lead_links(app_config.status_mapping)
+    )
 
 
 @pytest.mark.parametrize("module_id", WEEKLY_TEXT_MODULES)

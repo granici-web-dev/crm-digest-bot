@@ -18,6 +18,7 @@ from digest.mefi.client import MefiClient
 from digest.reports.modules import IMPLEMENTED_MODULES
 from digest.reports.periods import ReportLevel
 from digest.reports.runner import ReportDeps
+from factories import make_lead_links
 from fakes import recording_bot
 
 
@@ -39,6 +40,7 @@ async def test_report_and_snapshot_jobs_tolerate_late_start(app_config: AppConfi
         ops=OpsChannel(ops_bot, -1003),
         report_chat_id=-1001,
         modules=IMPLEMENTED_MODULES,
+        lead_links=make_lead_links(app_config.status_mapping),
     )
     scheduler = AsyncIOScheduler(timezone=ZoneInfo("Europe/Bucharest"))
     async with httpx.AsyncClient() as http_client:

@@ -25,7 +25,7 @@ from digest.delivery.ops import OpsChannel
 from digest.reports.context import ModuleResult, ReportContext, ReportDocument, ReportPhoto
 from digest.reports.modules import IMPLEMENTED_MODULES, ReportModuleFunction
 from digest.reports.runner import ReportDeps, run_report, runnable_modules
-from factories import BUCHAREST, lead_snapshots_row, make_snapshot_row
+from factories import BUCHAREST, lead_snapshots_row, make_lead_links, make_snapshot_row
 from fakes import recording_bot
 
 TENANT_ID = "sofabelle"
@@ -50,6 +50,7 @@ class Harness:
             ops=OpsChannel(ops_bot, OPS_CHAT_ID),
             report_chat_id=report_chat_id,
             modules=IMPLEMENTED_MODULES,
+            lead_links=make_lead_links(config.status_mapping),
         )
 
     @property
@@ -138,6 +139,10 @@ async def test_daily_report_is_sent_to_group_and_recorded(harness: Harness) -> N
     assert run["message_ids"] == [message.message_id for message in harness.group.sent]
 
 
+def link(lead_id: int) -> str:
+    return f'<a href="https://bellesofa.meficrm.com/admin/leads/index/{lead_id}">#{lead_id}</a>'
+
+
 async def test_daily_report_contains_d1_to_d6_in_order(harness: Harness) -> None:
     created_at = datetime(2026, 9, 25, 10, 0, tzinfo=BUCHAREST)
     await store_snapshot(
@@ -162,8 +167,10 @@ async def test_daily_report_contains_d1_to_d6_in_order(harness: Harness) -> None
         text.index(marker)
         for marker in (
             "<b>TOTAL</b>",
-            "⚠ Lead-uri neatinse sau nepreluate: 2 (cel mai vechi: 9h) · Dragoi Mihaela 2 (9h)",
-            "⏰ Reveniri restante: 1 (cea mai veche: 3 zile) · Dragoi Mihaela 1 (3 zile)",
+            "⚠ Lead-uri neatinse sau nepreluate: 2 (cel mai vechi: 9h)\n"
+            f"Dragoi Mihaela 2 (9h): {link(1)}, {link(2)}",
+            "⏰ Reveniri restante: 1 (cea mai veche: 3 zile)\n"
+            f"Dragoi Mihaela 1 (3 zile): {link(2)}",
             "Oferte blocate >14 zile: nu",
             "Anomalii: nu",
             "Lead-uri azi: 2 (vinerea trecută: 0) · Contracte: 0 (0)",

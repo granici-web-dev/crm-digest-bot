@@ -29,7 +29,7 @@ from digest.metrics.weekly import (
     weekly_funnel,
 )
 from digest.reports.render import percent_one_decimal
-from factories import etalon_lead_rows, load_etalon
+from factories import etalon_lead_rows, load_etalon, make_lead_links
 
 TODAY = date(2026, 6, 3)
 END_OF_MAY = date(2026, 5, 31)
@@ -72,7 +72,9 @@ def tool_data(
             raise SnapshotMissingError(str(snapshot_date))
         return lead_frame
 
-    return ToolData(TODAY, snapshot_dates, load_frame, config)
+    return ToolData(
+        TODAY, snapshot_dates, load_frame, config, make_lead_links(config.status_mapping)
+    )
 
 
 async def run(
@@ -420,3 +422,25 @@ def test_tool_definitions_are_strict_with_config_enums(app_config: AppConfig) ->
     assert "Potinga Dima" not in manager_enum
     showroom_enum = definitions["funnel"]["input_schema"]["properties"]["showroom"]["enum"]  # type: ignore[index]
     assert showroom_enum == [ALL_SHOWROOMS, "Brașov", "București", "Cluj"]
+
+
+async def test_overdue_and_untouched_carry_lead_ids_outside_content(
+    etalon_config: AppConfig, lead_frame: pd.DataFrame
+) -> None:
+    data = tool_data(etalon_config, lead_frame)
+
+    overdue = await run_tool("overdue_followups", {"manager": ALL_MANAGERS}, data)
+    one_manager = await run_tool("overdue_followups", {"manager": "Moaca Andreea"}, data)
+    untouched = await run_tool("untouched_leads", {}, data)
+    funnel = await run_tool("funnel", {"period": "azi", "showroom": ALL_SHOWROOMS}, data)
+
+    expected = overdue_revenire_by_manager(lead_frame, TODAY, etalon_config)
+    assert overdue.lead_ids == expected.lead_ids
+    assert len(overdue.lead_ids) == expected.lead_count > 0
+    moaca = [group for group in expected.groups if group.manager_name == "Moaca Andreea"]
+    assert one_manager.lead_ids == (moaca[0].lead_ids if moaca else ())
+    assert untouched.lead_ids == untouched_leads(lead_frame, TODAY, etalon_config).lead_ids
+    assert funnel.lead_ids == ()
+    for outcome in (overdue, one_manager, untouched):
+        serialized = json.dumps(outcome.content)
+        assert not any(str(lead_id) in serialized for lead_id in outcome.lead_ids)

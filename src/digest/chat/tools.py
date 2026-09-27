@@ -32,6 +32,7 @@ from digest.metrics.weekly import (
     converted_count_by_showroom,
     loss_reasons_in_window,
 )
+from digest.reports.lead_links import LeadLinks
 from digest.reports.render import change_label, percent_one_decimal, target_label
 
 ALL_SHOWROOMS = "toate"
@@ -52,6 +53,7 @@ class ToolData:
     # Бросает SnapshotMissingError, если за дату нет успешного снапшота.
     load_frame: FrameLoader
     config: AppConfig
+    lead_links: LeadLinks
 
 
 @dataclass(frozen=True)
@@ -63,6 +65,9 @@ class ToolOutcome:
     snapshot_dates: tuple[date, ...] = ()
     # Строки подписи о снапшоте, если он не за последний день периода.
     snapshot_notes: tuple[str, ...] = ()
+    # id лидов для строки ссылок под ответом, самые старые первыми. Модели не передаются
+    # (инвариант 7): в content их нет.
+    lead_ids: tuple[int, ...] = ()
 
 
 class NoDataError(Exception):
@@ -450,12 +455,15 @@ async def loss_reasons(data: ToolData, arguments: LossReasonsArguments) -> ToolO
     return outcome({**period_header(frame), "showroom": showroom, **content}, frame)
 
 
-def snapshot_outcome(content: dict[str, Any], snapshot_date: date) -> ToolOutcome:
+def snapshot_outcome(
+    content: dict[str, Any], snapshot_date: date, lead_ids: tuple[int, ...]
+) -> ToolOutcome:
     return ToolOutcome(
         {"snapshot_date": date_label(snapshot_date), **content},
         is_error=False,
         scope=f"Snapshot: {date_label(snapshot_date)}",
         snapshot_dates=(snapshot_date,),
+        lead_ids=lead_ids,
     )
 
 
@@ -476,6 +484,14 @@ async def overdue_followups(data: ToolData, arguments: OverdueFollowupsArguments
         for group in overdue.groups
         if arguments.manager in (ALL_MANAGERS, group.manager_name)
     ]
+    lead_ids = (
+        overdue.lead_ids
+        if arguments.manager == ALL_MANAGERS
+        else next(
+            (group.lead_ids for group in overdue.groups if group.manager_name == arguments.manager),
+            (),
+        )
+    )
     if arguments.manager == ALL_MANAGERS:
         content: dict[str, Any] = {
             "lead_count": overdue.lead_count,
@@ -488,7 +504,7 @@ async def overdue_followups(data: ToolData, arguments: OverdueFollowupsArguments
             "lead_count": groups[0]["lead_count"] if groups else 0,
             "max_days_overdue": groups[0]["max_days_overdue"] if groups else None,
         }
-    return snapshot_outcome(content, snapshot_date)
+    return snapshot_outcome(content, snapshot_date, lead_ids)
 
 
 async def untouched_leads_tool(data: ToolData, arguments: UntouchedLeadsArguments) -> ToolOutcome:
@@ -512,6 +528,7 @@ async def untouched_leads_tool(data: ToolData, arguments: UntouchedLeadsArgument
             ],
         },
         snapshot_date,
+        untouched.lead_ids,
     )
 
 

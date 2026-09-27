@@ -16,7 +16,7 @@ from digest.db.schema import chat_questions, lead_snapshots, snapshot_runs
 from digest.delivery.ops import OpsChannel
 from digest.reports.modules import IMPLEMENTED_MODULES
 from digest.reports.runner import ReportDeps
-from factories import BUCHAREST, lead_snapshots_row, make_snapshot_row
+from factories import BUCHAREST, lead_snapshots_row, make_lead_links, make_snapshot_row
 from fakes import BOT_USER, ScriptedAnthropic, recording_bot, scripted_anthropic, text_message
 from fakes import tool_use_message as tool_use
 
@@ -49,6 +49,7 @@ class ChatHarness:
             ops=OpsChannel(ops_bot, OPS_CHAT_ID),
             report_chat_id=TEST_CHAT_ID,
             modules=IMPLEMENTED_MODULES,
+            lead_links=make_lead_links(config.status_mapping),
         )
         self.api = api
         chat = ChatDeps(None if api is None else api.client, "claude-sonnet-5", chat_ids)

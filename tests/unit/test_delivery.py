@@ -5,11 +5,12 @@ from aiogram.methods import SendMessage
 from digest.delivery.ops import OpsChannel, notify_ops
 from digest.delivery.telegram import (
     MAX_FLOOD_RETRIES,
+    create_bot,
     send_document_with_retry,
     send_message_with_retry,
     send_photo_with_retry,
 )
-from fakes import recording_bot
+from fakes import TEST_BOT_TOKEN, recording_bot
 
 OPS_CHAT_ID = -100
 
@@ -103,3 +104,10 @@ async def test_ops_bot_failure_does_not_propagate() -> None:
     await notify_ops(OpsChannel(bot, OPS_CHAT_ID), "snapshot failed")
 
     assert session.sent == []
+
+
+def test_report_bot_sends_links_without_previews() -> None:
+    link_preview = create_bot(TEST_BOT_TOKEN).default.link_preview
+
+    assert link_preview is not None
+    assert link_preview.is_disabled is True

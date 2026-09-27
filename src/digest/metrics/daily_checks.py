@@ -12,7 +12,7 @@ from digest.metrics.daily import (
     lead_row_flags,
 )
 from digest.metrics.extra import overdue_revenire
-from digest.metrics.kpi import Period, lead_counts_by_showroom
+from digest.metrics.kpi import Period, count_flags, lead_counts_by_showroom
 
 EARLIEST_TIMESTAMP = pd.Timestamp.min.tz_localize("UTC")
 
@@ -23,6 +23,8 @@ class UntouchedGroup:
     manager_name: str | None
     lead_count: int
     oldest_age_hours: int
+    # Самые старые первыми, как и во всех lead_ids ниже.
+    lead_ids: tuple[int, ...]
 
 
 @dataclass(frozen=True)
@@ -31,6 +33,7 @@ class UntouchedLeads:
     # None: лидов в блоке нет.
     oldest_age_hours: int | None
     groups: tuple[UntouchedGroup, ...]
+    lead_ids: tuple[int, ...]
 
 
 @dataclass(frozen=True)
@@ -39,6 +42,7 @@ class OverdueGroup:
     manager_name: str | None
     lead_count: int
     max_days_overdue: int
+    lead_ids: tuple[int, ...]
 
 
 @dataclass(frozen=True)
@@ -47,6 +51,7 @@ class OverdueRevenire:
     # None: просроченных revenire нет.
     max_days_overdue: int | None
     groups: tuple[OverdueGroup, ...]
+    lead_ids: tuple[int, ...]
 
 
 @dataclass(frozen=True)
@@ -54,6 +59,8 @@ class StaleOffers:
     by_showroom: dict[str | None, int]
     total: int
     change_since_yesterday: int | None
+    lead_ids_by_showroom: dict[str | None, tuple[int, ...]]
+    lead_ids: tuple[int, ...]
 
 
 @dataclass(frozen=True)
@@ -94,16 +101,36 @@ def not_taken_first(manager_name: str | None, lead_count: int) -> tuple[bool, in
     return (manager_name is not None, -lead_count, manager_name or "")
 
 
+def oldest_first(leads: pd.DataFrame, age_order: pd.Series) -> pd.DataFrame:
+    # Порядок ссылок на лиды: самый старый первым, при равенстве по id (детерминированно).
+    return (
+        leads.assign(age_order=age_order)
+        .sort_values(["age_order", "lead_id"], kind="stable")
+        .drop(columns="age_order")
+    )
+
+
+def lead_id_tuple(lead_ids: pd.Series) -> tuple[int, ...]:
+    return tuple(int(lead_id) for lead_id in lead_ids)
+
+
 def count_and_max_by_manager(
     leads: pd.DataFrame, values: pd.Series, config: AppConfig
-) -> list[tuple[str | None, int, int]]:
+) -> list[tuple[str | None, int, int, tuple[int, ...]]]:
+    # leads уже упорядочены oldest_first: groupby сохраняет порядок строк внутри группы.
     grouped = (
-        pd.DataFrame({"manager_name": manager_names(leads, config), "value": values})
-        .groupby("manager_name", dropna=False)["value"]
-        .agg(["size", "max"])
+        pd.DataFrame(
+            {
+                "manager_name": manager_names(leads, config),
+                "value": values,
+                "lead_id": leads["lead_id"],
+            }
+        )
+        .groupby("manager_name", dropna=False, sort=False)
+        .agg(size=("value", "size"), max=("value", "max"), lead_ids=("lead_id", lead_id_tuple))
     )
     groups = [
-        (name_or_not_taken(manager_name), int(row["size"]), int(row["max"]))
+        (name_or_not_taken(manager_name), int(row["size"]), int(row["max"]), row["lead_ids"])
         for manager_name, row in grouped.iterrows()
     ]
     return sorted(groups, key=lambda group: not_taken_first(group[0], group[1]))
@@ -140,35 +167,49 @@ def untouched_leads(
     )
     not_taken = manager_names(lead_frame, config).isna()
     reported = candidate & (not_taken | ~touched)
-    leads = lead_frame[reported]
-    ages = age_hours[reported].floordiv(1)
+    leads = oldest_first(lead_frame[reported], created_at[reported])
+    ages = age_hours[leads.index].floordiv(1)
     groups = tuple(
         UntouchedGroup(*group) for group in count_and_max_by_manager(leads, ages, config)
     )
-    return UntouchedLeads(len(leads), None if leads.empty else int(ages.max()), groups)
+    return UntouchedLeads(
+        len(leads),
+        None if leads.empty else int(ages.max()),
+        groups,
+        lead_id_tuple(leads["lead_id"]),
+    )
 
 
 def overdue_revenire_by_manager(
     lead_frame: pd.DataFrame, today: date, config: AppConfig
 ) -> OverdueRevenire:
     # docs/kpi-definitions.md, «Дополнительные метрики», просроченные revenire.
-    overdue = lead_frame[lead_frame["lead_id"].isin(overdue_revenire(lead_frame, today, config))]
+    overdue_ids = overdue_revenire(lead_frame, today, config)
+    overdue = lead_frame[lead_frame["lead_id"].isin(overdue_ids)]
+    overdue = oldest_first(overdue, overdue["data_revenire"])
     days_overdue = (pd.Timestamp(today) - overdue["data_revenire"]).dt.days
     groups = tuple(
         OverdueGroup(*group) for group in count_and_max_by_manager(overdue, days_overdue, config)
     )
-    return OverdueRevenire(len(overdue), None if overdue.empty else int(days_overdue.max()), groups)
+    return OverdueRevenire(
+        len(overdue),
+        None if overdue.empty else int(days_overdue.max()),
+        groups,
+        lead_id_tuple(overdue["lead_id"]),
+    )
+
+
+def snapshot_period(analysis_date: date, config: AppConfig) -> Period:
+    # Все лиды снапшота, а не лиды периода. Начало не от created_at.min(): у пустого кадра это NaT.
+    return Period(EARLIEST_TIMESTAMP, daily_window(analysis_date, config.status_mapping.time).end)
 
 
 def stale_offer_counts_by_showroom(
     lead_frame: pd.DataFrame, analysis_date: date, config: AppConfig
 ) -> dict[str | None, int]:
     # Та же ACTIVE_OFFERS_14, что в ACR (docs/kpi-definitions.md, «Базовые множества»), но по
-    # всем лидам снапшота, а не по лидам периода. Начало не от created_at.min(): у пустого
-    # кадра это NaT.
-    all_time = Period(
-        EARLIEST_TIMESTAMP, daily_window(analysis_date, config.status_mapping.time).end
-    )
+    # всем лидам снапшота.
+    all_time = snapshot_period(analysis_date, config)
     counts = lead_counts_by_showroom(lead_frame, all_time, analysis_date, config)
     return {
         showroom: showroom_counts.active_offers_14 for showroom, showroom_counts in counts.items()
@@ -194,7 +235,23 @@ def stale_offers(
             ).values()
         )
     )
-    return StaleOffers(by_showroom, total, change_since_yesterday)
+    flags = count_flags(lead_frame, snapshot_period(report_date, config), report_date, config)
+    stale = lead_frame.loc[flags.index[flags["active_offers_14"]]]
+    stale = oldest_first(stale, stale["last_contact_at"])
+    showroom = stale["showroom"]
+    lead_ids_by_showroom = {
+        key: lead_id_tuple(
+            stale.loc[showroom.isna() if key is None else showroom.eq(key), "lead_id"]
+        )
+        for key in by_showroom
+    }
+    return StaleOffers(
+        by_showroom,
+        total,
+        change_since_yesterday,
+        lead_ids_by_showroom,
+        lead_id_tuple(stale["lead_id"]),
+    )
 
 
 def anomalies(lead_frame: pd.DataFrame, report_date: date, config: AppConfig) -> Anomalies:

@@ -403,3 +403,20 @@ def test_default_send_times_come_from_send_times(app_config: AppConfig) -> None:
     assert app_config.modules.default_send_time("daily") == time(19, 30)
     assert app_config.modules.default_send_time("weekly") == time(9, 0)
     assert app_config.modules.default_send_time("monthly") == time(9, 0)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/admin/leads/index/",
+        "admin/leads/{lead_id}",
+        "/leads/{lead_id}/{lead_id}",
+        "/{x}/{lead_id}",
+    ],
+)
+def test_lead_link_path_without_single_lead_id_placeholder_fails_config_load(path: str) -> None:
+    raw_config = raw_repository_config()
+    raw_config["status_mapping"]["lead_links"]["path"] = path
+
+    with pytest.raises(ValidationError, match=r"lead_links\.path"):
+        AppConfig.model_validate(raw_config)

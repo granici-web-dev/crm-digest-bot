@@ -50,7 +50,7 @@ def untouched(rows: list[dict[str, Any]], config: AppConfig) -> tuple[UntouchedG
 def test_untouched_lead_is_reported_with_age_from_window_end(app_config: AppConfig) -> None:
     rows = [new_lead(1, datetime(2026, 9, 25, 10, 30, tzinfo=BUCHAREST))]
 
-    assert untouched(rows, app_config) == (UntouchedGroup("Dragoi Mihaela", 1, 8),)
+    assert untouched(rows, app_config) == (UntouchedGroup("Dragoi Mihaela", 1, 8, (1,)),)
 
 
 @pytest.mark.parametrize(
@@ -81,7 +81,7 @@ def test_lead_created_by_consultant_is_touched(app_config: AppConfig) -> None:
         new_lead(2, created_at, created_by_id=7),
     ]
 
-    assert untouched(rows, app_config) == (UntouchedGroup("Dragoi Mihaela", 1, 9),)
+    assert untouched(rows, app_config) == (UntouchedGroup("Dragoi Mihaela", 1, 9, (2,)),)
 
 
 @pytest.mark.parametrize(
@@ -107,7 +107,7 @@ def test_lead_created_by_inactive_user_is_not_touched(app_config: AppConfig) -> 
     # id 6 в managers.yaml, но не консультант (active: false): его лид никто не обработал.
     rows = [new_lead(1, datetime(2026, 9, 25, 10, 0, tzinfo=BUCHAREST), created_by_id=6)]
 
-    assert untouched(rows, app_config) == (UntouchedGroup("Dragoi Mihaela", 1, 9),)
+    assert untouched(rows, app_config) == (UntouchedGroup("Dragoi Mihaela", 1, 9, (1,)),)
 
 
 def test_untouched_age_across_dst_end_counts_real_hours(app_config: AppConfig) -> None:
@@ -144,7 +144,7 @@ def test_lookback_across_dst_end_is_three_calendar_days(
         (datetime(2026, 9, 25, 15, 0, tzinfo=BUCHAREST), ()),
         (
             datetime(2026, 9, 25, 14, 59, tzinfo=BUCHAREST),
-            (UntouchedGroup("Dragoi Mihaela", 1, 4),),
+            (UntouchedGroup("Dragoi Mihaela", 1, 4, (1,)),),
         ),
     ],
     ids=["3h59", "exactly_4h", "4h01"],
@@ -182,14 +182,14 @@ def test_not_taken_lead_is_reported_even_if_touched(app_config: AppConfig) -> No
         )
     ]
 
-    assert untouched(rows, app_config) == (UntouchedGroup(None, 1, 10),)
+    assert untouched(rows, app_config) == (UntouchedGroup(None, 1, 10, (1,)),)
 
 
 def test_lead_without_assignee_is_not_taken(app_config: AppConfig) -> None:
     created_at = datetime(2026, 9, 25, 9, 0, tzinfo=BUCHAREST)
     rows = [new_lead(1, created_at, assigned_to_id=None, assigned_to_name=None)]
 
-    assert untouched(rows, app_config) == (UntouchedGroup(None, 1, 10),)
+    assert untouched(rows, app_config) == (UntouchedGroup(None, 1, 10, (1,)),)
 
 
 def test_showroom_visit_is_not_untouched(app_config: AppConfig) -> None:
@@ -211,7 +211,9 @@ def test_partnership_is_not_untouched(app_config: AppConfig) -> None:
     assert untouched(rows, app_config) == ()
 
 
-def test_untouched_groups_put_not_taken_first_then_larger_groups(app_config: AppConfig) -> None:
+def test_untouched_groups_put_not_taken_first_and_list_oldest_leads_first(
+    app_config: AppConfig,
+) -> None:
     def at(hour: int) -> datetime:
         return datetime(2026, 9, 25, hour, 0, tzinfo=BUCHAREST)
 
@@ -229,10 +231,11 @@ def test_untouched_groups_put_not_taken_first_then_larger_groups(app_config: App
         lead_count=4,
         oldest_age_hours=11,
         groups=(
-            UntouchedGroup(None, 1, 5),
-            UntouchedGroup("Roibu Valeria", 2, 11),
-            UntouchedGroup("Dragoi Mihaela", 1, 10),
+            UntouchedGroup(None, 1, 5, (4,)),
+            UntouchedGroup("Roibu Valeria", 2, 11, (3, 2)),
+            UntouchedGroup("Dragoi Mihaela", 1, 10, (1,)),
         ),
+        lead_ids=(3, 1, 2, 4),
     )
 
 
@@ -244,10 +247,12 @@ def test_revenire_today_is_not_overdue(app_config: AppConfig) -> None:
 
     result = overdue_revenire_by_manager(frame(rows, app_config), REPORT_DATE, app_config)
 
-    assert result == OverdueRevenire(lead_count=0, max_days_overdue=None, groups=())
+    assert result == OverdueRevenire(lead_count=0, max_days_overdue=None, groups=(), lead_ids=())
 
 
-def test_overdue_days_are_counted_per_manager(app_config: AppConfig) -> None:
+def test_overdue_days_are_counted_per_manager_most_overdue_lead_first(
+    app_config: AppConfig,
+) -> None:
     godja = {"assigned_to_id": 10, "assigned_to_name": "Godja Adina Maria"}
     rows = [
         make_snapshot_row(lead_id=1, data_revenire=date(2026, 9, 19), **godja),
@@ -267,10 +272,11 @@ def test_overdue_days_are_counted_per_manager(app_config: AppConfig) -> None:
         lead_count=4,
         max_days_overdue=6,
         groups=(
-            OverdueGroup(None, 1, 1),
-            OverdueGroup("Godja Adina Maria", 2, 6),
-            OverdueGroup("Dragoi Mihaela", 1, 2),
+            OverdueGroup(None, 1, 1, (4,)),
+            OverdueGroup("Godja Adina Maria", 2, 6, (1, 2)),
+            OverdueGroup("Dragoi Mihaela", 1, 2, (3,)),
         ),
+        lead_ids=(1, 3, 2, 4),
     )
 
 
@@ -311,6 +317,25 @@ def test_stale_offers_are_counted_by_showroom(app_config: AppConfig) -> None:
     assert result.by_showroom == {"Brașov": 1, "București": 0, "Cluj": 2, None: 1}
     assert result.total == 4
     assert result.change_since_yesterday is None
+    assert result.lead_ids_by_showroom == {
+        "Brașov": (3,),
+        "București": (),
+        "Cluj": (1, 2),
+        None: (4,),
+    }
+    assert result.lead_ids == (1, 2, 3, 4)
+
+
+def test_stale_offer_lead_ids_go_oldest_contact_first(app_config: AppConfig) -> None:
+    rows = [
+        offer(7, 9, showroom="Cluj"),
+        offer(3, 2, showroom="Cluj"),
+        offer(5, 2, showroom="Cluj"),
+    ]
+
+    result = stale_offers(frame(rows, app_config), None, REPORT_DATE, app_config)
+
+    assert result.lead_ids_by_showroom["Cluj"] == (3, 5, 7)
 
 
 def test_stale_offers_match_active_offers_14(app_config: AppConfig) -> None:
@@ -538,12 +563,13 @@ def test_every_check_is_empty_on_empty_frame(app_config: AppConfig) -> None:
     lead_frame = frame([], app_config)
     yesterday = PreviousSnapshot(date(2026, 9, 24), lead_frame)
 
-    assert untouched_leads(lead_frame, REPORT_DATE, app_config) == UntouchedLeads(0, None, ())
+    assert untouched_leads(lead_frame, REPORT_DATE, app_config) == UntouchedLeads(0, None, (), ())
     assert overdue_revenire_by_manager(lead_frame, REPORT_DATE, app_config) == OverdueRevenire(
-        0, None, ()
+        0, None, (), ()
     )
+    no_offers = {"Brașov": 0, "București": 0, "Cluj": 0, None: 0}
     assert stale_offers(lead_frame, yesterday, REPORT_DATE, app_config) == StaleOffers(
-        {"Brașov": 0, "București": 0, "Cluj": 0, None: 0}, 0, 0
+        no_offers, 0, 0, dict.fromkeys(no_offers, ()), ()
     )
     assert anomalies(lead_frame, REPORT_DATE, app_config) == Anomalies(7, None, ())
     assert same_weekday_comparison(lead_frame, REPORT_DATE, app_config) == SameWeekdayComparison(

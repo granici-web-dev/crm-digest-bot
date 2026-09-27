@@ -1,3 +1,4 @@
+import json
 from datetime import date, datetime
 
 import anthropic
@@ -14,7 +15,7 @@ from digest.chat.tools import ToolData
 from digest.config import AppConfig
 from digest.metrics.frame import prepare_lead_frame
 from digest.reports.render import render
-from factories import BUCHAREST, make_snapshot_row
+from factories import BUCHAREST, make_lead_links, make_snapshot_row
 from fakes import scripted_anthropic, text_message, tool_use_message
 
 TODAY = date(2026, 9, 23)
@@ -22,7 +23,7 @@ MODEL = "claude-sonnet-5"
 FUNNEL_THIS_WEEK = ("funnel", {"period": "saptamana_curenta", "showroom": "București"})
 
 
-def lead_frame(config: AppConfig) -> pd.DataFrame:
+def lead_frame(config: AppConfig, lead_ids: tuple[int, ...] = (1, 2, 3)) -> pd.DataFrame:
     rows = [
         make_snapshot_row(
             lead_id=lead_id,
@@ -30,18 +31,24 @@ def lead_frame(config: AppConfig) -> pd.DataFrame:
             last_contact_at=datetime(2026, 9, 22, 11, tzinfo=BUCHAREST),
             ofertat=lead_id == 1,
         )
-        for lead_id in (1, 2, 3)
+        for lead_id in lead_ids
     ]
     return prepare_lead_frame(rows, config)
 
 
-def tool_data(config: AppConfig, snapshot_dates: tuple[date, ...] = (TODAY,)) -> ToolData:
-    frame = lead_frame(config)
+def tool_data(
+    config: AppConfig,
+    snapshot_dates: tuple[date, ...] = (TODAY,),
+    lead_ids: tuple[int, ...] = (1, 2, 3),
+) -> ToolData:
+    frame = lead_frame(config, lead_ids)
 
     async def load_frame(snapshot_date: date) -> pd.DataFrame:
         return frame
 
-    return ToolData(TODAY, snapshot_dates, load_frame, config)
+    return ToolData(
+        TODAY, snapshot_dates, load_frame, config, make_lead_links(config.status_mapping)
+    )
 
 
 async def test_question_routes_to_tool_with_arguments(app_config: AppConfig) -> None:
@@ -209,3 +216,65 @@ async def test_substituted_snapshot_of_closed_period_is_disclosed(app_config: Ap
     assert answer.text.endswith(
         "<i>Date din snapshotul din 23.09.2026 (nu există snapshot pentru 22.09.2026)</i>"
     )
+
+
+TWELVE_LEAD_IDS = tuple(range(900_001, 900_013))
+
+
+async def test_links_line_follows_signature_and_is_capped_at_ten(app_config: AppConfig) -> None:
+    api = scripted_anthropic(
+        tool_use_message(("untouched_leads", {})),
+        text_message("Sunt 12 lead-uri neatinse."),
+    )
+
+    answer = await answer_question(
+        "Ce lead-uri sunt neatinse?",
+        api.client,
+        MODEL,
+        tool_data(app_config, lead_ids=TWELVE_LEAD_IDS),
+    )
+
+    assert answer.status == "answered"
+    signature, links = answer.text.split("\n")[-2:]
+    assert signature == "<i>Snapshot: 23.09.2026 · untouched_leads()</i>"
+    assert links.startswith("Lead-uri: <a href=")
+    assert links.count("<a href=") == 10
+    assert links.endswith("#900010</a> și încă 2")
+
+
+async def test_number_guard_ignores_lead_numbers_in_links_line(app_config: AppConfig) -> None:
+    api = scripted_anthropic(
+        tool_use_message(("untouched_leads", {})), text_message("Sunt 12 lead-uri neatinse.")
+    )
+
+    answer = await answer_question(
+        "?", api.client, MODEL, tool_data(app_config, lead_ids=TWELVE_LEAD_IDS)
+    )
+
+    assert answer.status == "answered"
+    assert "#900001" in answer.text
+
+
+async def test_lead_number_written_by_model_is_blocked(app_config: AppConfig) -> None:
+    api = scripted_anthropic(
+        tool_use_message(("untouched_leads", {})), text_message("Cel mai vechi este #900001.")
+    )
+
+    answer = await answer_question(
+        "?", api.client, MODEL, tool_data(app_config, lead_ids=TWELVE_LEAD_IDS)
+    )
+
+    assert answer.status == "unverified_numbers"
+    assert answer.unverified_number == "900001"
+
+
+async def test_model_request_never_contains_lead_ids(app_config: AppConfig) -> None:
+    api = scripted_anthropic(
+        tool_use_message(("untouched_leads", {}), ("overdue_followups", {"manager": "toti"})),
+        text_message("Sunt 12 lead-uri neatinse."),
+    )
+
+    await answer_question("?", api.client, MODEL, tool_data(app_config, lead_ids=TWELVE_LEAD_IDS))
+
+    sent = json.dumps(api.requests)
+    assert not any(str(lead_id) in sent for lead_id in TWELVE_LEAD_IDS)

@@ -5,6 +5,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from digest.config import StatusMapping, read_yaml
+from digest.reports.lead_links import LeadLinks
 from digest.snapshot import categorize
 
 BUCHAREST = ZoneInfo("Europe/Bucharest")
@@ -143,6 +144,13 @@ def etalon_lead_rows(etalon: dict[str, Any], status_mapping: StatusMapping) -> l
             )
         )
     return rows
+
+
+TEST_MEFI_BASE_URL = "https://bellesofa.meficrm.com/api/v1"
+
+
+def make_lead_links(status_mapping: StatusMapping) -> LeadLinks:
+    return LeadLinks.from_mefi_base_url(TEST_MEFI_BASE_URL, status_mapping.lead_links)
 
 
 def make_snapshot_row(**overrides: Any) -> dict[str, Any]:

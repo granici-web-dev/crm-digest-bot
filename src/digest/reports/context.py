@@ -3,6 +3,7 @@ from datetime import date
 
 from digest.config import AppConfig, SourceCode
 from digest.metrics.daily import PreviousSnapshot
+from digest.reports.lead_links import LeadLinks
 
 
 @dataclass(frozen=True)
@@ -12,6 +13,7 @@ class ReportContext:
     week_ago: PreviousSnapshot | None
     config: AppConfig
     tenant_id: str
+    lead_links: LeadLinks
 
 
 @dataclass(frozen=True)

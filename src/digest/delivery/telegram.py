@@ -19,7 +19,11 @@ class MessageLineTooLong(Exception):
 
 
 def create_bot(token: str) -> Bot:
-    return Bot(token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    # Превью выключены: иначе под ссылкой на лид mefi Telegram покажет страницу входа в mefi.
+    return Bot(
+        token,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML, link_preview_is_disabled=True),
+    )
 
 
 def telegram_length(text: str) -> int:

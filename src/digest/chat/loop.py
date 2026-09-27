@@ -8,6 +8,7 @@ from typing import Any
 
 from anthropic import AsyncAnthropic
 from anthropic.types import MessageParam, ToolResultBlockParam
+from markupsafe import Markup
 
 from digest.chat.tools import (
     ALL_MANAGERS,
@@ -18,6 +19,7 @@ from digest.chat.tools import (
     tool_definitions,
 )
 from digest.db.schema import ChatQuestionStatus
+from digest.reports.lead_links import LeadLinks
 from digest.reports.render import TEMPLATES_DIR, render
 
 MAX_TOOL_CALLS = 3
@@ -165,7 +167,20 @@ async def answer_question(
         messages.append({"role": "user", "content": results})
 
     text = "".join(block.text for block in response.content if block.type == "text").strip()
-    return checked_answer(question, text, tuple(calls), input_tokens, output_tokens)
+    return checked_answer(
+        question, text, tuple(calls), input_tokens, output_tokens, data.lead_links
+    )
+
+
+def links_line(calls: tuple[ExecutedToolCall, ...], lead_links: LeadLinks) -> str:
+    # Строку ссылок собирает код после стража цифр: номера лидов в ней страж не проверяет, а
+    # модель их не видела (инвариант 7).
+    lead_ids = dict.fromkeys(
+        lead_id for call in calls if not call.outcome.is_error for lead_id in call.outcome.lead_ids
+    )
+    if not lead_ids:
+        return ""
+    return str(Markup("Lead-uri: ") + lead_links.capped_line(list(lead_ids)))
 
 
 def checked_answer(
@@ -174,6 +189,7 @@ def checked_answer(
     calls: tuple[ExecutedToolCall, ...],
     input_tokens: int,
     output_tokens: int,
+    lead_links: LeadLinks,
 ) -> ChatAnswer:
     # Инвариант 2 держит код: без вызова инструмента цифр нет, с вызовом каждое число ответа
     # должно найтись в результатах, в вопросе или в подписи.
@@ -200,8 +216,9 @@ def checked_answer(
             unverified,
         )
     answer = html.escape(text)
+    footer = "\n".join(part for part in (signature_text, links_line(calls, lead_links)) if part)
     return ChatAnswer(
-        f"{answer}\n\n{signature_text}" if signature_text else answer,
+        f"{answer}\n\n{footer}" if footer else answer,
         "answered",
         calls,
         input_tokens,

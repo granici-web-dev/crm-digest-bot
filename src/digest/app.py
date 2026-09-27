@@ -26,6 +26,7 @@ from digest.db.schema import schedules
 from digest.delivery.ops import OpsChannel, notify_ops
 from digest.delivery.telegram import create_bot
 from digest.mefi.client import MefiClient, create_mefi_http_client
+from digest.reports.lead_links import LeadLinks
 from digest.reports.modules import IMPLEMENTED_MODULES
 from digest.reports.periods import ReportLevel
 from digest.reports.runner import ReportDeps, run_report
@@ -129,6 +130,9 @@ def create_report_deps(
         ),
         report_chat_id=app_settings.report_chat_id(dry_run),
         modules=IMPLEMENTED_MODULES,
+        lead_links=LeadLinks.from_mefi_base_url(
+            app_settings.mefi_base_url, config.status_mapping.lead_links
+        ),
     )
 
 

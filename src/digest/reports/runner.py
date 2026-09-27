@@ -37,6 +37,7 @@ from digest.metrics.frame import unknown_manager_ids
 from digest.metrics.kpi import Period
 from digest.metrics.weekly import DAYS_IN_WEEK
 from digest.reports.context import ReportContext, ReportDocument, ReportPhoto
+from digest.reports.lead_links import LeadLinks
 from digest.reports.modules import ReportModuleFunction
 from digest.reports.periods import ReportLevel, report_period
 from digest.reports.render import render
@@ -61,6 +62,7 @@ class ReportDeps:
     ops: OpsChannel
     report_chat_id: int
     modules: Mapping[str, ReportModuleFunction]
+    lead_links: LeadLinks
 
 
 @dataclass(frozen=True)
@@ -376,7 +378,9 @@ async def build_report(
         if runs_week_over_week
         else None
     )
-    context = ReportContext(snapshot_date, previous, week_ago, deps.config, deps.tenant_id)
+    context = ReportContext(
+        snapshot_date, previous, week_ago, deps.config, deps.tenant_id, deps.lead_links
+    )
     blocks: list[ModuleBlock] = []
     photos: list[ReportPhoto] = []
     documents: list[ReportDocument] = []
