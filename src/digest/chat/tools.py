@@ -82,6 +82,12 @@ class ToolOutcome:
     # id лидов для строки ссылок под ответом, самые старые первыми. Модели не передаются
     # (инвариант 7): в content их нет.
     lead_ids: tuple[int, ...] = ()
+    # «Нет снапшота за дату» это ответ инструмента, а не сбой вызова: модель пересказывает дату.
+    no_data: bool = False
+
+    @property
+    def answered(self) -> bool:
+        return not self.is_error or self.no_data
 
 
 class NoDataError(Exception):
@@ -691,4 +697,4 @@ async def run_tool(name: str, arguments: object, data: ToolData) -> ToolOutcome:
         problems = "; ".join(str(problem["msg"]) for problem in error.errors())
         return ToolOutcome({"error": f"Argumente invalide: {problems}."}, is_error=True)
     except NoDataError as error:
-        return ToolOutcome({"error": str(error)}, is_error=True)
+        return ToolOutcome({"error": str(error)}, is_error=True, no_data=True)

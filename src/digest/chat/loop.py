@@ -32,8 +32,38 @@ UNVERIFIED_NUMBERS_TEXT = (
     "Nu pot formula un răspuns exact la această întrebare. Reformulați, vă rog."
 )
 TOOL_LIMIT_TEXT = "Limita de apeluri pentru această întrebare a fost atinsă."
-NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
+# Знак и «%» часть числа: «+15%» при результате «(−15%)» это другое число, как и счётчик 15,
+# поданный как «15%». Знак только в начале слова: «top-3» это 3, а не −3.
+NUMBER = re.compile(r"(?:(?<![\w.,])[+\-\u2212])?\d+(?:[.,]\d+)*(?:[ \u00a0]?%)?")
 DATE_LIKE = re.compile(r"^\d{1,2}\.\d{1,2}(?:\.\d{4})?$")
+MINUS_SIGNS = "-\u2212"
+WORD = re.compile(r"[^\W\d_]+")
+CEDILLA_TO_COMMA = str.maketrans("şţŞŢ", "șțȘȚ")
+# Числительные словами промпт запрещает, словарь ловит нарушение. «un», «o», «unu», «una» это ещё
+# артикли, «nouă» ещё «новая» и «нам»: в словаре они давали бы ложный отказ.
+RO_NUMERALS = {
+    "doi": 2,
+    "două": 2,
+    "trei": 3,
+    "patru": 4,
+    "cinci": 5,
+    "șase": 6,
+    "șapte": 7,
+    "opt": 8,
+    "zece": 10,
+    "unsprezece": 11,
+    "doisprezece": 12,
+    "douăsprezece": 12,
+    "treisprezece": 13,
+    "paisprezece": 14,
+    "patrusprezece": 14,
+    "cincisprezece": 15,
+    "șaisprezece": 16,
+    "șaptesprezece": 17,
+    "optsprezece": 18,
+    "nouăsprezece": 19,
+    "douăzeci": 20,
+}
 
 
 @dataclass(frozen=True)
@@ -86,26 +116,42 @@ def system_prompt(today: date) -> str:
     return template.substitute(today=date_label(today))
 
 
+def numeral_value(word: str) -> int | None:
+    return RO_NUMERALS.get(word.translate(CEDILLA_TO_COMMA).lower())
+
+
 def normalized_number(token: str) -> str:
+    numeral = numeral_value(token)
+    if numeral is not None:
+        return str(numeral)
+    sign = "−" if token[0] in MINUS_SIGNS else "+" if token[0] == "+" else ""
+    percent = "%" if token.endswith("%") else ""
+    body = token.lstrip("+" + MINUS_SIGNS).removesuffix("%").rstrip(" \u00a0")
     # «9,6» и «9.6», «09» и «9» это одно число: модель вправе записать его любым из способов.
-    parts = token.replace(",", ".").split(".")
-    if len(parts) == 1 or DATE_LIKE.match(token):
-        return ".".join(str(int(part)) for part in parts)
-    return ".".join(parts)
+    parts = body.replace(",", ".").split(".")
+    if len(parts) == 1 or (not percent and DATE_LIKE.match(body)):
+        body = ".".join(str(int(part)) for part in parts)
+    else:
+        body = ".".join(parts)
+    return f"{sign}{body}{percent}"
 
 
 def number_tokens(text: str) -> list[str]:
-    return NUMBER.findall(text)
+    numerals = [word for word in WORD.findall(text) if numeral_value(word) is not None]
+    return [*NUMBER.findall(text), *numerals]
 
 
-def allowed_numbers(sources: Iterable[str]) -> set[str]:
-    allowed: set[str] = set()
-    for source in sources:
-        for token in number_tokens(source):
-            allowed.add(normalized_number(token))
-            # День, месяц и год даты по отдельности: «din 26 septembrie 2026».
-            if DATE_LIKE.match(token):
-                allowed.update(str(int(part)) for part in token.split("."))
+def allowed_numbers(signature_text: str, sources: Iterable[str]) -> set[str]:
+    allowed = {
+        normalized_number(token)
+        for source in (signature_text, *sources)
+        for token in number_tokens(source)
+    }
+    # День, месяц и год по отдельности только из дат подписи («din 26 septembrie 2026»): их
+    # видит читатель. Даты результатов и вопроса целиком, иначе любая дата разрешала бы 1–31.
+    for token in NUMBER.findall(signature_text):
+        if DATE_LIKE.match(token):
+            allowed.update(str(int(part)) for part in token.split("."))
     return allowed
 
 
@@ -229,9 +275,10 @@ def checked_answer(
     output_tokens: int,
     lead_links: LeadLinks,
 ) -> ChatAnswer:
-    # Инвариант 2 держит код: без вызова инструмента цифр нет, с вызовом каждое число ответа
-    # должно найтись в результатах, в вопросе или в подписи.
-    if not calls:
+    # Инвариант 2 держит код: без отработавшего вызова инструмента цифр нет, с ним каждое число
+    # ответа должно найтись в его результатах, в вопросе или в подписи.
+    answered_calls = [call for call in calls if call.outcome.answered]
+    if not answered_calls:
         if number_tokens(text):
             return ChatAnswer(
                 render("chat_refusal"), "blocked_numbers", calls, input_tokens, output_tokens
@@ -241,7 +288,7 @@ def checked_answer(
         return ChatAnswer(html.escape(text), "no_tool", calls, input_tokens, output_tokens)
     signature_text = signature(list(calls))
     allowed = allowed_numbers(
-        [question, signature_text, *(outcome_text(call.outcome) for call in calls)]
+        signature_text, [question, *(outcome_text(call.outcome) for call in answered_calls)]
     )
     unverified = first_unverified_number(text, allowed)
     if unverified is not None:

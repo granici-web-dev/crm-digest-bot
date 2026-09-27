@@ -10,7 +10,9 @@ from digest.chat.loop import (
     MAX_ANSWER_TOKENS,
     UNVERIFIED_NUMBERS_TEXT,
     PreviousExchange,
+    allowed_numbers,
     answer_question,
+    first_unverified_number,
 )
 from digest.chat.tools import ToolData
 from digest.config import AppConfig
@@ -135,7 +137,7 @@ async def test_number_absent_from_tool_results_is_blocked(app_config: AppConfig)
 
     assert answer.status == "unverified_numbers"
     assert answer.text == UNVERIFIED_NUMBERS_TEXT
-    assert answer.unverified_number == "12"
+    assert answer.unverified_number == "12%"
 
 
 async def test_numbers_from_question_and_period_dates_are_allowed(app_config: AppConfig) -> None:
@@ -173,8 +175,38 @@ async def test_invalid_tool_arguments_go_back_to_model_as_error(app_config: AppC
     answer = await answer_question("Iași?", api.client, MODEL, tool_data(app_config))
 
     assert api.requests[1]["messages"][-1]["content"][0]["is_error"] is True
-    assert answer.status == "answered"
+    assert answer.status == "no_tool"
     assert answer.text == "Nu am date pentru acest showroom."
+
+
+async def test_numbers_after_only_failed_tool_calls_are_not_sent(app_config: AppConfig) -> None:
+    api = scripted_anthropic(
+        tool_use_message(("funnel", {"period": "saptamana_curenta", "showroom": "Iași"})),
+        text_message("În Iași au fost 3 lead-uri."),
+    )
+
+    answer = await answer_question("Iași?", api.client, MODEL, tool_data(app_config))
+
+    assert answer.status == "blocked_numbers"
+    assert answer.text == render("chat_refusal")
+
+
+async def test_no_data_answer_may_repeat_the_dates_from_the_tool(app_config: AppConfig) -> None:
+    api = scripted_anthropic(
+        tool_use_message(FUNNEL_THIS_WEEK),
+        text_message(
+            "Nu există încă date pentru 21.09–23.09.2026, ultimul snapshot e din 20.09.2026."
+        ),
+    )
+
+    answer = await answer_question(
+        "Câte lead-uri?",
+        api.client,
+        MODEL,
+        tool_data(app_config, snapshot_dates=(date(2026, 9, 20),)),
+    )
+
+    assert answer.status == "answered"
 
 
 @pytest.mark.parametrize("stop_reason", ["max_tokens", "refusal"])
@@ -367,3 +399,62 @@ async def test_number_from_previous_answer_is_blocked(app_config: AppConfig) -> 
     assert answer.status == "unverified_numbers"
     assert answer.unverified_number == "7"
     assert answer.text == UNVERIFIED_NUMBERS_TEXT
+
+
+SIGNATURE = "<i>Perioada: 21.09–23.09.2026 (saptamana_curenta) · funnel()</i>"
+
+
+@pytest.mark.parametrize(
+    ("result", "answer_number"),
+    [
+        ('{"change": "(−15%)"}', "+15%"),
+        ('{"change": "(−15%)"}', "15%"),
+        ('{"change": "(+15%)"}', "−15%"),
+        ('{"leads": 15}', "15%"),
+        ('{"scr": "15%"}', "15"),
+    ],
+)
+def test_sign_and_percent_are_part_of_the_number(result: str, answer_number: str) -> None:
+    allowed = allowed_numbers(SIGNATURE, [result])
+
+    assert first_unverified_number(f"Schimbarea este {answer_number}.", allowed) == answer_number
+
+
+@pytest.mark.parametrize("answer_number", ["−15%", "-15%", "−15 %"])
+def test_minus_sign_and_space_before_percent_are_equivalent(answer_number: str) -> None:
+    allowed = allowed_numbers(SIGNATURE, ['{"change": "(−15%)"}'])
+
+    assert first_unverified_number(f"Schimbarea este {answer_number}.", allowed) is None
+
+
+def test_hyphen_inside_word_is_not_a_minus() -> None:
+    allowed = allowed_numbers(SIGNATURE, ['{"leads": 3}'])
+
+    assert first_unverified_number("Top-3 consultanți.", allowed) is None
+
+
+def test_date_parts_are_allowed_only_from_signature_dates() -> None:
+    allowed = allowed_numbers(SIGNATURE, ['{"snapshot_date": "25.09.2026"}'])
+
+    assert first_unverified_number("Din 21 septembrie 2026.", allowed) is None
+    assert first_unverified_number("Snapshot din 25.09.2026.", allowed) is None
+    assert first_unverified_number("Snapshot din 25 septembrie.", allowed) == "25"
+
+
+@pytest.mark.parametrize("numeral", ["cincisprezece", "Cincisprezece", "șase", "şase"])
+def test_numeral_in_words_is_checked_like_a_number(numeral: str) -> None:
+    allowed = allowed_numbers(SIGNATURE, ['{"leads": 3}'])
+
+    assert first_unverified_number(f"Au fost {numeral} lead-uri.", allowed) == numeral
+
+
+def test_numeral_in_words_found_in_results_is_allowed() -> None:
+    allowed = allowed_numbers(SIGNATURE, ['{"leads": 15}'])
+
+    assert first_unverified_number("Au fost cincisprezece lead-uri.", allowed) is None
+
+
+def test_articles_and_nouă_are_not_numerals() -> None:
+    allowed = allowed_numbers(SIGNATURE, [])
+
+    assert first_unverified_number("Un lead are o ofertă nouă, una singură.", allowed) is None
