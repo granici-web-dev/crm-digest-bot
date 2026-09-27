@@ -109,14 +109,14 @@ def test_lead_sheets_match_summary_and_format_cells(app_config: AppConfig) -> No
     header = ("ID", "Creat", "Zi lucrătoare", "Showroom", "Sursa", "Status", "Ofertat", "Consilier")
     assert leads[0] == header
     assert visits[0] == ("ID", "Creat", "Zi", *header[3:])
-    assert [row[0] for row in leads[1:]] == [1, 2, 7, 3, 4]
+    assert [row[0] for row in leads[1:]] == ["1", "2", "7", "3", "4"]
     assert leads[1][1:3] == (datetime(2026, 9, 21, 11, 0), datetime(2026, 9, 21, 0, 0))
     assert leads[1][6:] == ("✅DA", "Dragoi Mihaela")
     assert leads[2][6] == "❌NU"
     assert leads[3][6:] == (None, None)
     assert leads[5][3:5] == (None, None)
     assert leads[5][7] == "id 99"
-    assert [row[0] for row in visits[1:]] == [5]
+    assert [row[0] for row in visits[1:]] == ["5"]
 
 
 def test_client_data_reaches_no_cell_of_the_workbook(app_config: AppConfig) -> None:
@@ -131,3 +131,16 @@ def test_client_data_reaches_no_cell_of_the_workbook(app_config: AppConfig) -> N
     }
 
     assert not {value for value in CLIENT_DATA.values() if any(value in cell for cell in cells)}
+
+
+def test_lead_id_cells_link_to_the_mefi_lead_card(app_config: AppConfig) -> None:
+    _, book = workbook(app_config)
+
+    for sheet_name in ("Lead-uri", "Vizite"):
+        id_cells = [row[0] for row in book[sheet_name].iter_rows(min_row=2)]
+        assert id_cells
+        for cell in id_cells:
+            assert cell.hyperlink is not None
+            assert cell.hyperlink.target == (
+                f"https://bellesofa.meficrm.com/admin/leads/index/{cell.value}"
+            )

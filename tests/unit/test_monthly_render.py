@@ -366,3 +366,15 @@ def test_monthly_workbook_has_no_spi_levels_or_recommendations(app_config: AppCo
 
     for word in spi_words(app_config):
         assert not any(word in cell for cell in cells)
+
+
+def test_monthly_lead_ids_link_to_the_mefi_lead_card(app_config: AppConfig) -> None:
+    _, book = workbook(app_config)
+
+    id_cells = [row[0] for row in book["Lead-uri luna"].iter_rows(min_row=2)]
+    assert len(id_cells) == 13
+    assert all(
+        cell.hyperlink is not None
+        and cell.hyperlink.target == f"https://bellesofa.meficrm.com/admin/leads/index/{cell.value}"
+        for cell in id_cells
+    )

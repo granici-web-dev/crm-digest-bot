@@ -11,6 +11,7 @@ from digest.metrics.weekly import (
     weekly_showroom_visit_rows,
 )
 from digest.reports.context import ModuleResult, ReportContext, ReportDocument
+from digest.reports.lead_links import LeadLinks
 from digest.reports.modules.weekly import (
     TableRow,
     day_detail_table,
@@ -62,7 +63,12 @@ def lead_sheet_cells(rows: pd.DataFrame, config: AppConfig) -> pd.DataFrame:
 
 
 def write_lead_sheet(
-    workbook: Any, name: str, day_header: str, rows: pd.DataFrame, config: AppConfig
+    workbook: Any,
+    name: str,
+    day_header: str,
+    rows: pd.DataFrame,
+    config: AppConfig,
+    lead_links: LeadLinks,
 ) -> None:
     worksheet = workbook.add_worksheet(name)
     cell_formats = {
@@ -74,7 +80,13 @@ def write_lead_sheet(
     for row_index, row in enumerate(lead_sheet_cells(rows, config).to_dict("records"), start=1):
         for column_index, (column, _) in enumerate(LEAD_SHEET_COLUMNS):
             value = row[column]
-            if column in cell_formats:
+            if column == "lead_id":
+                # Инвариант 7: столбец id во вложении разрешён; ссылка открывает лид в mefi.
+                lead_id = int(value)
+                worksheet.write_url(
+                    row_index, column_index, lead_links.url(lead_id), string=str(lead_id)
+                )
+            elif column in cell_formats:
                 worksheet.write_datetime(row_index, column_index, value, cell_formats[column])
             else:
                 worksheet.write(row_index, column_index, None if pd.isna(value) else value)
@@ -126,6 +138,7 @@ def weekly_workbook(lead_frame: pd.DataFrame, context: ReportContext) -> bytes:
         "Zi lucrătoare",
         weekly_lead_rows(lead_frame, report_date, config),
         config,
+        context.lead_links,
     )
     # День визита это день ежедневного окна 19:00 → 19:00, а не рабочий день лида.
     write_lead_sheet(
@@ -134,6 +147,7 @@ def weekly_workbook(lead_frame: pd.DataFrame, context: ReportContext) -> bytes:
         "Zi",
         weekly_showroom_visit_rows(lead_frame, report_date, config),
         config,
+        context.lead_links,
     )
     workbook.close()
     return output.getvalue()

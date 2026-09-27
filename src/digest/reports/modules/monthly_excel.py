@@ -191,6 +191,7 @@ def monthly_workbook(lead_frame: pd.DataFrame, context: ReportContext) -> bytes:
         "Zi",
         monthly_lead_rows(lead_frame, context.report_date, context.config),
         context.config,
+        context.lead_links,
     )
     # Лид последнего вечера прошлого месяца стоит в листе с датой прошлого месяца: окно
     # месяца начинается в 19:00 (docs/kpi-definitions.md, «Месячное окно»).
