@@ -1,18 +1,32 @@
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import date
-from typing import Any
+from typing import Annotated, Any
 
 import pandas as pd
 from anthropic.types import ToolParam
-from pydantic import BaseModel, ConfigDict, ValidationError, ValidationInfo, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Discriminator,
+    Field,
+    Tag,
+    ValidationError,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from digest.config import KPI_NAMES, AppConfig, ChatToolName
 from digest.db.lead_frame import SnapshotMissingError
 from digest.metrics.chat_periods import (
     CHAT_PERIODS,
+    ChatDay,
+    ChatMonth,
     ChatPeriod,
-    named_period_window,
+    ChatPeriodChoice,
+    chat_period_window,
+    earliest_specific_day,
     period_days,
     period_snapshot_date,
 )
@@ -33,7 +47,7 @@ from digest.metrics.weekly import (
     loss_reasons_in_window,
 )
 from digest.reports.lead_links import LeadLinks
-from digest.reports.render import change_label, percent_one_decimal, target_label
+from digest.reports.render import RO_MONTHS, change_label, percent_one_decimal, target_label
 
 ALL_SHOWROOMS = "toate"
 ALL_MANAGERS = "toti"
@@ -80,6 +94,84 @@ def context_config(info: ValidationInfo) -> AppConfig:
     return config
 
 
+def context_today(info: ValidationInfo) -> date:
+    assert info.context is not None
+    today: date = info.context["today"]
+    return today
+
+
+def context_earliest_day(info: ValidationInfo) -> date | None:
+    assert info.context is not None
+    earliest_day: date | None = info.context["earliest_day"]
+    return earliest_day
+
+
+class DayArgument(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    day: date
+
+    @field_validator("day", mode="after")
+    @classmethod
+    def day_is_in_range(cls, value: date, info: ValidationInfo) -> date:
+        if value > context_today(info):
+            raise ValueError(f"data {date_label(value)} este în viitor")
+        earliest_day = context_earliest_day(info)
+        if earliest_day is not None and value < earliest_day:
+            raise ValueError(f"nu există date înainte de {date_label(earliest_day)}")
+        return value
+
+
+class MonthArgument(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    year: int
+    month: Annotated[int, Field(ge=1, le=12)]
+
+    @model_validator(mode="after")
+    def month_is_in_range(self, info: ValidationInfo) -> "MonthArgument":
+        today = context_today(info)
+        if (self.year, self.month) > (today.year, today.month):
+            raise ValueError(f"luna {self.month:02d}.{self.year} este în viitor")
+        earliest_day = context_earliest_day(info)
+        if earliest_day is not None and (self.year, self.month) < (
+            earliest_day.year,
+            earliest_day.month,
+        ):
+            raise ValueError(f"nu există date înainte de {earliest_day:%m.%Y}")
+        return self
+
+
+def period_argument_kind(value: object) -> str:
+    if isinstance(value, str):
+        return "named"
+    if isinstance(value, DayArgument) or (isinstance(value, dict) and "day" in value):
+        return "day"
+    return "month"
+
+
+# Discriminator: ошибка аргумента называет только проблему выбранной формы, а не всех трёх.
+PeriodArgument = Annotated[
+    Annotated[ChatPeriod, Tag("named")]
+    | Annotated[DayArgument, Tag("day")]
+    | Annotated[MonthArgument, Tag("month")],
+    Discriminator(period_argument_kind),
+]
+
+
+def chosen_period(
+    argument: ChatPeriod | DayArgument | MonthArgument, today: date
+) -> ChatPeriodChoice:
+    # Сегодня и текущий месяц читаются как текущие периоды: по правилу закрытых они упёрлись бы
+    # в снапшот ещё не наступившего конца.
+    if isinstance(argument, DayArgument):
+        return "azi" if argument.day == today else ChatDay(argument.day)
+    if isinstance(argument, MonthArgument):
+        first_day = date(argument.year, argument.month, 1)
+        return "luna_curenta" if first_day == today.replace(day=1) else ChatMonth(first_day)
+    return argument
+
+
 class ToolArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -100,13 +192,13 @@ class ToolArguments(BaseModel):
 
 
 class FunnelArguments(ToolArguments):
-    period: ChatPeriod
+    period: PeriodArgument
     showroom: str
 
 
 class ManagerKpiArguments(ToolArguments):
     manager: str
-    period: ChatPeriod
+    period: PeriodArgument
 
     @field_validator("manager", mode="after")
     @classmethod
@@ -118,8 +210,8 @@ class ManagerKpiArguments(ToolArguments):
 
 class ComparePeriodsArguments(ToolArguments):
     metric: str
-    period_a: ChatPeriod
-    period_b: ChatPeriod
+    period_a: PeriodArgument
+    period_b: PeriodArgument
     showroom: str
 
     @field_validator("metric", mode="after")
@@ -131,7 +223,7 @@ class ComparePeriodsArguments(ToolArguments):
 
 
 class LossReasonsArguments(ToolArguments):
-    period: ChatPeriod
+    period: PeriodArgument
     showroom: str
 
 
@@ -165,11 +257,36 @@ def enum_property(values: tuple[str, ...]) -> dict[str, Any]:
     return {"type": "string", "enum": list(values)}
 
 
+def strict_object(properties: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": list(properties),
+        "additionalProperties": False,
+    }
+
+
+# Strict-режим не поддерживает pattern и minimum/maximum: месяц двумя целыми, год и границы дат
+# проверяет pydantic.
+PERIOD_PROPERTY: dict[str, Any] = {
+    "anyOf": [
+        enum_property(CHAT_PERIODS),
+        strict_object({"day": {"type": "string", "format": "date"}}),
+        strict_object(
+            {
+                "year": {"type": "integer"},
+                "month": {"type": "integer", "enum": list(range(1, 13))},
+            }
+        ),
+    ]
+}
+
+
 def tool_definitions(config: AppConfig) -> list[ToolParam]:
     # Необязательные параметры заданы значением «toate»/«toti», а не отсутствием: в strict
     # все свойства перечислены в required.
     showrooms = enum_property((ALL_SHOWROOMS, *config.status_mapping.showrooms))
-    periods = enum_property(CHAT_PERIODS)
+    periods = PERIOD_PROPERTY
     consultants = consultant_names(config)
     properties: dict[ChatToolName, dict[str, dict[str, Any]]] = {
         "funnel": {"period": periods, "showroom": showrooms},
@@ -189,12 +306,7 @@ def tool_definitions(config: AppConfig) -> list[ToolParam]:
             "name": name,
             "description": description,
             "strict": True,
-            "input_schema": {
-                "type": "object",
-                "properties": properties[name],
-                "required": list(properties[name]),
-                "additionalProperties": False,
-            },
+            "input_schema": strict_object(properties[name]),
         }
         for name, description in config.modules.chat.tools.items()
     ]
@@ -212,9 +324,17 @@ def days_label(first_day: date, last_day: date) -> str:
     return f"{date_label(first_day)}–{date_label(last_day)}"
 
 
+def period_title(period: ChatPeriodChoice, days: str) -> str:
+    if isinstance(period, ChatDay):
+        return days
+    if isinstance(period, ChatMonth):
+        return f"{RO_MONTHS[period.first_day.month - 1]} {period.first_day.year}"
+    return f"{days} ({period})"
+
+
 @dataclass(frozen=True)
 class PeriodFrame:
-    period: ChatPeriod
+    period: ChatPeriodChoice
     label: str
     window: Period
     snapshot_date: date
@@ -251,7 +371,10 @@ def latest_snapshot_date(data: ToolData) -> date:
     return max(data.snapshot_dates)
 
 
-async def period_frame(data: ToolData, period: ChatPeriod) -> PeriodFrame:
+async def period_frame(
+    data: ToolData, argument: ChatPeriod | DayArgument | MonthArgument
+) -> PeriodFrame:
+    period = chosen_period(argument, data.today)
     first_day, last_day = period_days(period, data.today)
     label = days_label(first_day, last_day)
     snapshot_date = period_snapshot_date(period, data.today, data.snapshot_dates)
@@ -267,7 +390,7 @@ async def period_frame(data: ToolData, period: ChatPeriod) -> PeriodFrame:
     return PeriodFrame(
         period,
         label,
-        named_period_window(period, data.today, data.config.status_mapping.time),
+        chat_period_window(period, data.today, data.config.status_mapping.time),
         snapshot_date,
         await load_snapshot(data, snapshot_date),
         data_as_of=snapshot_date if snapshot_date < last_day else None,
@@ -277,7 +400,11 @@ async def period_frame(data: ToolData, period: ChatPeriod) -> PeriodFrame:
 
 def period_header(period_frame: PeriodFrame) -> dict[str, Any]:
     return {
-        "period": period_frame.period,
+        "period": (
+            period_frame.period
+            if isinstance(period_frame.period, str)
+            else period_title(period_frame.period, period_frame.label)
+        ),
         "days": period_frame.label,
         "snapshot_date": date_label(period_frame.snapshot_date),
         "data_as_of": (
@@ -329,7 +456,7 @@ def outcome(content: dict[str, Any], *period_frames: PeriodFrame) -> ToolOutcome
         content,
         is_error=False,
         scope="Perioada: "
-        + " vs ".join(f"{frame.label} ({frame.period})" for frame in period_frames),
+        + " vs ".join(period_title(frame.period, frame.label) for frame in period_frames),
         snapshot_dates=tuple(frame.snapshot_date for frame in period_frames),
         snapshot_notes=tuple(dict.fromkeys(note for note in notes if note is not None)),
     )
@@ -549,7 +676,16 @@ async def run_tool(name: str, arguments: object, data: ToolData) -> ToolOutcome:
     if name not in data.config.modules.chat.tools:
         return ToolOutcome({"error": f"Instrument necunoscut: {name}."}, is_error=True)
     try:
-        validated = ARGUMENT_MODELS[name].model_validate(arguments, context={"config": data.config})
+        validated = ARGUMENT_MODELS[name].model_validate(
+            arguments,
+            context={
+                "config": data.config,
+                "today": data.today,
+                "earliest_day": (
+                    earliest_specific_day(data.snapshot_dates[0]) if data.snapshot_dates else None
+                ),
+            },
+        )
         return await TOOL_FUNCTIONS[name](data, validated)
     except ValidationError as error:
         problems = "; ".join(str(problem["msg"]) for problem in error.errors())

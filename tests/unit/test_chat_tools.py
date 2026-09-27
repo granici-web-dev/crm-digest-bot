@@ -16,8 +16,9 @@ from digest.chat.tools import (
 )
 from digest.config import CHAT_TOOL_NAMES, KPI_NAMES, AppConfig, Manager, ManagerRoster
 from digest.db.lead_frame import SnapshotMissingError
-from digest.metrics.chat_periods import CHAT_PERIODS, named_period_window
+from digest.metrics.chat_periods import CHAT_PERIODS, chat_period_window
 from digest.metrics.cockpit import manager_cockpit_table
+from digest.metrics.daily import daily_window
 from digest.metrics.daily_checks import overdue_revenire_by_manager, untouched_leads
 from digest.metrics.frame import prepare_lead_frame
 from digest.metrics.kpi import COUNT_NAMES, kpis_from, lead_counts, lead_counts_by_showroom
@@ -86,7 +87,7 @@ async def run(
 
 
 def may(config: AppConfig) -> Any:
-    return named_period_window("luna_trecuta", TODAY, config.status_mapping.time)
+    return chat_period_window("luna_trecuta", TODAY, config.status_mapping.time)
 
 
 async def test_funnel_matches_metrics_and_monthly_report(
@@ -170,7 +171,7 @@ async def test_compare_periods_matches_lead_counts_of_both_windows(
     )
 
     time_settings = etalon_config.status_mapping.time
-    last_week = named_period_window("saptamana_trecuta", TODAY, time_settings)
+    last_week = chat_period_window("saptamana_trecuta", TODAY, time_settings)
     week_leads = lead_counts(lead_frame, last_week, END_OF_MAY, etalon_config).leads
     month_leads = lead_counts(lead_frame, may(etalon_config), END_OF_MAY, etalon_config).leads
     assert (content["period_a"]["value"], content["period_b"]["value"]) == (
@@ -444,3 +445,130 @@ async def test_overdue_and_untouched_carry_lead_ids_outside_content(
     for outcome in (overdue, one_manager, untouched):
         serialized = json.dumps(outcome.content)
         assert not any(str(lead_id) in serialized for lead_id in outcome.lead_ids)
+
+
+ALL_COMPANY = {"showroom": ALL_SHOWROOMS}
+
+
+@pytest.mark.parametrize(
+    ("period", "message"),
+    [
+        ({"day": "2026-06-04"}, "data 04.06.2026 este în viitor"),
+        ({"year": 2026, "month": 7}, "luna 07.2026 este în viitor"),
+        ({"day": "2025-05-30"}, "nu există date înainte de 31.05.2025"),
+        ({"year": 2025, "month": 4}, "nu există date înainte de 05.2025"),
+        ({"year": 2026, "month": 13}, "less than or equal to 12"),
+        ({"day": "2026-05-15", "year": 2026}, "Extra inputs"),
+    ],
+)
+async def test_specific_date_out_of_range_is_tool_error(
+    etalon_config: AppConfig, lead_frame: pd.DataFrame, period: dict[str, Any], message: str
+) -> None:
+    outcome = await run_tool(
+        "funnel", {"period": period, **ALL_COMPANY}, tool_data(etalon_config, lead_frame)
+    )
+
+    assert outcome.is_error
+    assert message in outcome.content["error"]
+
+
+async def test_first_allowed_month_is_accepted(
+    etalon_config: AppConfig, lead_frame: pd.DataFrame
+) -> None:
+    content = await run(
+        "funnel", {"period": {"year": 2025, "month": 5}, **ALL_COMPANY}, etalon_config, lead_frame
+    )
+
+    assert content["period"] == "mai 2025"
+
+
+async def test_today_as_specific_day_is_azi(
+    etalon_config: AppConfig, lead_frame: pd.DataFrame
+) -> None:
+    outcome = await run_tool(
+        "funnel",
+        {"period": {"day": "2026-06-03"}, **ALL_COMPANY},
+        tool_data(etalon_config, lead_frame),
+    )
+
+    assert outcome.content["period"] == "azi"
+    assert outcome.scope == "Perioada: 03.06.2026 (azi)"
+
+
+async def test_current_month_is_luna_curenta(
+    etalon_config: AppConfig, lead_frame: pd.DataFrame
+) -> None:
+    content = await run(
+        "funnel", {"period": {"year": 2026, "month": 6}, **ALL_COMPANY}, etalon_config, lead_frame
+    )
+
+    assert content["period"] == "luna_curenta"
+
+
+async def test_funnel_for_specific_day_matches_metrics(
+    etalon_config: AppConfig, lead_frame: pd.DataFrame
+) -> None:
+    outcome = await run_tool(
+        "funnel",
+        {"period": {"day": "2026-05-15"}, **ALL_COMPANY},
+        tool_data(etalon_config, lead_frame),
+    )
+
+    window = daily_window(date(2026, 5, 15), etalon_config.status_mapping.time)
+    counts = lead_counts(lead_frame, window, END_OF_MAY, etalon_config)
+    assert counts.leads > 0
+    assert outcome.content["counts"] == {name: getattr(counts, name) for name in COUNT_NAMES}
+    assert outcome.content["period"] == "15.05.2026"
+    assert outcome.scope == "Perioada: 15.05.2026"
+    assert outcome.snapshot_notes == (
+        "Date din snapshotul din 31.05.2026 (nu există snapshot pentru 15.05.2026)",
+    )
+
+
+async def test_specific_month_matches_last_month(
+    etalon_config: AppConfig, lead_frame: pd.DataFrame
+) -> None:
+    by_month = await run_tool(
+        "funnel",
+        {"period": {"year": 2026, "month": 5}, **ALL_COMPANY},
+        tool_data(etalon_config, lead_frame),
+    )
+    by_name = await run(
+        "funnel", {"period": "luna_trecuta", **ALL_COMPANY}, etalon_config, lead_frame
+    )
+
+    assert by_name == {**by_month.content, "period": "luna_trecuta"}
+    assert by_month.content["period"] == "mai 2026"
+    assert by_month.scope == "Perioada: mai 2026"
+
+
+async def test_compare_periods_accepts_day_and_month(
+    etalon_config: AppConfig, lead_frame: pd.DataFrame
+) -> None:
+    outcome = await run_tool(
+        "compare_periods",
+        {
+            "metric": "leads",
+            "period_a": {"day": "2026-05-15"},
+            "period_b": {"year": 2026, "month": 5},
+            **ALL_COMPANY,
+        },
+        tool_data(etalon_config, lead_frame),
+    )
+
+    assert not outcome.is_error, outcome.content
+    assert outcome.scope == "Perioada: 15.05.2026 vs mai 2026"
+
+
+def test_period_schema_is_anyof_of_enum_day_and_month(app_config: AppConfig) -> None:
+    definitions = {definition["name"]: definition for definition in tool_definitions(app_config)}
+    properties: Any = definitions["compare_periods"]["input_schema"]["properties"]
+
+    for name in ("period_a", "period_b"):
+        named, day, month = properties[name]["anyOf"]
+        assert named["enum"] == list(CHAT_PERIODS)
+        assert day["properties"] == {"day": {"type": "string", "format": "date"}}
+        assert month["properties"]["month"]["enum"] == list(range(1, 13))
+        for variant in (day, month):
+            assert variant["required"] == list(variant["properties"])
+            assert variant["additionalProperties"] is False

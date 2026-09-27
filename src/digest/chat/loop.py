@@ -4,6 +4,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
+from string import Template
 from typing import Any
 
 from anthropic import AsyncAnthropic
@@ -15,6 +16,7 @@ from digest.chat.tools import (
     ALL_SHOWROOMS,
     ToolData,
     ToolOutcome,
+    date_label,
     run_tool,
     tool_definitions,
 )
@@ -58,8 +60,10 @@ class ChatAnswer:
         )
 
 
-def system_prompt() -> str:
-    return (TEMPLATES_DIR / "chat_system.md").read_text(encoding="utf-8")
+def system_prompt(today: date) -> str:
+    # Дата явно: «25.09» и «august» без года модель превращает в дату только от сегодняшнего дня.
+    template = Template((TEMPLATES_DIR / "chat_system.md").read_text(encoding="utf-8"))
+    return template.substitute(today=date_label(today))
 
 
 def normalized_number(token: str) -> str:
@@ -126,7 +130,7 @@ async def answer_question(
         response = await client.messages.create(
             model=model,
             max_tokens=MAX_ANSWER_TOKENS,
-            system=system_prompt(),
+            system=system_prompt(data.today),
             tools=tools,
             # Лимит вызовов исчерпан: последний раунд только текстом.
             tool_choice={"type": "auto"} if len(calls) < MAX_TOOL_CALLS else {"type": "none"},

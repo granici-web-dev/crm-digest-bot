@@ -40,6 +40,7 @@ def tool_data(
     config: AppConfig,
     snapshot_dates: tuple[date, ...] = (TODAY,),
     lead_ids: tuple[int, ...] = (1, 2, 3),
+    today: date = TODAY,
 ) -> ToolData:
     frame = lead_frame(config, lead_ids)
 
@@ -47,7 +48,7 @@ def tool_data(
         return frame
 
     return ToolData(
-        TODAY, snapshot_dates, load_frame, config, make_lead_links(config.status_mapping)
+        today, snapshot_dates, load_frame, config, make_lead_links(config.status_mapping)
     )
 
 
@@ -278,3 +279,50 @@ async def test_model_request_never_contains_lead_ids(app_config: AppConfig) -> N
 
     sent = json.dumps(api.requests)
     assert not any(str(lead_id) in sent for lead_id in TWELVE_LEAD_IDS)
+
+
+async def test_system_prompt_states_today_in_bucharest(app_config: AppConfig) -> None:
+    api = scripted_anthropic(text_message("Bună ziua."))
+
+    await answer_question("Salut", api.client, MODEL, tool_data(app_config))
+
+    assert "Astăzi este 23.09.2026" in api.requests[0]["system"]
+
+
+async def test_question_with_day_routes_to_funnel_with_that_day(app_config: AppConfig) -> None:
+    funnel_on_day = ("funnel", {"period": {"day": "2026-09-22"}, "showroom": "toate"})
+    api = scripted_anthropic(
+        tool_use_message(funnel_on_day), text_message("Pe 22.09 au fost 3 lead-uri.")
+    )
+
+    answer = await answer_question(
+        "Câte lead-uri am avut 22.09?",
+        api.client,
+        MODEL,
+        tool_data(app_config, (date(2026, 9, 22), TODAY)),
+    )
+
+    assert answer.status == "answered"
+    assert [(call.name, call.arguments) for call in answer.tool_calls] == [funnel_on_day]
+    assert '"leads": 3' in api.requests[1]["messages"][-1]["content"][0]["content"]
+    assert answer.text == "Pe 22.09 au fost 3 lead-uri.\n\n<i>Perioada: 22.09.2026 · funnel()</i>"
+
+
+async def test_month_without_year_resolves_to_last_august(app_config: AppConfig) -> None:
+    # Фейк не проверяет выбор года живой моделью: он проверяет, что дата в промпте, а месяц
+    # 2026-08 даёт окно и подпись августа. Живая проверка в тестовой группе (deploy.md §4).
+    august = ("funnel", {"period": {"year": 2026, "month": 8}, "showroom": "toate"})
+    api = scripted_anthropic(tool_use_message(august), text_message("În august: 0 lead-uri."))
+
+    answer = await answer_question(
+        "Câte lead-uri în august?",
+        api.client,
+        MODEL,
+        tool_data(app_config, (date(2026, 8, 31), date(2026, 9, 27)), today=date(2026, 9, 27)),
+    )
+
+    assert "Astăzi este 27.09.2026" in api.requests[0]["system"]
+    tool_result = json.loads(api.requests[1]["messages"][-1]["content"][0]["content"])
+    assert (tool_result["period"], tool_result["days"]) == ("august 2026", "01.08–31.08.2026")
+    assert tool_result["snapshot_date"] == "31.08.2026"
+    assert answer.text.endswith("<i>Perioada: august 2026 · funnel()</i>")

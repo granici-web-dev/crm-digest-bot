@@ -8,6 +8,20 @@ TEMPLATES_DIR = Path(__file__).resolve().parents[3] / "templates"
 
 # Названия дней недели в таблицах недельного отчёта как в ручном отчёте.
 RO_WEEKDAYS = ("Luni", "Marți", "Miercuri", "Joi", "Vineri", "Sâmbătă", "Duminică")
+RO_MONTHS = (
+    "ianuarie",
+    "februarie",
+    "martie",
+    "aprilie",
+    "mai",
+    "iunie",
+    "iulie",
+    "august",
+    "septembrie",
+    "octombrie",
+    "noiembrie",
+    "decembrie",
+)
 
 
 def dash_if_unknown(value: int | None) -> str:
