@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
+from anthropic import AsyncAnthropic
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from pydantic import TypeAdapter
@@ -16,6 +17,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.backup_check import stale_backup_alert
+from digest.bot.chat_handlers import ChatDeps
 from digest.bot.dispatcher import bot_dispatcher
 from digest.bot.polling import PollingHealth, supervise_polling, watch_polling_silence
 from digest.bot.settings_menu import standard_send_time
@@ -31,6 +33,8 @@ from digest.settings import Settings
 from digest.snapshot import describe_error, run_daily_snapshot
 
 logger = logging.getLogger(__name__)
+
+CHAT_API_TIMEOUT_SECONDS = 30
 
 # Отчёт, опоздавший до получаса, руководству ещё полезен; позже его отправляют вручную.
 REPORT_MISFIRE_GRACE = timedelta(minutes=30)
@@ -197,6 +201,23 @@ def startup_announcement(app_version: str, dry_run: bool) -> str:
     return f"Бот запущен, версия {app_version}, DRY_RUN={int(dry_run)}."
 
 
+def create_anthropic_client(app_settings: Settings) -> AsyncAnthropic | None:
+    if app_settings.anthropic_api_key is None:
+        return None
+    return AsyncAnthropic(
+        api_key=app_settings.anthropic_api_key.get_secret_value(),
+        timeout=CHAT_API_TIMEOUT_SECONDS,
+        max_retries=2,
+    )
+
+
+def chat_ids(app_settings: Settings) -> frozenset[int]:
+    # Продовая группа только без DRY_RUN: вопросы в ней не должны получать ответы тестового бота.
+    if app_settings.dry_run:
+        return frozenset({app_settings.telegram_test_chat_id})
+    return frozenset({app_settings.telegram_test_chat_id, app_settings.telegram_group_chat_id})
+
+
 async def run_app(engine: AsyncEngine, config: AppConfig, app_settings: Settings) -> None:
     await seed_defaults(engine, config, app_settings.tenant_id)
     deps = create_report_deps(engine, config, app_settings, app_settings.dry_run)
@@ -227,11 +248,13 @@ async def run_app(engine: AsyncEngine, config: AppConfig, app_settings: Settings
         loop.add_signal_handler(stop_signal, stop.set)
     health = PollingHealth()
     deps.report_bot.session.middleware(health)
+    anthropic_client = create_anthropic_client(app_settings)
     dispatcher = bot_dispatcher(
         deps,
         reschedule,
         app_settings.telegram_admin_ids,
         clock=partial(datetime.now, ZoneInfo(config.status_mapping.time.timezone)),
+        chat=ChatDeps(anthropic_client, app_settings.anthropic_model, chat_ids(app_settings)),
     )
     start_polling = partial(
         dispatcher.start_polling,
@@ -269,5 +292,7 @@ async def run_app(engine: AsyncEngine, config: AppConfig, app_settings: Settings
         task.cancel()
     await asyncio.gather(*polling_tasks, return_exceptions=True)
     await mefi_http_client.aclose()
+    if anthropic_client is not None:
+        await anthropic_client.close()
     await deps.report_bot.session.close()
     await deps.ops.bot.session.close()

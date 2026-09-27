@@ -4,7 +4,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from digest.app import create_report_deps
+from digest.app import chat_ids, create_anthropic_client, create_report_deps
 from digest.config import AppConfig
 from digest.db.engine import create_database_engine
 from digest.settings import Settings
@@ -71,3 +71,14 @@ def test_admin_ids_are_read_from_comma_separated_env(monkeypatch: pytest.MonkeyP
 def test_empty_admin_ids_fail_settings_load() -> None:
     with pytest.raises(ValidationError, match="telegram_admin_ids"):
         make_settings(telegram_admin_ids="")
+
+
+def test_chat_answers_prod_group_only_without_dry_run() -> None:
+    assert chat_ids(make_settings(dry_run=True)) == {TEST_CHAT_ID}
+    assert chat_ids(make_settings(dry_run=False)) == {TEST_CHAT_ID, GROUP_CHAT_ID}
+
+
+def test_chat_without_api_key_has_no_client() -> None:
+    assert create_anthropic_client(make_settings()) is None
+    assert create_anthropic_client(make_settings(anthropic_api_key="key")) is not None
+    assert make_settings().anthropic_model == "claude-sonnet-5"

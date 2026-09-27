@@ -10,6 +10,7 @@ from aiogram.client.session.base import BaseSession
 from aiogram.methods import (
     AnswerCallbackQuery,
     EditMessageText,
+    GetMe,
     SendDocument,
     SendMessage,
     SendPhoto,
@@ -23,12 +24,14 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     Message,
     PhotoSize,
+    User,
 )
 from anthropic import AsyncAnthropic, DefaultAsyncHttpxClient
 
 from digest.delivery.telegram import create_bot
 
 TEST_BOT_TOKEN = "123456:TEST"
+BOT_USER = User(id=123456, is_bot=True, first_name="Sofabelle", username="sofabelle_digest_bot")
 
 
 @dataclass(frozen=True)
@@ -38,6 +41,7 @@ class SentMessage:
     parse_mode: str | None
     message_id: int
     reply_markup: InlineKeyboardMarkup | None = None
+    reply_to_message_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -102,6 +106,8 @@ class RecordingSession(BaseSession):
     ) -> TelegramType:
         if self.failures:
             raise self.failures.pop(0)
+        if isinstance(method, GetMe):
+            return cast(TelegramType, BOT_USER)
         if isinstance(method, AnswerCallbackQuery):
             self.callback_answers.append(
                 CallbackAnswer(method.callback_query_id, method.text, method.show_alert)
@@ -160,7 +166,10 @@ class RecordingSession(BaseSession):
         self.next_message_id += 1
         parse_mode = cast(str | None, method.parse_mode)
         reply_markup = cast(InlineKeyboardMarkup | None, method.reply_markup)
-        self.sent.append(SentMessage(chat_id, method.text, parse_mode, message_id, reply_markup))
+        reply_to = None if method.reply_parameters is None else method.reply_parameters.message_id
+        self.sent.append(
+            SentMessage(chat_id, method.text, parse_mode, message_id, reply_markup, reply_to)
+        )
         message = Message(
             message_id=message_id,
             date=datetime.now(UTC),

@@ -19,6 +19,9 @@ BACK_BUTTON = "⬅ Înapoi"
 SEND_TIME_BUTTON = "🕒 Ora"
 UNIMPLEMENTED_REASON = "în lucru"
 NONSTANDARD_SCHEDULE_TEXT = "program nestandard"
+CHAT_TITLE = "Chat"
+CHAT_MENU_TEXT = "Chat · întrebări în grup. Apăsați pentru a schimba:"
+CHAT_NO_API_KEY_REASON = "fără cheie API"
 MISSED_REPORT_SENT_TEXT = "raportul de azi a fost trimis acum"
 
 
@@ -32,6 +35,14 @@ class LevelMenu(CallbackData, prefix="ml"):
 
 class ModuleSwitch(CallbackData, prefix="mt"):
     module_id: str
+    enabled: bool
+
+
+class ChatMenu(CallbackData, prefix="mc"):
+    pass
+
+
+class ChatSwitch(CallbackData, prefix="ct"):
     enabled: bool
 
 
@@ -103,7 +114,22 @@ def root_menu() -> tuple[str, InlineKeyboardMarkup]:
         [InlineKeyboardButton(text=title, callback_data=LevelMenu(level=level).pack())]
         for level, title in LEVEL_TITLES.items()
     ]
+    rows.append([InlineKeyboardButton(text=CHAT_TITLE, callback_data=ChatMenu().pack())])
     return ROOT_TEXT, InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def chat_menu(enabled: bool, has_api_key: bool) -> tuple[str, InlineKeyboardMarkup]:
+    if has_api_key:
+        text = f"{'✅' if enabled else '⬜'} {CHAT_TITLE} · {'activ' if enabled else 'inactiv'}"
+    elif enabled:
+        text = f"✅ {CHAT_TITLE} · {CHAT_NO_API_KEY_REASON}"
+    else:
+        text = f"▫️ {CHAT_TITLE} · {CHAT_NO_API_KEY_REASON}"
+    rows = [
+        [InlineKeyboardButton(text=text, callback_data=ChatSwitch(enabled=not enabled).pack())],
+        [InlineKeyboardButton(text=BACK_BUTTON, callback_data=RootMenu().pack())],
+    ]
+    return CHAT_MENU_TEXT, InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def level_menu(

@@ -34,10 +34,10 @@ def button_for(keyboard: InlineKeyboardMarkup, module_id: str) -> tuple[str, str
     raise AssertionError(f"нет кнопки {module_id}")
 
 
-def test_root_menu_offers_three_levels_in_romanian() -> None:
+def test_root_menu_offers_three_levels_and_chat_in_romanian() -> None:
     _, keyboard = root_menu()
 
-    assert button_texts(keyboard) == ["Zilnic", "Săptămânal", "Lunar"]
+    assert button_texts(keyboard) == ["Zilnic", "Săptămânal", "Lunar", "Chat"]
     assert keyboard.inline_keyboard[0][0].callback_data == LevelMenu(level="daily").pack()
 
 

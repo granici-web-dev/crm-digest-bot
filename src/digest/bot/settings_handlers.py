@@ -9,14 +9,19 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from digest.bot.chat_handlers import ChatDeps
 from digest.bot.settings_menu import (
+    CHAT_NO_API_KEY_REASON,
     MISSED_REPORT_SENT_TEXT,
     NONSTANDARD_SCHEDULE_TEXT,
+    ChatMenu,
+    ChatSwitch,
     LevelMenu,
     ModuleSwitch,
     RootMenu,
     SendTimeChoice,
     SendTimeMenu,
+    chat_menu,
     cron_with_send_time,
     format_send_time,
     level_menu,
@@ -27,6 +32,7 @@ from digest.bot.settings_menu import (
     send_time_option,
     standard_send_time,
 )
+from digest.chat.state import chat_enabled, store_chat_enabled
 from digest.config import SETTINGS_LEVELS, SettingsLevel
 from digest.db.schema import module_settings, schedules
 from digest.delivery.ops import notify_ops
@@ -206,6 +212,37 @@ async def choose_send_time(
             await notify_ops(deps.ops, f"Настройки: {level}: {MISSED_REPORT_SENT_TEXT}")
 
 
+async def load_chat_menu(deps: ReportDeps, chat: ChatDeps) -> Menu:
+    enabled = await chat_enabled(deps.engine, deps.tenant_id, deps.config)
+    return chat_menu(enabled, has_api_key=chat.anthropic_client is not None)
+
+
+async def open_chat(callback: CallbackQuery, deps: ReportDeps, chat: ChatDeps) -> None:
+    await show_menu(callback, await load_chat_menu(deps, chat))
+
+
+async def switch_chat(
+    callback: CallbackQuery, callback_data: ChatSwitch, deps: ReportDeps, chat: ChatDeps
+) -> None:
+    # Выключать можно всегда, включить без ключа нельзя: как модуль с неподключённым источником.
+    if callback_data.enabled and chat.anthropic_client is None:
+        await callback.answer(f"Chat: {CHAT_NO_API_KEY_REASON}", show_alert=True)
+        return
+    was_enabled = await chat_enabled(deps.engine, deps.tenant_id, deps.config)
+    if was_enabled == callback_data.enabled:
+        await callback.answer()
+        return
+    admin = callback.from_user
+    await store_chat_enabled(deps.engine, deps.tenant_id, callback_data.enabled, admin.id)
+    await notify_ops(
+        deps.ops,
+        f"Настройки: {admin.full_name} ({admin.id}): Chat "
+        f"{'включён' if was_enabled else 'выключен'} → "
+        f"{'включён' if callback_data.enabled else 'выключен'}",
+    )
+    await show_menu(callback, await load_chat_menu(deps, chat))
+
+
 def settings_router(admin_ids: Collection[int]) -> Router:
     # Чужим и в группах бот молчит: без подходящего хендлера апдейт отбрасывается без ответа.
     router = Router(name="settings")
@@ -219,4 +256,6 @@ def settings_router(admin_ids: Collection[int]) -> Router:
     router.callback_query.register(switch_module, ModuleSwitch.filter())
     router.callback_query.register(open_send_time, SendTimeMenu.filter())
     router.callback_query.register(choose_send_time, SendTimeChoice.filter())
+    router.callback_query.register(open_chat, ChatMenu.filter())
+    router.callback_query.register(switch_chat, ChatSwitch.filter())
     return router

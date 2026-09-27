@@ -8,23 +8,38 @@ import pytest
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.methods import EditMessageText
 from aiogram.types import CallbackQuery, Chat, InaccessibleMessage, Message, Update, User
+from anthropic import AsyncAnthropic
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.app import schedule_report_job, seed_defaults, stored_schedules
+from digest.bot.chat_handlers import ChatDeps
 from digest.bot.dispatcher import HANDLER_ERROR_TEXT, bot_dispatcher
 from digest.bot.settings_handlers import STALE_MENU_TEXT
-from digest.bot.settings_menu import LevelMenu, ModuleSwitch, SendTimeChoice, SendTimeMenu
+from digest.bot.settings_menu import (
+    ChatMenu,
+    ChatSwitch,
+    LevelMenu,
+    ModuleSwitch,
+    SendTimeChoice,
+    SendTimeMenu,
+)
 from digest.config import AppConfig
-from digest.db.schema import lead_snapshots, module_settings, schedules, snapshot_runs
+from digest.db.schema import (
+    lead_snapshots,
+    module_settings,
+    schedules,
+    settings,
+    snapshot_runs,
+)
 from digest.delivery.ops import OpsChannel
 from digest.reports.modules import IMPLEMENTED_MODULES
 from digest.reports.periods import ReportLevel
 from digest.reports.runner import ReportDeps, run_report
 from factories import BUCHAREST, lead_snapshots_row, make_snapshot_row
-from fakes import recording_bot
+from fakes import recording_bot, scripted_anthropic
 
 TENANT_ID = "sofabelle"
 GROUP_CHAT_ID = -1001
@@ -35,7 +50,12 @@ MENU_MESSAGE_ID = 10
 
 
 class SettingsHarness:
-    def __init__(self, engine: AsyncEngine, config: AppConfig) -> None:
+    def __init__(
+        self,
+        engine: AsyncEngine,
+        config: AppConfig,
+        anthropic_client: AsyncAnthropic | None = None,
+    ) -> None:
         report_bot, self.chat = recording_bot()
         ops_bot, self.ops = recording_bot()
         self.deps = ReportDeps(
@@ -59,6 +79,7 @@ class SettingsHarness:
             lambda level, cron: self.reschedule(level, cron),
             [ADMIN_ID],
             lambda: self.now,
+            ChatDeps(anthropic_client, "claude-sonnet-5", frozenset({GROUP_CHAT_ID})),
         )
         self.update_id = 0
 
@@ -212,6 +233,7 @@ async def test_admin_command_shows_levels_menu(harness: SettingsHarness, command
         "Zilnic",
         "Săptămânal",
         "Lunar",
+        "Chat",
     ]
 
 
@@ -448,3 +470,42 @@ async def test_handler_error_goes_to_ops_and_answers_button(harness: SettingsHar
 
     assert harness.ops_texts == ["/settings: хендлер упал: TelegramBadRequest."]
     assert harness.last_answer_text == HANDLER_ERROR_TEXT
+
+
+async def chat_setting_rows(engine: AsyncEngine) -> list[tuple[str, object, int | None]]:
+    async with engine.connect() as connection:
+        result = await connection.execute(
+            select(settings.c.key, settings.c.value, settings.c.updated_by)
+        )
+        return [(key, value, updated_by) for key, value, updated_by in result]
+
+
+async def test_chat_toggle_writes_setting_and_reports_to_ops(
+    engine: AsyncEngine, app_config: AppConfig
+) -> None:
+    harness = SettingsHarness(engine, app_config, scripted_anthropic().client)
+
+    await harness.press(ChatMenu().pack())
+    await harness.press(ChatSwitch(enabled=True).pack())
+
+    assert await chat_setting_rows(engine) == [("chat_enabled", True, ADMIN_ID)]
+    assert harness.ops_texts == [f"Настройки: Ana Admin ({ADMIN_ID}): Chat выключен → включён"]
+    last_menu = harness.chat.edited[-1].reply_markup
+    assert last_menu is not None
+    assert last_menu.inline_keyboard[0][0].text == "✅ Chat · activ"
+
+
+async def test_chat_toggle_without_api_key_is_unavailable(
+    engine: AsyncEngine, app_config: AppConfig
+) -> None:
+    harness = SettingsHarness(engine, app_config)
+
+    await harness.press(ChatMenu().pack())
+    await harness.press(ChatSwitch(enabled=True).pack())
+
+    assert await chat_setting_rows(engine) == []
+    assert harness.ops_texts == []
+    assert harness.last_answer_text == "Chat: fără cheie API"
+    menu = harness.chat.edited[0].reply_markup
+    assert menu is not None
+    assert menu.inline_keyboard[0][0].text == "▫️ Chat · fără cheie API"
