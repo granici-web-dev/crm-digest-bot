@@ -14,11 +14,8 @@ from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.app import schedule_report_job, seed_defaults, stored_schedules
-from digest.bot.settings_handlers import (
-    HANDLER_ERROR_TEXT,
-    STALE_MENU_TEXT,
-    settings_dispatcher,
-)
+from digest.bot.dispatcher import HANDLER_ERROR_TEXT, bot_dispatcher
+from digest.bot.settings_handlers import STALE_MENU_TEXT
 from digest.bot.settings_menu import LevelMenu, ModuleSwitch, SendTimeChoice, SendTimeMenu
 from digest.config import AppConfig
 from digest.db.schema import lead_snapshots, module_settings, schedules, snapshot_runs
@@ -57,7 +54,7 @@ class SettingsHarness:
         # До любого варианта daily и в пятницу: перенос времени не досылает отчёт, пока тест
         # сам не выставит момент.
         self.now = datetime(2026, 9, 25, 12, 0, tzinfo=BUCHAREST)
-        self.dispatcher = settings_dispatcher(
+        self.dispatcher = bot_dispatcher(
             self.deps,
             lambda level, cron: self.reschedule(level, cron),
             [ADMIN_ID],

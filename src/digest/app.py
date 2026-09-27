@@ -16,8 +16,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.backup_check import stale_backup_alert
+from digest.bot.dispatcher import bot_dispatcher
 from digest.bot.polling import PollingHealth, supervise_polling, watch_polling_silence
-from digest.bot.settings_handlers import settings_dispatcher
 from digest.bot.settings_menu import standard_send_time
 from digest.config import SETTINGS_LEVELS, SNAPSHOT_RETRY_DELAY, AppConfig, SettingsLevel
 from digest.db.schema import schedules
@@ -227,7 +227,7 @@ async def run_app(engine: AsyncEngine, config: AppConfig, app_settings: Settings
         loop.add_signal_handler(stop_signal, stop.set)
     health = PollingHealth()
     deps.report_bot.session.middleware(health)
-    dispatcher = settings_dispatcher(
+    dispatcher = bot_dispatcher(
         deps,
         reschedule,
         app_settings.telegram_admin_ids,
