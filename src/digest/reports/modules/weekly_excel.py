@@ -21,7 +21,7 @@ from digest.reports.modules.weekly import (
     week_range_label,
     working_hours_label,
 )
-from digest.reports.render import render
+from digest.reports.render import render, text
 
 # Колонки листов «Lead-uri» и «Vizite»: имя колонки ячеек и подпись. Ячейки строятся только из
 # LEAD_ROW_COLUMNS metrics/weekly.py, где нет данных клиента (инвариант 7).
@@ -93,48 +93,41 @@ def write_lead_sheet(
     worksheet.set_column(0, len(LEAD_SHEET_COLUMNS) - 1, LEAD_SHEET_COLUMN_WIDTH)
 
 
+def sheet_text(macro_name: str, **values: Any) -> str:
+    # Ячейка Excel не HTML: снимаем экранирование autoescape, иначе «&» из конфига станет «&amp;».
+    return text(macro_name, **values).unescape()
+
+
 def weekly_workbook(lead_frame: pd.DataFrame, context: ReportContext) -> bytes:
     report_date, config = context.report_date, context.config
     tables = weekly_lead_tables(lead_frame, report_date, config)
     week_range = week_range_label(tables.by_day_showroom.days)
-    without_sources = f"БЕЗ Sursa={excluded_sources_label(config)}"
+    sources = excluded_sources_label(config)
     output = BytesIO()
     workbook = xlsxwriter.Workbook(output, {"in_memory": True})
 
-    summary = workbook.add_worksheet("Свод день-шоурум")
-    summary.write(0, 0, f"Сводка {week_range} ({without_sources}): лиды по рабочим дням × шоурум")
-    summary.write(
-        1,
-        0,
-        f"Правило: рабочие часы {working_hours_label(config)}. Лиды в этом окне засчитаны в "
-        "текущий день; лиды вне окна перенесены на следующий календарный день (продавцы "
-        "обрабатывают их только в рабочее время).",
-    )
+    summary = workbook.add_worksheet(sheet_text("sheet_day_showroom"))
+    summary.write(0, 0, sheet_text("day_showroom_title", week_range=week_range, sources=sources))
+    summary.write(1, 0, sheet_text("working_hours_rule", hours=working_hours_label(config)))
     write_table(summary, 2, day_showroom_table(tables.by_day_showroom, "Zi lucrătoare"))
 
-    detail = workbook.add_worksheet("По дням шоурум-источник")
+    detail = workbook.add_worksheet(sheet_text("sheet_day_showroom_source"))
     detail.write(
-        0,
-        0,
-        f"Детализация по дням {week_range} ({without_sources}): шоурум × источник, "
-        "с итогом после каждого дня",
+        0, 0, sheet_text("day_showroom_source_title", week_range=week_range, sources=sources)
     )
-    detail.write(
-        1,
-        0,
-        "Внутри каждого рабочего дня: разбивка по шоурумам и источникам. "
-        "После каждого дня строка «Total zi».",
-    )
+    detail.write(1, 0, sheet_text("day_showroom_source_hint"))
     write_table(detail, 2, day_detail_table(tables))
 
-    by_source = workbook.add_worksheet("Шоурум-источник итог")
-    by_source.write(0, 0, f"Итог {week_range} ({without_sources}): шоурум × источник")
-    by_source.write(1, 0, f"Откуда приходят лиды в каждый шоурум (весь период {week_range}).")
+    by_source = workbook.add_worksheet(sheet_text("sheet_showroom_source"))
+    by_source.write(
+        0, 0, sheet_text("showroom_source_title", week_range=week_range, sources=sources)
+    )
+    by_source.write(1, 0, sheet_text("showroom_source_hint", week_range=week_range))
     write_table(by_source, 2, showroom_source_table(tables))
 
     write_lead_sheet(
         workbook,
-        "Lead-uri",
+        sheet_text("sheet_leads"),
         "Zi lucrătoare",
         weekly_lead_rows(lead_frame, report_date, config),
         config,
@@ -143,7 +136,7 @@ def weekly_workbook(lead_frame: pd.DataFrame, context: ReportContext) -> bytes:
     # День визита это день ежедневного окна 19:00 → 19:00, а не рабочий день лида.
     write_lead_sheet(
         workbook,
-        "Vizite",
+        sheet_text("sheet_visits"),
         "Zi",
         weekly_showroom_visit_rows(lead_frame, report_date, config),
         config,

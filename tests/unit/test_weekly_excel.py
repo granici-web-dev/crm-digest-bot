@@ -1,3 +1,4 @@
+import re
 from datetime import date, datetime, timedelta
 from io import BytesIO
 from typing import Any
@@ -14,6 +15,7 @@ from factories import BUCHAREST, make_lead_links, make_snapshot_row
 
 SUNDAY = date(2026, 9, 27)
 MONDAY = date(2026, 9, 21)
+CYRILLIC = re.compile("[\u0400-\u04ff]")
 # Синтетические данные клиента: кадр их не несёт, тест подкладывает их, чтобы проверить, что
 # вложение берёт только разрешённые колонки.
 CLIENT_DATA = {
@@ -63,9 +65,9 @@ def test_workbook_has_manual_report_sheets_plus_leads_and_visits(app_config: App
 
     assert filename == "sofabelle_sapt39_2026.xlsx"
     assert book.sheetnames == [
-        "Свод день-шоурум",
-        "По дням шоурум-источник",
-        "Шоурум-источник итог",
+        "Zi × showroom",
+        "Zi × showroom × sursă",
+        "Showroom × sursă",
         "Lead-uri",
         "Vizite",
     ]
@@ -80,7 +82,7 @@ def test_filename_takes_tenant_id(app_config: AppConfig) -> None:
 def test_summary_sheets_have_manual_headers_and_totals(app_config: AppConfig) -> None:
     _, book = workbook(app_config)
 
-    summary = sheet_rows(book, "Свод день-шоурум")
+    summary = sheet_rows(book, "Zi × showroom")
     assert summary[2] == (
         "Zi lucrătoare",
         "Brașov",
@@ -91,11 +93,11 @@ def test_summary_sheets_have_manual_headers_and_totals(app_config: AppConfig) ->
     )
     assert summary[-1] == ("TOTAL", 2, 1, 1, 1, 5)
 
-    by_source = sheet_rows(book, "Шоурум-источник итог")
+    by_source = sheet_rows(book, "Showroom × sursă")
     assert by_source[2] == ("Showroom", "Site", "WhatsApp", "(fără sursă)", "TOTAL")
     assert by_source[-1] == ("TOTAL", 3, 1, 1, 5)
 
-    detail = sheet_rows(book, "По дням шоурум-источник")
+    detail = sheet_rows(book, "Zi × showroom × sursă")
     day_totals = [row[-1] for row in detail if str(row[0]).startswith("Total zi")]
     assert sum(day_totals) == 5
 
@@ -117,6 +119,22 @@ def test_lead_sheets_match_summary_and_format_cells(app_config: AppConfig) -> No
     assert leads[5][3:5] == (None, None)
     assert leads[5][7] == "id 99"
     assert [row[0] for row in visits[1:]] == ["5"]
+
+
+def test_workbook_is_romanian_only(app_config: AppConfig) -> None:
+    _, book = workbook(app_config)
+
+    texts = [
+        *book.sheetnames,
+        *(str(cell) for name in book.sheetnames for row in sheet_rows(book, name) for cell in row),
+    ]
+
+    assert [value for value in texts if CYRILLIC.search(value)] == []
+    summary = sheet_rows(book, "Zi × showroom")
+    assert summary[0][0] == (
+        "Sumar 21–27.09 (fără Sursa=Showroom): lead-uri pe zile lucrătoare × showroom"
+    )
+    assert str(summary[1][0]).startswith("Regulă: ore de lucru 10:00–19:00.")
 
 
 def test_client_data_reaches_no_cell_of_the_workbook(app_config: AppConfig) -> None:

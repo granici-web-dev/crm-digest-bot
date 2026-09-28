@@ -1,3 +1,4 @@
+import re
 from datetime import date, datetime
 from io import BytesIO
 from typing import Any
@@ -275,6 +276,17 @@ def test_monthly_workbook_sheets_and_filename(app_config: AppConfig) -> None:
         "Motive pierdere",
         "Lead-uri luna",
     ]
+
+
+def test_monthly_workbook_is_romanian_only(app_config: AppConfig) -> None:
+    _, book = workbook(app_config)
+
+    texts = [
+        *book.sheetnames,
+        *(str(cell) for name in book.sheetnames for row in sheet_rows(book, name) for cell in row),
+    ]
+
+    assert [value for value in texts if re.search("[\u0400-\u04ff]", value)] == []
 
 
 def test_monthly_workbook_manager_sheet(app_config: AppConfig) -> None:

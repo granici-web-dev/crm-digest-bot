@@ -170,9 +170,9 @@ def test_weekly_texts_follow_working_hours_sources_and_reason_labels_from_config
     assert "fără Showroom, Vizita:" in leads_text
     assert "Preț 1" in losses_text
     assert document is not None
-    summary = load_workbook(BytesIO(document.content))["Свод день-шоурум"]
-    assert "(БЕЗ Sursa=Showroom, Vizita)" in str(summary["A1"].value)
-    assert "рабочие часы 09:00–18:00" in str(summary["A2"].value)
+    summary = load_workbook(BytesIO(document.content))["Zi × showroom"]
+    assert "(fără Sursa=Showroom, Vizita)" in str(summary["A1"].value)
+    assert "ore de lucru 09:00–18:00" in str(summary["A2"].value)
 
 
 def test_funnel_and_week_over_week_numbers_on_render_path(app_config: AppConfig) -> None:
