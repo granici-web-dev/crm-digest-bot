@@ -34,6 +34,7 @@ from digest.delivery.telegram import (
     send_photo_with_retry,
     split_message,
 )
+from digest.metrics.chat_periods import first_snapshot_on_or_after
 from digest.metrics.daily import PreviousSnapshot
 from digest.metrics.frame import unknown_manager_ids
 from digest.metrics.kpi import Period
@@ -409,23 +410,19 @@ async def snapshot_if_successful(deps: ReportDeps, snapshot_date: date) -> Previ
 
 
 async def previous_week_snapshot(
-    deps: ReportDeps,
-    week_ago: PreviousSnapshot | None,
-    snapshot_date: date,
-    lead_frame: pd.DataFrame,
+    deps: ReportDeps, week_ago: PreviousSnapshot | None, snapshot_date: date
 ) -> PreviousSnapshot | None:
     # Правило закрытого периода чата (period_snapshot_date): снапшот воскресенья прошлой недели,
-    # нет его, первый успешный после, но не позже снапшота отчёта (догоняющий прогон за старую
-    # дату не смотрит в будущее). w6 подписывает подмену.
+    # нет его, первый успешный после, но строго раньше снапшота отчёта: свой снапшот отчёта дал
+    # бы прошлой неделе дозревший IRELEVANT, и сравнение с текущей потеряло бы смысл
+    # (docs/kpi-definitions.md, «Разбивка по источникам и кампаниям», w6). w6 подписывает подмену.
     if week_ago is not None:
         return week_ago
     week_end = snapshot_date - timedelta(days=DAYS_IN_WEEK)
     dates = await success_snapshot_dates(deps.engine, deps.tenant_id)
-    substitute = min((day for day in dates if week_end <= day <= snapshot_date), default=None)
+    substitute = first_snapshot_on_or_after(week_end, dates, until=snapshot_date)
     if substitute is None:
         return None
-    if substitute == snapshot_date:
-        return PreviousSnapshot(snapshot_date, lead_frame)
     return await snapshot_if_successful(deps, substitute)
 
 
@@ -486,7 +483,7 @@ async def build_report(
         else None
     )
     previous_week = (
-        await previous_week_snapshot(deps, week_ago, snapshot_date, lead_frame)
+        await previous_week_snapshot(deps, week_ago, snapshot_date)
         if IRRELEVANT_BY_CAMPAIGN_MODULE_ID in module_ids
         else None
     )

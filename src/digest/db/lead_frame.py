@@ -9,6 +9,10 @@ from digest.config import AppConfig
 from digest.db.schema import lead_snapshots, snapshot_runs
 from digest.metrics.frame import LEAD_FRAME_COLUMNS, prepare_lead_frame
 
+# btrim без второго аргумента режет только пробел: таб, перевод строки и NBSP из формы сайта
+# дали бы отдельную кампанию, неотличимую в отчёте от настоящей.
+CAMPAIGN_TRIM_CHARACTERS = " \t\r\n\u00a0"
+
 
 class SnapshotMissingError(Exception):
     pass
@@ -32,7 +36,10 @@ async def load_lead_frame(
         type_=JSONB,
     )
     utm_campanie = func.nullif(
-        func.btrim(campaign_value.op("#>>")(literal_column("'{}'::text[]"))), ""
+        func.btrim(
+            campaign_value.op("#>>")(literal_column("'{}'::text[]")), CAMPAIGN_TRIM_CHARACTERS
+        ),
+        "",
     ).label("utm_campanie")
     raw_columns = {"created_by_id": created_by_id, "utm_campanie": utm_campanie}
     query = (

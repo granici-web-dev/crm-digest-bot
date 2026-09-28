@@ -122,7 +122,7 @@ class IrrelevantRow:
     key: str
     leads: int
     irr_leads: int
-    irr: float | None
+    irr: float
     # None: снапшота прошлой недели нет или у ключа на прошлой неделе не было лидов.
     irr_previous: float | None
     meets_target: bool | None
@@ -379,7 +379,9 @@ def irrelevant_rows(
     for key, counts in current.items():
         if key is None or counts.leads < min_leads:
             continue
-        irr = kpis_from(counts).irr
+        # IRR по формуле kpis_from (docs/kpi-definitions.md, «KPI»); leads >= min_leads >= 1,
+        # деления на ноль нет.
+        irr = counts.irr_leads / counts.leads
         previous_counts = None if previous is None else previous.get(key)
         rows.append(
             IrrelevantRow(
@@ -391,7 +393,7 @@ def irrelevant_rows(
                 meets_target=meets_target(irr, config.kpi.target_value("irr"), target.direction),
             )
         )
-    rows.sort(key=lambda row: (-(row.irr or 0), -row.irr_leads, row.key))
+    rows.sort(key=lambda row: (-row.irr, -row.irr_leads, row.key))
     return tuple(rows[:top_rows])
 
 

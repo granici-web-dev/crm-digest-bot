@@ -232,7 +232,7 @@ def test_irr_by_campaign_text_notes_substituted_previous_week_snapshot(
 
     text = IMPLEMENTED_MODULES["w6"](lead_frame, report_context).text
 
-    assert "nu există snapshot pentru 20.09.2026" in text
+    assert "Săpt. trecută: după snapshotul din 22.09 (lipsește cel din 20.09)" in text
     assert "BZA &lt;03&gt;" in text
     assert text == snapshot
 
@@ -243,6 +243,18 @@ def test_irr_by_campaign_without_previous_week_shows_dash(app_config: AppConfig)
 
     text = IMPLEMENTED_MODULES["w6"](lead_frame, report_context).text
 
-    assert "total 20% (săpt. trecută —)" in text
-    assert "Site 30% (3 din 10) ✗, săpt. trecută —" in text
-    assert "Săpt. trecută:" not in text
+    assert "total 20,0% (săpt. trecută —), țintă ≤20,0%" in text
+    assert "Site 30,0% (3 din 10) ✗, săpt. trecută —" in text
+    assert "Săpt. trecută: fără snapshot" in text
+
+
+def test_irr_by_campaign_flattens_and_cuts_long_campaign(app_config: AppConfig) -> None:
+    rows = [
+        lead(lead_id, at(SUNDAY, 12), utm_campanie="BZA\n" + "x" * 100) for lead_id in range(1, 6)
+    ]
+    lead_frame = prepare_lead_frame(rows, app_config)
+    report_context = replace(context(app_config, lead_frame), previous_week=None)
+
+    text = IMPLEMENTED_MODULES["w6"](lead_frame, report_context).text
+
+    assert "„BZA " + "x" * 35 + "…” 0,0% (0 din 5)" in text

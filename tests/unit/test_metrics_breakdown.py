@@ -102,7 +102,6 @@ def test_sources_below_threshold_collapse_into_other_with_summed_counts(
         "Recomandare",
     )
     assert breakdown.other is not None
-    assert breakdown.other.key is None
     assert (breakdown.other.counts.leads, breakdown.other.counts.clienti) == (8, 2)
     assert breakdown.without_key is None
 

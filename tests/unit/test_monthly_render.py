@@ -10,6 +10,7 @@ from openpyxl.workbook.workbook import Workbook
 from syrupy.assertion import SnapshotAssertion
 
 from digest.config import AppConfig
+from digest.delivery.telegram import split_message
 from digest.metrics.frame import prepare_lead_frame
 from digest.reports.context import ReportContext
 from digest.reports.modules import IMPLEMENTED_MODULES
@@ -508,3 +509,30 @@ def test_source_conversion_text_with_other_without_source_and_campaigns(
 
     assert "BZA_Cluj_Website_Leads &lt;03&gt; &amp; co" in text
     assert text == snapshot
+
+
+def test_source_conversion_text_splits_into_parts_with_balanced_tags(app_config: AppConfig) -> None:
+    september = at(date(2026, 9, 10), 12)
+    rows = [
+        lead(source_index * 20 + offset, september, source_name=source, utm_campanie=f"C{source}")
+        for source_index, source in enumerate(("Site", "Telefon", "WhatsApp", "Mail", "Showroom"))
+        for offset in range(1, 11)
+    ]
+    text = IMPLEMENTED_MODULES["m7"](prepare_lead_frame(rows, app_config), context(app_config)).text
+
+    parts = split_message(text, limit=200)
+
+    assert len(parts) > 3
+    for part in parts:
+        for tag in ("b", "i", "code"):
+            assert part.count(f"<{tag}>") == part.count(f"</{tag}>"), part
+
+
+def test_source_conversion_hides_phone_like_campaign(app_config: AppConfig) -> None:
+    september = at(date(2026, 9, 10), 12)
+    rows = [lead(lead_id, september, utm_campanie="Sună 0712345678") for lead_id in range(1, 6)]
+
+    text = IMPLEMENTED_MODULES["m7"](prepare_lead_frame(rows, app_config), context(app_config)).text
+
+    assert "0712345678" not in text
+    assert "campanie ascunsă" in text

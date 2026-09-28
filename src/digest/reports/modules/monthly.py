@@ -1,11 +1,11 @@
-from collections.abc import Hashable
+from collections.abc import Callable, Hashable
 from datetime import date
 from typing import Any
 
 import pandas as pd
 
 from digest.config import KPI_NAMES, AppConfig
-from digest.metrics.breakdown import BreakdownRow, LeadBreakdown
+from digest.metrics.breakdown import BreakdownRow, LeadBreakdown, UnkeyedBreakdownRow
 from digest.metrics.cockpit import manager_cockpit_table
 from digest.metrics.monthly import (
     BELOW_ALL_LEVELS,
@@ -22,6 +22,7 @@ from digest.reports.context import ModuleResult, ReportContext, ReportPhoto
 from digest.reports.modules.weekly import WITHOUT_SHOWROOM
 from digest.reports.render import (
     RO_MONTHS,
+    campaign_label,
     percent,
     percent_one_decimal,
     render,
@@ -185,7 +186,7 @@ def breakdown_line(label: str, cells: tuple[str, ...]) -> list[str]:
     return [f"{label:{BREAKDOWN_LABEL_WIDTH}} {numbers}"]
 
 
-def breakdown_row_lines(label: str, row: BreakdownRow) -> list[str]:
+def breakdown_row_lines(label: str, row: BreakdownRow | UnkeyedBreakdownRow) -> list[str]:
     counts, kpis = row.counts, row.kpis
     cells = (
         str(counts.leads),
@@ -203,11 +204,11 @@ def breakdown_lines(
     first_header: str,
     other_label: str,
     without_key_label: str | None,
+    key_label: Callable[[str], str],
 ) -> list[str]:
     lines = breakdown_line(first_header, ("Lead", "Utile", "Of.", "Cl.", "IRR", "SCR"))
     for row in breakdown.rows:
-        assert row.key is not None
-        lines += breakdown_row_lines(row.key, row)
+        lines += breakdown_row_lines(key_label(row.key), row)
     if breakdown.other is not None:
         lines += breakdown_row_lines(
             f"{other_label} ({len(breakdown.other_keys)})", breakdown.other
@@ -218,13 +219,15 @@ def breakdown_lines(
 
 
 def scr_by_source_campaign_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
-    conversion = monthly_source_conversion(lead_frame, context.report_date, context.config)
+    config = context.config
+    conversion = monthly_source_conversion(lead_frame, context.report_date, config)
     labels = chart_labels()
     source_lines = breakdown_lines(
         conversion.by_source,
         "Sursă",
         "Alte surse",
-        context.config.status_mapping.without_source_label,
+        config.status_mapping.without_source_label,
+        str,
     )
     source_lines += breakdown_row_lines("Total", conversion.by_source.total)
     return ModuleResult(
@@ -234,7 +237,15 @@ def scr_by_source_campaign_report(lead_frame: pd.DataFrame, context: ReportConte
             month_label=f"{RO_MONTHS[conversion.month.month - 1]} {conversion.month:%Y}",
             source_lines=source_lines,
             campaign_lines=breakdown_lines(
-                conversion.by_campaign, "Campanie", "Alte campanii", None
+                conversion.by_campaign,
+                "Campanie",
+                "Alte campanii",
+                None,
+                lambda key: campaign_label(
+                    key,
+                    config.modules.scr_by_source_campaign_params.campaign_label_max_length,
+                    config.status_mapping.hidden_campaign_label,
+                ),
             ),
             clienti_note=labels.clienti_note,
         )

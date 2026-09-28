@@ -404,6 +404,16 @@ def test_custom_field_both_kept_and_dropped_fails_config_load() -> None:
         StatusMapping.model_validate(raw_mapping)
 
 
+def test_utm_campanie_missing_from_raw_keep_fails_config_load() -> None:
+    raw_mapping = repository_yaml("status-mapping.yaml")
+    raw_mapping["raw_custom_fields"]["keep"].remove(39)
+
+    with pytest.raises(
+        ValidationError, match=r"UTM_Campanie \(field_id 39\) нет в raw_custom_fields"
+    ):
+        StatusMapping.model_validate(raw_mapping)
+
+
 def test_module_label_longer_than_28_characters_fails_config_load() -> None:
     raw_modules = repository_yaml("modules.yaml")
     raw_modules["daily"]["d1"]["label"] = "Raport automat în formatul consilierilor"

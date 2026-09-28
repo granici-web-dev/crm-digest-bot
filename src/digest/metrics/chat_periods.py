@@ -78,6 +78,21 @@ def chat_period_window(
     )
 
 
+def first_snapshot_on_or_after(
+    day: date, snapshot_dates: Sequence[date], until: date | None = None
+) -> date | None:
+    # until не включается: догоняющий недельный отчёт не подставляет свой же снапшот вместо
+    # снапшота прошлой недели.
+    return min(
+        (
+            snapshot_date
+            for snapshot_date in snapshot_dates
+            if snapshot_date >= day and (until is None or snapshot_date < until)
+        ),
+        default=None,
+    )
+
+
 def period_snapshot_date(
     period: ChatPeriodChoice, today: date, snapshot_dates: Sequence[date]
 ) -> date | None:
@@ -90,4 +105,4 @@ def period_snapshot_date(
     if isinstance(period, str) and period not in CLOSED_PERIODS:
         return max(snapshot_dates)
     last_day = period_days(period, today)[1]
-    return min((day for day in snapshot_dates if day >= last_day), default=None)
+    return first_snapshot_on_or_after(last_day, snapshot_dates)

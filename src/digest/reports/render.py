@@ -1,3 +1,5 @@
+import re
+import unicodedata
 from functools import cache
 from pathlib import Path
 from typing import Any
@@ -43,6 +45,25 @@ def signed_percent_one_decimal(value: float) -> str:
     if value == 0:
         return percent_one_decimal(value)
     return ("+" if value > 0 else "−") + percent_one_decimal(abs(value))
+
+
+LINE_BREAKING_CATEGORIES = frozenset({"Cc", "Zl", "Zp"})
+PHONE_LIKE = re.compile(r"[0-9]{7,}")
+
+
+def campaign_label(value: str, max_length: int, hidden_label: str) -> str:
+    # UTM_Campanie приходит из формы сайта как есть: перевод строки сломал бы таблицу и разбиение
+    # сообщения, телефон или e-mail в нём это контакт клиента (инвариант 7). Данные не трогаем,
+    # только подпись в отчёте.
+    flat = "".join(
+        " " if unicodedata.category(character) in LINE_BREAKING_CATEGORIES else character
+        for character in value
+    )
+    if PHONE_LIKE.search(flat) or ("@" in flat and "." in flat):
+        return hidden_label
+    if len(flat) > max_length:
+        return flat[: max_length - 1] + "…"
+    return flat
 
 
 TARGET_DIRECTION_SIGNS = {"higher": "≥", "lower": "≤"}

@@ -22,8 +22,15 @@ BREAKDOWN_COLUMNS: tuple[BreakdownColumn, ...] = get_args(BreakdownColumn)
 
 @dataclass(frozen=True)
 class BreakdownRow:
-    # Значение как в mefi; None: пусто, свёрнутые строки или итог.
-    key: str | None
+    # Значение как в mefi.
+    key: str
+    counts: LeadCounts
+    kpis: Kpis
+
+
+@dataclass(frozen=True)
+class UnkeyedBreakdownRow:
+    # Свёрнутые ключи, лиды без значения или итог.
     counts: LeadCounts
     kpis: Kpis
 
@@ -32,15 +39,15 @@ class BreakdownRow:
 class LeadBreakdown:
     # Ключи с leads >= min_leads, по убыванию лидов, при равенстве по имени.
     rows: tuple[BreakdownRow, ...]
-    other: BreakdownRow | None
+    other: UnkeyedBreakdownRow | None
     other_keys: tuple[str, ...]
     # Лиды без значения не сворачиваются в other: это вопрос заполнения поля в mefi.
-    without_key: BreakdownRow | None
-    total: BreakdownRow
+    without_key: UnkeyedBreakdownRow | None
+    total: UnkeyedBreakdownRow
 
 
-def breakdown_row(key: str | None, counts: LeadCounts) -> BreakdownRow:
-    return BreakdownRow(key, counts, kpis_from(counts))
+def unkeyed_row(counts: LeadCounts) -> UnkeyedBreakdownRow:
+    return UnkeyedBreakdownRow(counts, kpis_from(counts))
 
 
 def lead_counts_by_column(
@@ -78,11 +85,9 @@ def lead_breakdown(
     collapsed = tuple(sorted(key for key, counts in named.items() if counts.leads < min_leads))
     without_key = counts_by_key.get(None)
     return LeadBreakdown(
-        rows=tuple(breakdown_row(key, named[key]) for key in kept),
-        other=breakdown_row(None, add_counts(named[key] for key in collapsed))
-        if collapsed
-        else None,
+        rows=tuple(BreakdownRow(key, named[key], kpis_from(named[key])) for key in kept),
+        other=unkeyed_row(add_counts(named[key] for key in collapsed)) if collapsed else None,
         other_keys=collapsed,
-        without_key=None if without_key is None else breakdown_row(None, without_key),
-        total=breakdown_row(None, add_counts(counts_by_key.values())),
+        without_key=None if without_key is None else unkeyed_row(without_key),
+        total=unkeyed_row(add_counts(counts_by_key.values())),
     )

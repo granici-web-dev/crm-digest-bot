@@ -10,6 +10,7 @@ from digest.metrics.chat_periods import (
     ChatPeriod,
     chat_period_window,
     earliest_specific_day,
+    first_snapshot_on_or_after,
     period_snapshot_date,
 )
 from digest.metrics.daily import daily_window
@@ -114,6 +115,17 @@ def test_closed_period_without_last_day_snapshot_uses_first_later_one() -> None:
 def test_closed_period_without_last_day_or_later_snapshot_has_none() -> None:
     dates = (date(2026, 8, 29), date(2026, 8, 30))
     assert period_snapshot_date("luna_trecuta", WEDNESDAY, dates) is None
+
+
+@pytest.mark.parametrize(
+    ("until", "expected"),
+    [(None, date(2026, 9, 25)), (date(2026, 9, 26), date(2026, 9, 25)), (date(2026, 9, 25), None)],
+)
+def test_first_snapshot_on_or_after_excludes_until(
+    until: date | None, expected: date | None
+) -> None:
+    dates = (date(2026, 9, 18), date(2026, 9, 25), date(2026, 9, 28))
+    assert first_snapshot_on_or_after(date(2026, 9, 20), dates, until) == expected
 
 
 def test_every_period_has_a_window(app_config: AppConfig) -> None:

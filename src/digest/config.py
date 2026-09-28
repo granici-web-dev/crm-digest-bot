@@ -271,6 +271,7 @@ class StatusMapping(StrictConfigModel):
     showrooms: list[str]
     tenant_display_name: str
     without_source_label: str
+    hidden_campaign_label: str
     lead_links: LeadLinkSettings
     time: TimeSettings
     raw_strip: list[str]
@@ -281,6 +282,16 @@ class StatusMapping(StrictConfigModel):
     snapshot: SnapshotSettings
 
     _category_by_status: dict[str, LeadCategory] = PrivateAttr()
+
+    @model_validator(mode="after")
+    def utm_campanie_is_kept_in_raw(self) -> Self:
+        field_id = self.custom_fields.utm_campanie.field_id
+        if field_id not in self.raw_custom_fields.keep:
+            raise ValueError(
+                f"{UTM_CAMPANIE} (field_id {field_id}) нет в raw_custom_fields.keep: "
+                "m7 и w6 читают кампанию из raw"
+            )
+        return self
 
     @model_validator(mode="after")
     def stripped_keys_are_known(self) -> Self:
@@ -361,12 +372,14 @@ class AnomalyParams(StrictConfigModel):
 class ScrBySourceCampaignParams(StrictConfigModel):
     min_source_leads: PositiveInt
     min_campaign_leads: PositiveInt
+    campaign_label_max_length: PositiveInt = 40
 
 
 class IrrByCampaignParams(StrictConfigModel):
     min_source_leads: PositiveInt
     min_campaign_leads: PositiveInt
     top_rows: PositiveInt
+    campaign_label_max_length: PositiveInt = 40
 
 
 class ScrLevel(StrictConfigModel):

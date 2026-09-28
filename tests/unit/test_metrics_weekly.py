@@ -473,6 +473,20 @@ def test_weekly_irrelevant_ranks_by_irr_above_min_leads(app_config: AppConfig) -
     assert result.by_campaign == ()
 
 
+def test_weekly_irrelevant_breaks_ties_by_name(app_config: AppConfig) -> None:
+    lead_frame = frame(
+        app_config,
+        *site_leads(1, 8, SUNDAY, source_name="WhatsApp"),
+        *[irrelevant(100 + offset, at(SUNDAY, 12), source_name="WhatsApp") for offset in range(2)],
+        *site_leads(200, 8, SUNDAY, source_name="Telefon"),
+        *[irrelevant(300 + offset, at(SUNDAY, 12), source_name="Telefon") for offset in range(2)],
+    )
+
+    result = weekly_irrelevant(lead_frame, None, SUNDAY, app_config)
+
+    assert [row.key for row in result.by_source] == ["Telefon", "WhatsApp"]
+
+
 def test_weekly_irrelevant_previous_week_uses_week_ago_snapshot(app_config: AppConfig) -> None:
     previous_sunday = SUNDAY - timedelta(days=7)
     last_week = site_leads(1, 10, previous_sunday)

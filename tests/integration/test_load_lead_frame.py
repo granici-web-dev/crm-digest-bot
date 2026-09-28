@@ -102,7 +102,7 @@ async def test_utm_campanie_is_read_from_raw_by_field_id(
     assert pd.isna(lead_frame["utm_campanie"].iloc[1])
 
 
-@pytest.mark.parametrize("value", ["", "   ", None])
+@pytest.mark.parametrize("value", ["", "   ", "\t\r\n\u00a0", None])
 async def test_blank_campaign_is_null(
     engine: AsyncEngine, app_config: AppConfig, value: str | None
 ) -> None:
@@ -115,6 +115,20 @@ async def test_blank_campaign_is_null(
     lead_frame = await load_lead_frame(engine, "sofabelle", SNAPSHOT_DATE, app_config)
 
     assert lead_frame["utm_campanie"].isna().all()
+
+
+async def test_campaign_is_trimmed_of_tabs_line_breaks_and_nbsp(
+    engine: AsyncEngine, app_config: AppConfig
+) -> None:
+    row = lead_snapshots_row(make_snapshot_row(lead_id=1))
+    row["raw"]["custom_fields"] = [
+        {"field_id": 39, "name": "UTM_Campanie", "type": "input", "value": "\u00a0\tBZA 03\r\n"}
+    ]
+    await store(engine, [stored_raw(row)])
+
+    lead_frame = await load_lead_frame(engine, "sofabelle", SNAPSHOT_DATE, app_config)
+
+    assert lead_frame["utm_campanie"].iloc[0] == "BZA 03"
 
 
 def stored_raw(snapshot_row: dict[str, Any]) -> dict[str, Any]:

@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date, timedelta
 
 import pandas as pd
@@ -17,7 +18,7 @@ from digest.metrics.weekly import (
 )
 from digest.reports.charts import chart_labels
 from digest.reports.context import ModuleResult, ReportContext
-from digest.reports.render import RO_WEEKDAYS, render, target_label, text
+from digest.reports.render import RO_WEEKDAYS, campaign_label, render, target_label
 
 TableRow = list[str | int]
 
@@ -194,21 +195,25 @@ def irr_by_campaign_report(lead_frame: pd.DataFrame, context: ReportContext) -> 
     config = context.config
     irrelevant = weekly_irrelevant(lead_frame, context.previous_week, context.report_date, config)
     params = config.modules.irr_by_campaign_params
-    previous_sunday = context.report_date - timedelta(days=DAYS_IN_WEEK)
-    snapshot_note = None
-    used = irrelevant.previous_snapshot_date
-    if used is not None and used != previous_sunday:
-        snapshot_note = text(
-            "snapshot_substituted", used=f"{used:%d.%m.%Y}", missing=f"{previous_sunday:%d.%m.%Y}"
+    by_campaign = tuple(
+        replace(
+            row,
+            key=campaign_label(
+                row.key,
+                params.campaign_label_max_length,
+                config.status_mapping.hidden_campaign_label,
+            ),
         )
+        for row in irrelevant.by_campaign
+    )
     return ModuleResult(
         render(
             "irr_by_campaign",
-            irrelevant=irrelevant,
+            irrelevant=replace(irrelevant, by_campaign=by_campaign),
             params=params,
             irr_target=target_label(
                 config.kpi.target_value("irr"), config.kpi.targets["irr"].direction
             ),
-            snapshot_note=snapshot_note,
+            previous_sunday=context.report_date - timedelta(days=DAYS_IN_WEEK),
         )
     )

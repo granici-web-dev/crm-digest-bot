@@ -32,8 +32,9 @@ def telegram_length(text: str) -> int:
 
 
 def split_message(text: str, limit: int = TELEGRAM_MESSAGE_LIMIT) -> list[str]:
-    # Режем только по строкам: HTML-теги шаблонов не пересекают перевод строки,
-    # поэтому каждая часть остаётся валидной разметкой.
+    # Режем только по строкам: HTML-теги шаблонов не пересекают перевод строки (таблицы это
+    # <code> на каждую строку, многострочный <code> запрещён), поэтому каждая часть остаётся
+    # валидной разметкой.
     parts: list[str] = []
     current: list[str] = []
     current_length = 0

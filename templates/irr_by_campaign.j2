@@ -1,10 +1,12 @@
 {% macro mark(value) %}{% if value is true %} ✓{% elif value is false %} ✗{% endif %}{% endmacro %}
-{% macro irr_rows(rows, quoted) %}{% for row in rows %}{% if quoted %}„{{ row.key }}”{% else %}{{ row.key }}{% endif %} {{ row.irr | percent }} ({{ row.irr_leads }} din {{ row.leads }}){{ mark(row.meets_target) }}, săpt. trecută {{ row.irr_previous | percent }}{% if not loop.last %} · {% endif %}{% endfor %}{% endmacro %}
-<b>Irelevante pe campanie și sursă</b> · total {{ irrelevant.total_irr | percent }} (săpt. trecută {{ irrelevant.total_irr_previous | percent }}), țintă {{ irr_target }}
+{% macro irr_rows(rows, quoted) %}{% for row in rows %}{% if quoted %}„{{ row.key }}”{% else %}{{ row.key }}{% endif %} {{ row.irr | percent1 }} ({{ row.irr_leads }} din {{ row.leads }}){{ mark(row.meets_target) }}, săpt. trecută {{ row.irr_previous | percent1 }}{% if not loop.last %} · {% endif %}{% endfor %}{% endmacro %}
+<b>Irelevante pe campanie și sursă</b> · total {{ irrelevant.total_irr | percent1 }} (săpt. trecută {{ irrelevant.total_irr_previous | percent1 }}), țintă {{ irr_target }}
 Campanii (min. {{ params.min_campaign_leads }} lead-uri): {% if irrelevant.by_campaign %}{{ irr_rows(irrelevant.by_campaign, true) }}{% else %}nicio campanie cu cel puțin {{ params.min_campaign_leads }} lead-uri{% endif %}
 
 Surse (min. {{ params.min_source_leads }} lead-uri): {% if irrelevant.by_source %}{{ irr_rows(irrelevant.by_source, false) }}{% else %}nicio sursă cu cel puțin {{ params.min_source_leads }} lead-uri{% endif %}
 
-{% if snapshot_note %}
-<i>Săpt. trecută: {{ snapshot_note }}</i>
+{% if irrelevant.previous_snapshot_date is none %}
+<i>Săpt. trecută: fără snapshot</i>
+{% elif irrelevant.previous_snapshot_date != previous_sunday %}
+<i>Săpt. trecută: după snapshotul din {{ irrelevant.previous_snapshot_date.strftime("%d.%m") }} (lipsește cel din {{ previous_sunday.strftime("%d.%m") }})</i>
 {% endif %}
