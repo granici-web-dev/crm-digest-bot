@@ -155,6 +155,15 @@ def create_report_deps(
     )
 
 
+async def alert_failure(
+    deps: ReportDeps, log_message: str, ops_text: str, error: BaseException, **log_extra: object
+) -> None:
+    # str(error) может содержать тело ответа mefi или строки raw: наружу только describe_error.
+    description = describe_error(error)
+    logger.error(log_message, extra={**log_extra, "error": description})
+    await notify_ops(deps.ops, f"{ops_text}: {description}.")
+
+
 async def take_snapshot(
     deps: ReportDeps, snapshot_sources: SnapshotSources, now: datetime, trigger: SnapshotTrigger
 ) -> SnapshotOutcome | None:
@@ -171,10 +180,8 @@ async def take_snapshot(
         logger.info("snapshot skipped, run in progress", extra={"trigger": trigger})
         return None
     except Exception as error:
-        # str(error) может содержать тело ответа mefi или строки raw: наружу только describe_error.
-        logger.error("snapshot failed", extra={"error": describe_error(error)})
-        await notify_ops(
-            deps.ops, f"Снапшот за {now:%d.%m.%Y %H:%M} не удался: {describe_error(error)}."
+        await alert_failure(
+            deps, "snapshot failed", f"Снапшот за {now:%d.%m.%Y %H:%M} не удался", error
         )
         return None
     if outcome.clients_alert is not None:
@@ -214,8 +221,10 @@ async def final_snapshot_check_job(deps: ReportDeps) -> None:
             deps.engine, deps.tenant_id, now, deps.config.status_mapping.time
         )
     except Exception as error:
-        logger.error("final snapshot check failed", extra={"error": describe_error(error)})
-        alert = f"Проверка финального снапшота упала: {describe_error(error)}."
+        await alert_failure(
+            deps, "final snapshot check failed", "Проверка финального снапшота упала", error
+        )
+        return
     if alert is not None:
         await notify_ops(deps.ops, alert)
 
@@ -232,9 +241,8 @@ async def report_missed_snapshots(deps: ReportDeps, today: date, trigger: Snapsh
         ]
         missed = await record_missed_snapshot_dates(deps.engine, deps.tenant_id, gap_dates, trigger)
     except Exception as error:
-        logger.error("missed snapshot check failed", extra={"error": describe_error(error)})
-        await notify_ops(
-            deps.ops, f"Проверка пропущенных снапшотов упала: {describe_error(error)}."
+        await alert_failure(
+            deps, "missed snapshot check failed", "Проверка пропущенных снапшотов упала", error
         )
         return
     if missed:
@@ -297,10 +305,9 @@ async def catch_up_on_startup(
         try:
             await catch_up_level(deps, level, schedule, local_now)
         except Exception as error:
-            logger.error(
-                "report catch-up failed", extra={"level": level, "error": describe_error(error)}
+            await alert_failure(
+                deps, "report catch-up failed", f"Догон отчёта {level} упал", error, level=level
             )
-            await notify_ops(deps.ops, f"Догон отчёта {level} упал: {describe_error(error)}.")
 
 
 async def report_job(deps: ReportDeps, level: ReportLevel, backup_dir: Path | None) -> None:
@@ -308,14 +315,15 @@ async def report_job(deps: ReportDeps, level: ReportLevel, backup_dir: Path | No
     try:
         await run_report(level, now, deps, late=False)
     except Exception as error:
-        logger.error("report job failed", extra={"level": level, "error": describe_error(error)})
-        await notify_ops(deps.ops, f"Прогон отчёта {level} упал: {describe_error(error)}.")
+        await alert_failure(
+            deps, "report job failed", f"Прогон отчёта {level} упал", error, level=level
+        )
     if level == "daily" and backup_dir is not None:
         try:
             backup_alert = stale_backup_alert(backup_dir, now)
         except Exception as error:
-            logger.error("backup check failed", extra={"error": describe_error(error)})
-            backup_alert = f"Проверка бэкапа упала: {describe_error(error)}."
+            await alert_failure(deps, "backup check failed", "Проверка бэкапа упала", error)
+            return
         if backup_alert is not None:
             await notify_ops(deps.ops, backup_alert)
 
