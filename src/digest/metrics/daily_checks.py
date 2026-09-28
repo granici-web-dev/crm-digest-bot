@@ -160,8 +160,8 @@ def untouched_leads(
         & created_at.lt(window_end)
         & age_hours.gt(params.threshold_hours)
         & ~lead_frame["is_excluded_from_leads"]
-        # Визит в шоуруме сам по себе касание.
-        & ~lead_frame["is_showroom_visit"]
+        # Приход в шоурум сам по себе касание, в том числе revenire.
+        & ~lead_frame["is_showroom_source"]
     )
     consultant_ids = [manager.id for manager in config.managers.managers if manager.active]
     # «Contactat astăzi» включён по умолчанию: при создании last_contact_at = created_at с

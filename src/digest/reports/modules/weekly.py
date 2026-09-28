@@ -14,6 +14,7 @@ from digest.metrics.weekly import (
     weekly_irrelevant,
     weekly_lead_tables,
     weekly_loss_reasons,
+    weekly_showroom_revenire_count,
     weekly_showroom_visits,
 )
 from digest.reports.charts import chart_labels
@@ -149,6 +150,9 @@ def showroom_visits_report(lead_frame: pd.DataFrame, context: ReportContext) -> 
         render(
             "showroom_visits",
             visits=visits,
+            revenire_count=weekly_showroom_revenire_count(
+                lead_frame, context.report_date, context.config
+            ),
             day_showroom_rows=text_rows(day_showroom_table(visits, "Zi")),
             without_showroom=WITHOUT_SHOWROOM,
         )

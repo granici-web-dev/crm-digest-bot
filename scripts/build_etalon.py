@@ -16,6 +16,7 @@ import re
 import sys
 import unicodedata
 import warnings
+from collections import Counter
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -60,6 +61,7 @@ PII_HEADERS = ("Nume", "Telefon", "E-mail")
 # substring search is limited to identifying shapes: full names, e-mails, phone digits.
 PII_SUBSTRING_MIN_LEN = 6
 PHONE_MIN_DIGITS = 7
+PHONE_KEY_DIGITS = 9
 
 # Deliberately duplicated from config/status-mapping.yaml: the etalon is an oracle for
 # metrics/, so it must not share category code or config parsing with it (ADR-002).
@@ -144,7 +146,33 @@ def parse_date(value: Any) -> str | None:
     return datetime.strptime(str(value)[:10], "%d-%m-%Y").date().isoformat()
 
 
-def read_leads(ws: Any) -> tuple[list[dict[str, Any]], set[str]]:
+def contact_group(phone: Any, email: Any) -> set[str]:
+    # Contact match as in ADR-006 (last 9 phone digits, e-mail case-insensitive), written anew:
+    # the oracle shares no code with digest.contact_keys.
+    keys = set()
+    digits = re.sub(r"\D", "", str(phone or ""))
+    if len(digits) >= PHONE_KEY_DIGITS:
+        keys.add("phone:" + digits[-PHONE_KEY_DIGITS:])
+    email_text = str(email or "").strip().lower()
+    if email_text:
+        keys.add("email:" + email_text)
+    return keys
+
+
+def repeated_contact_showroom_leads(
+    leads: list[dict[str, Any]], contacts: dict[int, set[str]]
+) -> int:
+    # brief_counts treats every Showroom lead as a visit; that holds only while no Showroom
+    # lead shares a contact with another lead (no revenire, ADR-007).
+    occurrences = Counter(key for keys in contacts.values() for key in keys)
+    return sum(
+        lead["source"] == SOURCE_SHOWROOM
+        and any(occurrences[key] > 1 for key in contacts[lead["row"]])
+        for lead in leads
+    )
+
+
+def read_leads(ws: Any) -> tuple[list[dict[str, Any]], set[str], dict[int, set[str]]]:
     header = [cell.value for cell in ws[1]]
     col = {name: i for i, name in enumerate(header) if name is not None}
     missing = [h for h in (*LEAD_FIELDS, *PII_HEADERS) if h not in col]
@@ -153,6 +181,7 @@ def read_leads(ws: Any) -> tuple[list[dict[str, Any]], set[str]]:
 
     leads: list[dict[str, Any]] = []
     pii: set[str] = set()
+    contacts: dict[int, set[str]] = {}
     for row_no, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
         for h in PII_HEADERS:
             if row[col[h]] not in (None, ""):
@@ -160,6 +189,7 @@ def read_leads(ws: Any) -> tuple[list[dict[str, Any]], set[str]]:
         if row[col["Status"]] in (None, ""):
             continue
         lead: dict[str, Any] = {"row": row_no}
+        contacts[row_no] = contact_group(row[col["Telefon"]], row[col["E-mail"]])
         for header_name, field in LEAD_FIELDS.items():
             value = row[col[header_name]]
             if field in DATETIME_FIELDS:
@@ -170,7 +200,7 @@ def read_leads(ws: Any) -> tuple[list[dict[str, Any]], set[str]]:
                 value = None
             lead[field] = value
         leads.append(lead)
-    return leads, pii
+    return leads, pii, contacts
 
 
 def read_thresholds(ws: Any) -> tuple[str, dict[str, float]]:
@@ -337,7 +367,13 @@ def main() -> None:
     warnings.filterwarnings("ignore", module="openpyxl")
     wb = openpyxl.load_workbook(SOURCE, data_only=True, read_only=False)
 
-    leads, pii = read_leads(wb[LEADS_SHEET])
+    leads, pii, contacts = read_leads(wb[LEADS_SHEET])
+    repeated = repeated_contact_showroom_leads(leads, contacts)
+    if repeated:
+        sys.exit(
+            f"{repeated} Showroom lead(s) share a contact: revenire not modelled, "
+            "etalon not written"
+        )
     analysis_date, thresholds = read_thresholds(wb[SETTINGS_SHEET])
     excel_reference = read_excel_reference(wb[KPI_SHEET])
     analysis_day = date.fromisoformat(analysis_date)

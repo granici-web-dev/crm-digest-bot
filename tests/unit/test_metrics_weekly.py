@@ -6,19 +6,26 @@ import pandas as pd
 import pytest
 
 from digest.config import AppConfig
-from digest.metrics.daily import PreviousSnapshot, daily_window, daily_window_days
+from digest.metrics.daily import (
+    PreviousSnapshot,
+    daily_window,
+    daily_window_days,
+    lead_row_flags,
+)
 from digest.metrics.frame import prepare_lead_frame
 from digest.metrics.weekly import (
     LEAD_ROW_COLUMNS,
     converted_count,
     converted_count_by_showroom,
     relative_change,
+    week_days,
     week_over_week,
     weekly_funnel,
     weekly_irrelevant,
     weekly_lead_rows,
     weekly_lead_tables,
     weekly_loss_reasons,
+    weekly_showroom_revenire_count,
     weekly_showroom_visit_rows,
     weekly_showroom_visits,
     weekly_window,
@@ -200,6 +207,79 @@ def test_showroom_visits_use_daily_windows_of_the_week(app_config: AppConfig) ->
     assert visits.counts[MONDAY]["Brașov"] == 1
     assert visits.counts[SUNDAY]["Cluj"] == 2
     assert visits.total == 3
+
+
+PHONE_KEY, OTHER_PHONE_KEY = "a" * 64, "c" * 64
+
+
+def visits_with_revenire_and_partner(app_config: AppConfig) -> pd.DataFrame:
+    # Revenire 3: телефон встречался в понедельник, приход в среду. Revenire 5: телефон из
+    # прошлой недели. Лид 4 делит телефон с утренним лидом того же окна, это визит.
+    wednesday = MONDAY + timedelta(days=2)
+    return frame(
+        app_config,
+        lead(1, at(MONDAY, 11), source_name="WhatsApp", contact_phone_key=PHONE_KEY),
+        visit(2, at(MONDAY, 12), showroom="Cluj"),
+        visit(3, at(wednesday, 12), showroom="Cluj", contact_phone_key=PHONE_KEY),
+        lead(6, at(SUNDAY, 10), source_name="WhatsApp", contact_phone_key=OTHER_PHONE_KEY),
+        visit(4, at(SUNDAY, 15), showroom="Brașov", contact_phone_key=OTHER_PHONE_KEY),
+        lead(7, at(MONDAY - timedelta(days=3), 11), contact_phone_key="d" * 64),
+        visit(5, at(SUNDAY, 16), showroom="Brașov", contact_phone_key="d" * 64),
+        visit(8, at(wednesday, 13), showroom="Cluj", category="PARTNERSHIP"),
+    )
+
+
+def test_weekly_visits_equal_sum_of_daily_visits(app_config: AppConfig) -> None:
+    leads = visits_with_revenire_and_partner(app_config)
+    time_settings = app_config.status_mapping.time
+
+    daily_visits = sum(
+        int(
+            lead_row_flags(leads, daily_window(day, time_settings), app_config)[
+                "showroom_visits"
+            ].sum()
+        )
+        for day in week_days(SUNDAY)
+    )
+
+    assert weekly_showroom_visits(leads, SUNDAY, app_config).total == daily_visits == 2
+
+
+def test_weekly_visits_exclude_partner_and_revenire(app_config: AppConfig) -> None:
+    visits = weekly_showroom_visits(
+        visits_with_revenire_and_partner(app_config), SUNDAY, app_config
+    )
+
+    assert visits.counts[MONDAY]["Cluj"] == 1
+    assert visits.counts[SUNDAY]["Brașov"] == 1
+    assert visits.total == 2
+
+
+def test_weekly_revenire_count(app_config: AppConfig) -> None:
+    leads = visits_with_revenire_and_partner(app_config)
+
+    assert weekly_showroom_revenire_count(leads, SUNDAY, app_config) == 2
+    assert weekly_showroom_revenire_count(leads, SUNDAY - timedelta(days=7), app_config) == 0
+
+
+def test_weekly_leads_still_exclude_every_showroom_source_lead(app_config: AppConfig) -> None:
+    tables = weekly_lead_tables(visits_with_revenire_and_partner(app_config), SUNDAY, app_config)
+
+    assert tables.total == 2
+
+
+def test_week_over_week_visits_exclude_revenire_in_both_weeks(app_config: AppConfig) -> None:
+    this_week = visits_with_revenire_and_partner(app_config)
+    previous_week_rows = [
+        lead(11, at(MONDAY - timedelta(days=14), 11), contact_phone_key="e" * 64),
+        visit(12, at(MONDAY - timedelta(days=6), 12), contact_phone_key="e" * 64),
+        visit(13, at(MONDAY - timedelta(days=5), 12)),
+    ]
+    leads = pd.concat([this_week, frame(app_config, *previous_week_rows)], ignore_index=True)
+
+    change = week_over_week(leads, None, SUNDAY, app_config)
+
+    assert (change.showroom_visits, change.showroom_visits_previous) == (2, 1)
 
 
 def test_funnel_counts_leads_created_in_week_window(app_config: AppConfig) -> None:

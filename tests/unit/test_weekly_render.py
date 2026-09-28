@@ -100,6 +100,25 @@ def test_weekly_module_text(
     assert result.text == snapshot
 
 
+def test_showroom_visits_text_counts_reveniri(
+    app_config: AppConfig, snapshot: SnapshotAssertion
+) -> None:
+    phone_key, email_key = "a" * 64, "b" * 64
+    old = at(date(2026, 8, 3), 11)
+    rows = [
+        lead(1, old, contact_phone_key=phone_key),
+        lead(2, old, contact_email_key=email_key),
+        lead(3, at(MONDAY, 12), showroom="Brașov", source_name="Showroom"),
+        lead(4, at(SUNDAY, 12), source_name="Showroom", contact_phone_key=phone_key),
+        lead(5, at(SUNDAY, 13), source_name="Showroom", contact_email_key=email_key),
+    ]
+    lead_frame = prepare_lead_frame(rows, app_config)
+
+    result = IMPLEMENTED_MODULES["w2"](lead_frame, context(app_config, lead_frame))
+
+    assert result.text == snapshot
+
+
 def test_day_showroom_table_matches_manual_report_layout(app_config: AppConfig) -> None:
     tables = weekly_lead_tables(week_frame(app_config), SUNDAY, app_config)
 

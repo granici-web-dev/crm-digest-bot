@@ -18,7 +18,9 @@
 | `is_buget` | `LOST · BUGET` |
 | `is_produs_nepotrivit` | `LOST · PRODUS NEPOTRIVIT` |
 | `is_ofertat` | кастомное поле `Ofertat` (field_id 20) = `✅DA` |
-| `is_showroom_visit` | `source.name = Showroom` |
+| `is_showroom_source` | источник из `sources.showroom_visit` (Showroom): любой приход, в том числе партнёрский и revenire |
+| `is_showroom_revenire` | `is_showroom_source`, не PARTNERSHIP, контакт совпал с лидом, созданным раньше начала собственного ежедневного окна лида (ADR-007, «Визит» ниже) |
+| `is_showroom_visit` | `is_showroom_source`, не PARTNERSHIP, не `is_showroom_revenire` (ADR-007) |
 | консультант | `assigned_to.id` → `config/managers.yaml`, имя не сравнивается |
 
 Лиды без консультанта входят в итог по компании, но ни в одну строку по консультантам.
@@ -37,7 +39,7 @@
 | `NAR` | `LEADS` с `is_nu_a_raspuns` |
 | `BUGET` | `LEADS` с `is_buget` |
 | `PNP` | `LEADS` с `is_produs_nepotrivit` |
-| `SHOWROOM_VISITS` | `LEADS` с `is_showroom_visit` |
+| `SHOWROOM_VISITS` | `LEADS` с `is_showroom_visit`: без revenire (ADR-007); партнёры и так вне `LEADS` |
 | `UNMAPPED` | `LEADS` с категорией `UNMAPPED` (инвариант 4); входят в `LEADS` и `USEFUL` и считаются отдельно |
 | `ACTIVE_OFFERS_14` | `OFFERS` с категорией `ACTIVE` или `ACTIVE_FOLLOWUP` (лид в работе), `analysis_date − date(last_contact_at) > 14` дней; `last_contact_at = null` → не входит. LOST, WON, UNMAPPED с офертой в истории не висят (ADR-005) |
 
@@ -52,7 +54,7 @@
 | O2C | Offer to Client | `CLIENTI / OFFERS` | > 20 %, информативно |
 | CDR | Contact Discipline Rate | `(LEADS − NAR) / LEADS` | > 90 % |
 | PLR | Price Lost Rate | `BUGET / (LEADS − IRR_LEADS − NAR)` | < 25 % |
-| SC | Showroom Conversion | `count(CLIENTI ∩ SHOWROOM_VISITS) / count(SHOWROOM_VISITS)` | > 20 % |
+| SC | Showroom Conversion | `count(CLIENTI ∩ SHOWROOM_VISITS) / count(SHOWROOM_VISITS)`; revenire ни в числителе, ни в знаменателе, конверсия визита это только сам лид визита (ADR-007) | > 20 % |
 | PFR | Product Fit Rate | `PNP / USEFUL` | < 10 % |
 | ACR | Active Control Rate | `ACTIVE_OFFERS_14 / LEADS` | < 20 % |
 | IRR | Irrelevant Rate | `IRR_LEADS / LEADS` | ≤ 20 % |
@@ -135,14 +137,16 @@
 
 **d1 строки** (ADR-006, `metrics/daily.py`, окно то же). Строки Leads взаимоисключающие, по `created_at` в окне:
 - Designer/Colaboratori: новые лиды с категорией PARTNERSHIP или источником из `sources.partner` плюс лиды, чья категория стала PARTNERSHIP по разнице со снапшотом ровно за вчера (лид, созданный в окне, считается один раз). Без вчерашнего снапшота только новые лиды, сноска.
-- Лид с источником `sources.showroom_visit` (не партнёрский): контакт совпал с лидом того же снапшота, созданным раньше начала окна, → Alte/Showroom (revenire), иначе → Vizita in showroom. Совпадение: равен непустой ключ телефона или e-mail (HMAC, `digest/contact_keys.py`). Статус лида на визит не влияет.
+- Лид с источником `sources.showroom_visit` (не партнёрский): `is_showroom_revenire` → Alte/Showroom (revenire), `is_showroom_visit` → Vizita in showroom («Визит» ниже). Статус лида на визит не влияет.
 - Alte/Showroom (revenire): `sources.other`, `sources.repeat_client` (Client Fidel), источники вне всех групп (алерт) и Showroom-revenire.
 - Oferta: переход `is_ofertat` по разнице со снапшотом ровно за вчера, иначе «—».
 - Contract Cantitate: новые клиенты mefi (`client_snapshots` за дату отчёта) с `created_at` в окне и не раньше `clients.contracts_count_from`, по полю Showroom клиента. Нет успешного снапшота клиентов → «—», сноска, алерт.
 
 **Contract Cantitate в d1 считает новых клиентов mefi, d6 и w8 converted_at лидов; расхождение это клиенты без лида.**
 
-**Vizita в d1 и визиты в w2, KPI, чате расходятся.** d1 не считает визитом Showroom-лид с контактом, встречавшимся раньше окна (он в Alte); w2, `kpi.py` (`is_showroom_visit`) и инструменты чата считают визитом любой лид с источником Showroom. Перевод w2, KPI и чата на правило d1 отдельной фичей после сверки с владельцем.
+**Визит** (ADR-007, `metrics/visits.py`). Одно правило для d1, w2, w8, w12, KPI и чата. Revenire: Showroom-лид (не PARTNERSHIP), чей непустой ключ телефона или e-mail (HMAC, `digest/contact_keys.py`) совпал с лидом того же снапшота, созданным раньше начала собственного ежедневного окна лида (`daily_window` дня, чьё окно содержит `created_at`). Остальные непартнёрские Showroom-лиды это визиты. Граница по окну лида, а не по периоду отчёта: неделя и месяц равны сумме дней d1. Лид без ключей (снапшоты до миграции 0005) revenire не бывает.
+
+Факт по снапшоту 28.09.2026: mefi дубли разрешает (4 лида `is_duplicate`), телефон делят 34 лида из 3056, пар Showroom–Showroom нет, `Data revenire` заполнена у 1441 лида. Повторный приход продавцы ведут на старом лиде, поэтому revenire по контакту ожидаемо ≈ 0. Метрика повторного визита по изменению существующего лида это отдельный shape после ответа владельца.
 
 **Лиды d6 и d1.** d6 берёт `lead_row_flags`, то есть новые лиды окна с правилом revenire, но без переходов в PARTNERSHIP: при таком переходе «Lead-uri azi» в d6 меньше итога Leads d1.
 
@@ -151,8 +155,9 @@
 Отчёт за неделю Пн–Вс читает снапшот за воскресенье. Функции в `metrics/weekly.py`.
 
 - **Рабочий день лида** (`working_days`): время created_at по Бухаресту в [`working_hours.start`, `working_hours.end`) = [10:00, 19:00) → этот день, любое другое (в том числе 00:00–09:59) → следующий календарный день. Правило ручного понедельничного отчёта, `docs/samples/weekly-manual-report-2026-07.md`.
-- **Неделя лидов** (w1, w12, строка лидов w8): лиды с рабочим днём Пн–Вс, источник из `sources.showroom_visit` исключён. Интервалом created_at это не выражается: воскресенье 00:00–10:00 уходит в следующую неделю.
+- **Неделя лидов** (w1, w12, строка лидов w8): лиды с рабочим днём Пн–Вс, источник из `sources.showroom_visit` исключён (`is_showroom_source`: визит, revenire и партнёрский Showroom). Интервалом created_at это не выражается: воскресенье 00:00–10:00 уходит в следующую неделю.
 - **Окно недели** (w2, w3, w4, визиты и контракты в w8): [Вс 19:00 прошлой недели, Вс 19:00) = семь ежедневных окон d1. День визита в w2 и на листе «Vizite» = день D, чьё окно `daily_window(D)` содержит created_at.
+- **w2**: визиты `is_showroom_visit` в окне недели (без партнёров и revenire, ADR-007), итог равен сумме Vizita d1 за семь дней. Строка `Reveniri: N` (число `is_showroom_revenire` в окне) всегда, включая 0.
 - **w1, колонки источников**: только встреченные за неделю, по убыванию итога, при равенстве по алфавиту, «(fără sursă)» последней. Шоурумы: из `showrooms`, затем не из списка, затем «(fără showroom)».
 - **w3**: `lead_counts` и `kpis_from` на окне недели, когорта на дату снапшота: оферты и контракты ещё будут расти.
 - **w4**: LOST по ключам `LOST.reasons`: status_changed_at в окне недели; лид, созданный в окне сразу со статусом потери (status_changed_at = null), считается по created_at.

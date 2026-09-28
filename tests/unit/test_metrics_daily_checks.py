@@ -198,6 +198,26 @@ def test_showroom_visit_is_not_untouched(app_config: AppConfig) -> None:
     assert untouched(rows, app_config) == ()
 
 
+def test_showroom_revenire_is_not_untouched(app_config: AppConfig) -> None:
+    phone_key = "a" * 64
+    rows = [
+        make_snapshot_row(
+            lead_id=1,
+            created_at=datetime(2026, 8, 1, tzinfo=BUCHAREST),
+            status_changed_at=datetime(2026, 8, 2, tzinfo=BUCHAREST),
+            contact_phone_key=phone_key,
+        ),
+        new_lead(
+            2,
+            datetime(2026, 9, 25, 9, 0, tzinfo=BUCHAREST),
+            source_name="Showroom",
+            contact_phone_key=phone_key,
+        ),
+    ]
+
+    assert untouched(rows, app_config) == ()
+
+
 def test_partnership_is_not_untouched(app_config: AppConfig) -> None:
     rows = [
         new_lead(

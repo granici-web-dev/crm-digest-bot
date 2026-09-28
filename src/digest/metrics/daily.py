@@ -74,29 +74,17 @@ def daily_window_days(created_at: pd.Series, time_settings: TimeSettings) -> pd.
     return shifted_days(created_at, created_at.dt.time.lt(window_end))
 
 
-def matches_contact_created_before(lead_frame: pd.DataFrame, moment: datetime) -> pd.Series:
-    # Совпадение контакта: равен непустой ключ телефона или e-mail (digest.contact_keys).
-    # Сравнение внутри одного снапшота: истории ключей не нужно, смена секрета ничего не ломает.
-    older = lead_frame[lead_frame["created_at"].lt(moment)]
-    older_phone_keys = set(older["contact_phone_key"].dropna())
-    older_email_keys = set(older["contact_email_key"].dropna())
-    return lead_frame["contact_phone_key"].isin(older_phone_keys) | lead_frame[
-        "contact_email_key"
-    ].isin(older_email_keys)
-
-
 def lead_row_flags(today_frame: pd.DataFrame, period: Period, config: AppConfig) -> pd.DataFrame:
     # Строки d1 по правилам владельца 28.09.2026 (ADR-006): взаимоисключающие, по created_at
-    # в окне. Лид с источником Showroom это визит, если контакт не встречался у лида, созданного
-    # раньше начала окна, и revenire (Alte), если встречался. Источник вне всех групп попадает
-    # в Alte и в алерт: не пропадает молча.
+    # в окне. Лид с источником Showroom это визит или revenire (Alte) по одному правилу для всех
+    # отчётов (digest.metrics.visits, ADR-007). Источник вне всех групп попадает в Alte и
+    # в алерт: не пропадает молча.
     sources = config.status_mapping.sources
     source = today_frame["source_name"]
     created_at = today_frame["created_at"]
     in_window = created_at.ge(period.start) & created_at.lt(period.end)
     is_partner = today_frame["category"].eq("PARTNERSHIP") | source.isin(sources.partner)
-    is_showroom_source = source.isin(sources.showroom_visit)
-    is_revenire = is_showroom_source & matches_contact_created_before(today_frame, period.start)
+    is_revenire = today_frame["is_showroom_revenire"]
     is_web, is_phone = source.isin(sources.web), source.isin(sources.phone)
     is_whatsapp = source.isin(sources.whatsapp)
     is_unknown_source = ~source.isin(
@@ -121,7 +109,7 @@ def lead_row_flags(today_frame: pd.DataFrame, period: Period, config: AppConfig)
             "leads_web": counted & ~is_other & is_web,
             "leads_phone": counted & ~is_other & is_phone,
             "leads_whatsapp": counted & ~is_other & is_whatsapp,
-            "showroom_visits": counted & is_showroom_source & ~is_revenire,
+            "showroom_visits": in_window & today_frame["is_showroom_visit"],
             "unknown_source": counted & is_unknown_source,
         }
     )

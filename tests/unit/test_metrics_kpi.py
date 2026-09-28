@@ -129,6 +129,27 @@ def test_showroom_conversion_counts_only_clients_among_visits(app_config: AppCon
     assert kpis_from(company_counts(rows, app_config)).sc == 0.5
 
 
+def test_sc_denominator_excludes_showroom_revenire(app_config: AppConfig) -> None:
+    phone_key = "a" * 64
+    client = {"created_at": IN_SEPTEMBER, "category": "WON", "status_name": "Clienți"}
+    rows = [
+        make_snapshot_row(lead_id=1, created_at=datetime(2026, 8, 1, tzinfo=BUCHAREST)),
+        make_snapshot_row(lead_id=2, source_name="Showroom", **client),
+        make_snapshot_row(lead_id=3, source_name="Showroom", created_at=IN_SEPTEMBER),
+        make_snapshot_row(lead_id=4, source_name="Showroom", contact_phone_key=phone_key, **client),
+        make_snapshot_row(
+            lead_id=5,
+            created_at=datetime(2026, 8, 1, tzinfo=BUCHAREST),
+            contact_phone_key=phone_key,
+        ),
+    ]
+
+    counts = company_counts(rows, app_config)
+
+    assert (counts.showroom_visits, counts.clienti_from_showroom) == (2, 1)
+    assert kpis_from(counts).sc == 0.5
+
+
 @pytest.mark.parametrize(
     ("last_contact_at", "analysis_date", "is_stale"),
     [

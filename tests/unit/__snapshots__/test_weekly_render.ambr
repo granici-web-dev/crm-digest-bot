@@ -7,6 +7,21 @@
   <i>Săpt. trecută: după snapshotul din 22.09 (lipsește cel din 20.09)</i>
   '''
 # ---
+# name: test_showroom_visits_text_counts_reveniri
+  '''
+  <b>Vizite showroom: 1</b> (Brașov 1)
+  <code>Zi | Brașov | București | Cluj | (fără showroom) | TOTAL</code>
+  <code>21-09 Luni | 1 | 0 | 0 | 0 | 1</code>
+  <code>22-09 Marți | 0 | 0 | 0 | 0 | 0</code>
+  <code>23-09 Miercuri | 0 | 0 | 0 | 0 | 0</code>
+  <code>24-09 Joi | 0 | 0 | 0 | 0 | 0</code>
+  <code>25-09 Vineri | 0 | 0 | 0 | 0 | 0</code>
+  <code>26-09 Sâmbătă | 0 | 0 | 0 | 0 | 0</code>
+  <code>27-09 Duminică | 0 | 0 | 0 | 0 | 0</code>
+  <code>TOTAL | 1 | 0 | 0 | 0 | 1</code>
+  Reveniri: 2
+  '''
+# ---
 # name: test_weekly_module_text[w12]
   '📎 sofabelle_sapt39_2026.xlsx: zi × showroom, showroom × sursă, lista lead-urilor și a vizitelor'
 # ---
@@ -44,6 +59,7 @@
   <code>26-09 Sâmbătă | 0 | 0 | 0 | 0 | 0</code>
   <code>27-09 Duminică | 0 | 0 | 0 | 0 | 0</code>
   <code>TOTAL | 1 | 0 | 0 | 0 | 1</code>
+  Reveniri: 0
   '''
 # ---
 # name: test_weekly_module_text[w3]

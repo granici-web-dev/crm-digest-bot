@@ -168,9 +168,9 @@ def working_days(created_at: pd.Series, time_settings: TimeSettings) -> pd.Serie
 
 def weekly_leads(lead_frame: pd.DataFrame, report_date: date, config: AppConfig) -> pd.DataFrame:
     # Источник Showroom в недельном счёте лидов не участвует (ручной отчёт «FARA Showroom»),
-    # визиты считает weekly_showroom_visit_leads.
+    # ни визит, ни revenire, ни партнёр; визиты считает weekly_showroom_visit_leads.
     days = working_days(lead_frame["created_at"], config.status_mapping.time)
-    in_week = days.isin(week_days(report_date)) & ~lead_frame["is_showroom_visit"]
+    in_week = days.isin(week_days(report_date)) & ~lead_frame["is_showroom_source"]
     return lead_frame[in_week].assign(day=days[in_week])
 
 
@@ -183,6 +183,15 @@ def weekly_showroom_visit_leads(
     in_window = created_at.ge(window.start) & created_at.lt(window.end)
     visits = lead_frame[in_window & lead_frame["is_showroom_visit"]]
     return visits.assign(day=daily_window_days(visits["created_at"], time_settings))
+
+
+def weekly_showroom_revenire_count(
+    lead_frame: pd.DataFrame, report_date: date, config: AppConfig
+) -> int:
+    window = weekly_window(report_date, config.status_mapping.time)
+    created_at = lead_frame["created_at"]
+    in_window = created_at.ge(window.start) & created_at.lt(window.end)
+    return int((in_window & lead_frame["is_showroom_revenire"]).sum())
 
 
 def key_or_none(value: str | float | None) -> str | None:
