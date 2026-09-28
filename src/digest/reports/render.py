@@ -49,17 +49,21 @@ def signed_percent_one_decimal(value: float) -> str:
 
 LINE_BREAKING_CATEGORIES = frozenset({"Cc", "Zl", "Zp"})
 PHONE_LIKE = re.compile(r"[0-9]{7,}")
+PHONE_SEPARATORS = re.compile(r"[\s\-.()+]")
 
 
 def campaign_label(value: str, max_length: int, hidden_label: str) -> str:
     # UTM_Campanie приходит из формы сайта как есть: перевод строки сломал бы таблицу и разбиение
     # сообщения, телефон или e-mail в нём это контакт клиента (инвариант 7). Данные не трогаем,
     # только подпись в отчёте.
+    # Cf (zero-width, bidi) невидимы: U+202E развернул бы подпись, U+200B разорвал бы цифры
+    # телефона мимо проверки. Удаляем их до проверки на контакт.
     flat = "".join(
         " " if unicodedata.category(character) in LINE_BREAKING_CATEGORIES else character
         for character in value
+        if unicodedata.category(character) != "Cf"
     )
-    if PHONE_LIKE.search(flat) or ("@" in flat and "." in flat):
+    if PHONE_LIKE.search(PHONE_SEPARATORS.sub("", flat)) or ("@" in flat and "." in flat):
         return hidden_label
     if len(flat) > max_length:
         return flat[: max_length - 1] + "…"

@@ -379,9 +379,11 @@ def irrelevant_rows(
     for key, counts in current.items():
         if key is None or counts.leads < min_leads:
             continue
-        # IRR по формуле kpis_from (docs/kpi-definitions.md, «KPI»); leads >= min_leads >= 1,
-        # деления на ноль нет.
-        irr = counts.irr_leads / counts.leads
+        irr = kpis_from(counts).irr
+        if irr is None:
+            # min_leads >= 1 и leads >= min_leads, значит leads > 0 и IRR определён; None здесь
+            # означал бы сломанный порог в конфиге, а не пустую строку рейтинга.
+            raise ValueError(f"IRR не определён при leads={counts.leads}, min_leads={min_leads}")
         previous_counts = None if previous is None else previous.get(key)
         rows.append(
             IrrelevantRow(
