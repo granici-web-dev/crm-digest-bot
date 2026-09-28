@@ -183,14 +183,17 @@ def test_funnel_and_week_over_week_numbers_on_render_path(app_config: AppConfig)
     change_text = IMPLEMENTED_MODULES["w8"](lead_frame, report_context).text
 
     # Лиды 1–5 и 8 созданы в окне недели, из них оферта только у лида 1.
-    assert "Lead-uri 6 → Utile 6 (irelevante 0) → Oferte 1 → Contracte 0" in funnel_text
+    assert (
+        "Lead-uri (toate sursele, inclusiv vizite) 6 → Utile 6 (irelevante 0) → Oferte 1 "
+        "→ Clienți 0" in funnel_text
+    )
     assert "Lead→Ofertă 17% · Ofertă→Contract 0%" in funnel_text
     # Лиды недели 1–4 и 8 против лида 6 прошлой недели; визит 5; контракт лида 6 в воскресенье;
     # оферта лида 1 новая к снапшоту недельной давности, где был только лид 6.
     assert "Lead-uri 5 (+400%)" in change_text
     assert "Vizite 1 (—)" in change_text
     assert "Oferte 1" in change_text
-    assert "Contracte 1 (—)" in change_text
+    assert "Contracte (după data semnării) 1 (—)" in change_text
 
 
 @pytest.mark.parametrize(

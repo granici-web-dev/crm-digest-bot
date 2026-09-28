@@ -41,20 +41,20 @@
 # name: test_weekly_module_text[w3]
   '''
   <b>Pâlnia săptămânii</b> (lead-uri create în săptămână)
-  Lead-uri 6 → Utile 6 (irelevante 0) → Oferte 1 → Contracte 0
+  Lead-uri (toate sursele, inclusiv vizite) 6 → Utile 6 (irelevante 0) → Oferte 1 → Clienți 0
   Lead→Ofertă 17% · Ofertă→Contract 0%
-  <i>Ofertele și contractele pentru aceste lead-uri vor mai crește.</i>
+  <i>Clienți: din lead-urile săptămânii, status la data raportului. Ofertele și clienții din aceste lead-uri vor mai crește.</i>
   '''
 # ---
 # name: test_weekly_module_text[w4]
   '''
-  <b>Pierdute 2</b>: Nu a răspuns 1 · Buget 1
+  <b>Închise în săptămână: 2</b> (inclusiv lead-uri create anterior): Nu a răspuns 1 · Buget 1
   Cluj 2: Nu a răspuns 1 · Buget 1
   '''
 # ---
 # name: test_weekly_module_text[w8]
   '''
   <b>Față de săptămâna trecută</b>
-  Lead-uri 5 (+400%) · Vizite 1 (—) · Oferte 1 · Contracte 1 (—)
+  Lead-uri 5 (+400%) · Vizite 1 (—) · Oferte 1 · Contracte (după data semnării) 1 (—)
   '''
 # ---

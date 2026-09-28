@@ -800,7 +800,7 @@ async def test_weekly_report_contains_implemented_modules_and_excel(harness: Har
             "Lead-uri fără Showroom: 1",
             "Vizite showroom: 1",
             "Pâlnia săptămânii",
-            "Pierdute: 0",
+            "Închise în săptămână: 0",
             "Față de săptămâna trecută",
             "📎 sofabelle_sapt39_2026.xlsx",
         )

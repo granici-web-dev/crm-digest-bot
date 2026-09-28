@@ -13,6 +13,7 @@ from digest.metrics.weekly import (
     weekly_loss_reasons,
     weekly_showroom_visits,
 )
+from digest.reports.charts import chart_labels
 from digest.reports.context import ModuleResult, ReportContext
 from digest.reports.render import RO_WEEKDAYS, render
 
@@ -146,7 +147,9 @@ def showroom_visits_report(lead_frame: pd.DataFrame, context: ReportContext) -> 
 
 def weekly_funnel_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
     funnel = weekly_funnel(lead_frame, context.report_date, context.config)
-    return ModuleResult(render("weekly_funnel", funnel=funnel))
+    return ModuleResult(
+        render("weekly_funnel", funnel=funnel, clienti_note=chart_labels().clienti_week_note)
+    )
 
 
 def loss_reasons_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:

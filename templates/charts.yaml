@@ -1,9 +1,10 @@
-# Подписи графиков и общие подписи текстов месячного отчёта (m2, m3, m5), румынский.
+# Подписи графиков и общие подписи текстов месячного (m2, m3, m5) и недельного (w3) отчётов, румынский.
 months: [Ian, Feb, Mar, Apr, Mai, Iun, Iul, Aug, Sep, Oct, Noi, Dec]
 funnel_title: "Pâlnia lunii pe showroom"
 # Ступень воронки по статусу mefi, не «Contracte»: Contracte в m3 считаются по converted_at.
 funnel_stages: [Lead-uri, Utile, Oferte, "Clienți"]
 clienti_note: "Clienți: din lead-urile lunii, status la data raportului"
+clienti_week_note: "Clienți: din lead-urile săptămânii, status la data raportului"
 company: Total
 without_showroom_leads: "{leads} lead-uri fără showroom, dintre care {irrelevant} irelevante"
 trend_title: "Trend 6 luni"

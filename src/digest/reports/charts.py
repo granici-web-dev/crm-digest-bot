@@ -43,6 +43,7 @@ class ChartLabels(StrictConfigModel):
     funnel_title: str
     funnel_stages: Annotated[list[str], Field(min_length=4, max_length=4)]
     clienti_note: str
+    clienti_week_note: str
     company: str
     without_showroom_leads: str
     trend_title: str
