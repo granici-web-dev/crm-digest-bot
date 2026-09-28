@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta
+from itertools import product
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -7,11 +8,13 @@ import pytest
 
 from digest.config import AppConfig
 from digest.metrics.daily import (
+    LEAD_ROWS,
     PreviousSnapshot,
     SellerFormatCounts,
     SellerFormatRow,
     comparable_previous,
     daily_window,
+    lead_row_flags,
     seller_format_counts,
 )
 from digest.metrics.frame import prepare_client_frame, prepare_lead_frame
@@ -122,6 +125,64 @@ def test_lead_rows_are_mutually_exclusive_and_sum_to_leads(app_config: AppConfig
         total.showroom_visits,
     ) == (3, 1, 1, 4, 3, 1)
     assert total.leads == 12
+
+
+ALL_CONFIGURED_SOURCES = [
+    "Showroom",
+    "Site",
+    "Mail",
+    "Meta ADS",
+    "FacebookMessanger",
+    "Telefon",
+    "WhatsApp",
+    "Colaborare",
+    "Arhirtect",
+    "Recomandare",
+    "Client Fidel",
+    "Google",
+    "Teren",
+    "BIFE 2026",
+]
+
+
+@pytest.mark.parametrize("source_name", [*ALL_CONFIGURED_SOURCES, "Sursa noua", None])
+def test_every_lead_of_the_window_is_in_exactly_one_row(
+    app_config: AppConfig, source_name: str | None
+) -> None:
+    window = daily_window(REPORT_DATE, app_config.status_mapping.time)
+    # Границы окна и лид старше окна: [start, end) должен дать ровно одну строку.
+    moments = (window.start, IN_WINDOW, window.end, BEFORE_WINDOW)
+    rows = [old_lead(1, contact_phone_key=PHONE_KEY)]
+    for created_at, is_partnership, seen_before in product(moments, (False, True), (False, True)):
+        rows.append(
+            lead(
+                len(rows) + 1,
+                created_at=created_at,
+                source_name=source_name,
+                contact_phone_key=PHONE_KEY if seen_before else None,
+                **(PARTNERSHIP if is_partnership else {}),
+            )
+        )
+    today = frame(app_config, *rows)
+
+    flags = lead_row_flags(today, window, app_config)
+
+    rows_per_lead = flags[[*LEAD_ROWS, "showroom_visits"]].sum(axis=1)
+    in_window = today["created_at"].ge(window.start) & today["created_at"].lt(window.end)
+    assert rows_per_lead.tolist() == in_window.astype(int).tolist()
+
+
+def test_repository_sources_are_all_covered_by_the_row_invariant(app_config: AppConfig) -> None:
+    sources = app_config.status_mapping.sources
+    grouped = [
+        *sources.showroom_visit,
+        *sources.web,
+        *sources.phone,
+        *sources.whatsapp,
+        *sources.partner,
+        *sources.other,
+    ]
+    assert sorted(grouped) == sorted(ALL_CONFIGURED_SOURCES)
 
 
 # Leads Designer/Colaboratori

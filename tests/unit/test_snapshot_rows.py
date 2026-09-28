@@ -443,7 +443,7 @@ def test_skipped_clients_alert_names_ten_ids_with_reasons_and_counts_the_rest() 
     skipped = [SkippedClient(client_id, "created_at: missing") for client_id in range(1, 13)]
     skipped.append(SkippedClient(None, "id: missing"))
 
-    alert = clients_alert_text(date(2026, 9, 24), None, [], ClientsFindings([], skipped))
+    alert = clients_alert_text(date(2026, 9, 24), None, [], ClientsFindings([], skipped, []))
 
     assert alert == (
         "Клиенты mefi пропущены из-за битой формы: 13 ("

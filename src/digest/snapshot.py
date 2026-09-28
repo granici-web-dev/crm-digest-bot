@@ -96,6 +96,8 @@ class SkippedClient:
 class ClientsFindings:
     showroom_problem_client_ids: list[int]
     skipped_clients: list[SkippedClient]
+    # Любое расхождение с meta.total, даже ниже порога провала: каждый клиент это контракт.
+    dump_shortfalls: list[str]
 
 
 class ClientsSnapshotIncomplete(Exception):
@@ -549,7 +551,26 @@ async def write_client_snapshot(
         clients_skipped=len(skipped_clients),
         clients_unknown_keys=sorted(unknown_keys),
     )
-    return counters, ClientsFindings(sorted(showroom_problem_client_ids), skipped_clients)
+    return counters, ClientsFindings(
+        sorted(showroom_problem_client_ids), skipped_clients, dump_shortfalls(dump)
+    )
+
+
+def dump_shortfalls(dump: MefiClientsDump) -> list[str]:
+    shortfalls = []
+    if len(dump.clients) < dump.api_total:
+        shortfalls.append(f"получено {len(dump.clients)} из {dump.api_total}")
+    if dump.ranges_total != dump.api_total:
+        shortfalls.append(
+            f"сумма диапазонов {dump.ranges_total}, а всего {dump.api_total}: "
+            "клиентов добавили или удалили во время выгрузки"
+        )
+    shortfalls.extend(
+        f"{shortfall.created_from:%d.%m.%Y}–{shortfall.created_to:%d.%m.%Y}: "
+        f"получено {shortfall.received} из {shortfall.expected}"
+        for shortfall in dump.range_shortfalls
+    )
+    return shortfalls
 
 
 def clients_completeness_failure(
@@ -582,6 +603,11 @@ def clients_alert_text(
         lines.append(
             f"Снапшот клиентов mefi за {snapshot_date:%d.%m.%Y} не удался: {error}. "
             "Contract Cantitate в d1 будет «—»."
+        )
+    if findings.dump_shortfalls:
+        lines.append(
+            f"Выгрузка клиентов mefi за {snapshot_date:%d.%m.%Y} неполная: "
+            f"{'; '.join(findings.dump_shortfalls)}. Contract Cantitate может быть занижен."
         )
     if unknown_keys:
         lines.append(
@@ -684,7 +710,7 @@ async def snapshot_clients(
             [],
             error.findings
             if isinstance(error, ClientsSnapshotIncomplete)
-            else ClientsFindings([], []),
+            else ClientsFindings([], [], []),
         )
     logger.info(
         "clients snapshot done",
@@ -802,6 +828,24 @@ async def start_snapshot_run(
     )
     run_id: int = inserted.scalar_one()
     return run_id
+
+
+async def dates_without_success_snapshot(
+    engine: AsyncEngine, tenant_id: str, snapshot_dates: list[date]
+) -> list[date]:
+    async with engine.connect() as connection:
+        done_dates = set(
+            (
+                await connection.execute(
+                    select(snapshot_runs.c.snapshot_date).where(
+                        snapshot_runs.c.tenant_id == tenant_id,
+                        snapshot_runs.c.status == "success",
+                        snapshot_runs.c.snapshot_date.in_(snapshot_dates),
+                    )
+                )
+            ).scalars()
+        )
+    return [snapshot_date for snapshot_date in snapshot_dates if snapshot_date not in done_dates]
 
 
 async def ensure_run_still_current(

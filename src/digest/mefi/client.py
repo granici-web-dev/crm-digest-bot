@@ -76,10 +76,22 @@ class MefiLeadsDump:
 
 
 @dataclass(frozen=True)
+class ClientsRangeShortfall:
+    created_from: date
+    created_to: date
+    expected: int
+    received: int
+
+
+@dataclass(frozen=True)
 class MefiClientsDump:
     clients: list[dict[str, Any]]
     api_total: int
     rate_limited_count: int
+    # Сумма meta.total диапазонов: расходится с api_total, если клиентов добавили или удалили
+    # между запросами выгрузки.
+    ranges_total: int
+    range_shortfalls: list[ClientsRangeShortfall]
 
 
 def retry_after_seconds(response: httpx.Response) -> float:
@@ -141,14 +153,20 @@ class MefiClient:
     async def search_all_clients(self, created_until: date) -> MefiClientsDump:
         clients_by_id: dict[int, dict[str, Any]] = {}
         clients_without_int_id: list[dict[str, Any]] = []
+        ranges_total = 0
+        range_shortfalls: list[ClientsRangeShortfall] = []
 
-        def collect(page: MefiSearchPage) -> None:
+        def collect(page: MefiSearchPage, range_client_ids: set[int]) -> int:
+            without_int_id_count = 0
             for client in page.data:
                 client_id = client.get("id")
                 if isinstance(client_id, int):
                     clients_by_id[client_id] = client
+                    range_client_ids.add(client_id)
                 else:
                     clients_without_int_id.append(client)
+                    without_int_id_count += 1
+            return without_int_id_count
 
         # У клиентов, в отличие от лидов, пустой filters.state отдаёт все состояния
         # (docs/mefi-clients-notes.md, «По state»).
@@ -157,7 +175,7 @@ class MefiClient:
         )
         api_total = probe.meta.total
         if not probe.data:
-            return MefiClientsDump([], api_total, rate_limited_count)
+            return MefiClientsDump([], api_total, rate_limited_count, 0, [])
         # Сортировка mefi без тай-брейка: у импорта 05.02 474 клиента за 11 секунд, и на
         # стыках страниц created_at одни и те же клиенты приходят дважды, а другие ни разу
         # (docs/mefi-clients-notes.md, «Выгрузка»). Поэтому делим по дням до диапазонов
@@ -178,18 +196,28 @@ class MefiClient:
                 middle = created_from + timedelta(days=(created_to - created_from).days // 2)
                 pending_ranges += [(created_from, middle), (middle + timedelta(days=1), created_to)]
                 continue
-            # День больше страницы листаем по имени: внутри импорта имена уникальны,
-            # равные имена на стыке страниц поймает проверка полноты снапшота.
-            collect(page)
-            for page_number in range(2, page.meta.total_pages + 1):
+            # День больше страницы листаем по имени, тай-брейка у mefi нет: равные имена
+            # на стыке страниц дают дубль и пропуск, их ловит сверка с meta.total диапазона.
+            range_total, total_pages = page.meta.total, page.meta.total_pages
+            range_client_ids: set[int] = set()
+            range_received = collect(page, range_client_ids)
+            for page_number in range(2, total_pages + 1):
                 page, rate_limited_count = await self._search_page(
                     "/clients/search", filters, page_number, rate_limited_count, sort="name"
                 )
-                collect(page)
+                range_received += collect(page, range_client_ids)
+            range_received += len(range_client_ids)
+            ranges_total += range_total
+            if range_received != range_total:
+                range_shortfalls.append(
+                    ClientsRangeShortfall(created_from, created_to, range_total, range_received)
+                )
         return MefiClientsDump(
             clients=[*clients_by_id.values(), *clients_without_int_id],
             api_total=api_total,
             rate_limited_count=rate_limited_count,
+            ranges_total=ranges_total,
+            range_shortfalls=sorted(range_shortfalls, key=lambda shortfall: shortfall.created_from),
         )
 
     async def _search_page(

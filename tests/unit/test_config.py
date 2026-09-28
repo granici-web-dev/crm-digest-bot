@@ -366,6 +366,24 @@ def test_site_sources_must_be_web() -> None:
         StatusMapping.model_validate(raw_mapping)
 
 
+@pytest.mark.parametrize("group_name", ["showroom_visit", "phone", "whatsapp", "partner", "other"])
+def test_source_in_two_row_groups_fails_config_load(group_name: str) -> None:
+    raw_mapping = repository_yaml("status-mapping.yaml")
+    raw_mapping["sources"][group_name].append("Meta ADS")
+
+    with pytest.raises(ValidationError, match="источник 'Meta ADS' и в sources") as error:
+        StatusMapping.model_validate(raw_mapping)
+    assert f"sources.{group_name}" in str(error.value)
+
+
+def test_custom_field_both_kept_and_dropped_fails_config_load() -> None:
+    raw_mapping = repository_yaml("status-mapping.yaml")
+    raw_mapping["clients"]["raw_custom_fields"]["keep"].append(13)
+
+    with pytest.raises(ValidationError, match=r"field_id \[13\] и в keep, и в drop"):
+        StatusMapping.model_validate(raw_mapping)
+
+
 def test_module_label_longer_than_28_characters_fails_config_load() -> None:
     raw_modules = repository_yaml("modules.yaml")
     raw_modules["daily"]["d1"]["label"] = "Raport automat în formatul consilierilor"

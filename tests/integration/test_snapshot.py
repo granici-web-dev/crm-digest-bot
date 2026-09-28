@@ -1,7 +1,7 @@
 import asyncio
 import json
 from collections.abc import AsyncIterator, Callable, Coroutine, Iterator
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -12,6 +12,7 @@ from pydantic import SecretStr, ValidationError
 from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from digest.app import missing_final_snapshot_alerts
 from digest.config import AppConfig
 from digest.db.lead_frame import SnapshotMissingError, load_lead_frame
 from digest.db.schema import client_snapshots, lead_snapshots, snapshot_runs
@@ -598,6 +599,27 @@ async def test_unknown_client_key_is_not_stored_and_alerted(
     assert "cnp" not in row.raw
 
 
+async def test_clients_short_of_total_below_threshold_are_success_with_alert(
+    engine: AsyncEngine,
+    mefi_client: MefiClient,
+    mefi_mock: respx.MockRouter,
+    app_config: AppConfig,
+) -> None:
+    mefi_returns(mefi_mock, recorded_search_leads())
+    mefi_mock.post(CLIENTS_SEARCH_URL).respond(
+        json=make_search_page([make_client(id=10), make_client(id=11)], total=3)
+    )
+
+    outcome = await snapshot_with_clients(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
+
+    run = await run_row(engine, outcome.run_id)
+    assert (run.clients_status, run.clients_api_total, run.clients_written) == ("success", 3, 2)
+    assert outcome.clients_alert == (
+        "Выгрузка клиентов mefi за 24.09.2026 неполная: получено 2 из 3; "
+        "22.09.2026–25.09.2026: получено 2 из 3. Contract Cantitate может быть занижен."
+    )
+
+
 SEPTEMBER_24_NOON = datetime(2026, 9, 24, 12, 8, tzinfo=BUCHAREST)
 
 
@@ -781,3 +803,57 @@ async def test_preview_clients_finishing_after_day_snapshot_are_not_written(
     preview_run = await run_row(engine, preview.run_id)
     assert (preview_run.status, preview_run.clients_status) == ("superseded", None)
     await assert_day_snapshot_intact(engine, app_config, day)
+
+
+async def store_runs(engine: AsyncEngine, runs: list[tuple[date, str]]) -> None:
+    async with engine.begin() as connection:
+        await connection.execute(
+            insert(snapshot_runs),
+            [
+                {
+                    "tenant_id": "sofabelle",
+                    "snapshot_date": run_date,
+                    "attempt": 1,
+                    "status": status,
+                }
+                for run_date, status in runs
+            ],
+        )
+
+
+async def test_missing_final_snapshot_of_today_is_alerted_after_window_end(
+    engine: AsyncEngine,
+) -> None:
+    await store_runs(engine, [(date(2026, 9, 23), "success"), (date(2026, 9, 24), "failed")])
+
+    alerts = await missing_final_snapshot_alerts(
+        engine, "sofabelle", datetime(2026, 9, 24, 19, 40, tzinfo=BUCHAREST), time(19, 0)
+    )
+
+    assert alerts == [
+        "Нет финального снапшота mefi за 24.09.2026: отчёты за этот день не построятся. "
+        "До полуночи его можно снять вручную: python -m digest snapshot."
+    ]
+
+
+async def test_before_window_end_only_yesterday_is_checked(engine: AsyncEngine) -> None:
+    await store_runs(engine, [(date(2026, 9, 23), "preview")])
+
+    alerts = await missing_final_snapshot_alerts(
+        engine, "sofabelle", datetime(2026, 9, 24, 9, 0, tzinfo=BUCHAREST), time(19, 0)
+    )
+
+    assert alerts == [
+        "Нет финального снапшота mefi за 23.09.2026: отчёты за этот день не построятся, "
+        "задним числом его не снять."
+    ]
+
+
+async def test_final_snapshots_of_today_and_yesterday_give_no_alert(engine: AsyncEngine) -> None:
+    await store_runs(engine, [(date(2026, 9, 23), "success"), (date(2026, 9, 24), "success")])
+
+    alerts = await missing_final_snapshot_alerts(
+        engine, "sofabelle", datetime(2026, 9, 24, 19, 40, tzinfo=BUCHAREST), time(19, 0)
+    )
+
+    assert alerts == []

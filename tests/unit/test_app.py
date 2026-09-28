@@ -56,7 +56,12 @@ async def test_report_and_snapshot_jobs_tolerate_late_start(app_config: AppConfi
 
     grace_by_job = {job.id: job.misfire_grace_time for job in scheduler.get_jobs()}
 
-    assert grace_by_job == {"snapshot_1900": 300, "snapshot_1910": 300, "report_daily": 1800}
+    assert grace_by_job == {
+        "snapshot_1900": 300,
+        "snapshot_1910": 300,
+        "snapshot_check_1940": 1800,
+        "report_daily": 1800,
+    }
 
 
 def test_default_schedules_take_time_from_send_times(app_config: AppConfig) -> None:

@@ -9,6 +9,7 @@ import respx
 from pydantic import SecretStr
 
 from digest.mefi.client import (
+    ClientsRangeShortfall,
     MefiClient,
     MefiRateLimitExceeded,
     RequestPacer,
@@ -212,3 +213,22 @@ async def test_clients_dump_is_complete_when_created_at_ties_cross_pages(
         for request in range_requests
         if request["page"] > 1
     )
+    assert (dump.ranges_total, dump.range_shortfalls) == (len(clients), [])
+
+
+@respx.mock
+async def test_equal_names_across_pages_of_one_day_are_reported_as_range_shortfall(
+    mefi_client: MefiClient,
+) -> None:
+    clients = [
+        make_client(id=100 + index, name="Client", created_at="2026-02-05T13:19:35Z")
+        for index in range(230)
+    ]
+    respx.post(CLIENTS_SEARCH_URL).mock(side_effect=FakeClientsSearch(clients))
+
+    dump = await mefi_client.search_all_clients(date(2026, 9, 29))
+
+    assert len(dump.clients) < 230
+    assert dump.range_shortfalls == [
+        ClientsRangeShortfall(date(2026, 2, 5), date(2026, 2, 5), 230, len(dump.clients))
+    ]

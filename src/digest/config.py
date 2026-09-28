@@ -26,6 +26,8 @@ Share = Annotated[float, Field(ge=0, le=1)]
 LOSS_REASONS_USED_BY_METRICS = ("IRELEVANT", "NU_RASPUNS", "BUGET", "PRODUS_NEPOTRIVIT", "STAND_BY")
 
 SNAPSHOT_RETRY_DELAY = timedelta(minutes=10)
+# Проверка «снапшот дня есть» после повтора, с запасом на прогон в несколько минут.
+FINAL_SNAPSHOT_CHECK_DELAY = timedelta(minutes=40)
 # Снапшот в конце окна, повтор через SNAPSHOT_RETRY_DELAY, прогон при паузе 1.2 с на запрос
 # идёт минуты: daily раньше этой границы прочитал бы вчерашний снапшот.
 DAILY_REPORT_EARLIEST_AFTER_WINDOW_END = timedelta(minutes=30)
@@ -190,6 +192,21 @@ class SourceGroups(StrictConfigModel):
     whatsapp: list[str]
     partner: list[str]
     other: list[str]
+
+    @model_validator(mode="after")
+    def row_groups_are_disjoint(self) -> Self:
+        # Строки d1 взаимоисключающие только при непересекающихся группах: источник в двух
+        # группах молча посчитался бы в двух строках (site это подмножество web, не строка).
+        group_by_source: dict[str, str] = {}
+        for group_name in ("showroom_visit", "web", "phone", "whatsapp", "partner", "other"):
+            for source in getattr(self, group_name):
+                if source in group_by_source:
+                    raise ValueError(
+                        f"источник {source!r} и в sources.{group_by_source[source]}, "
+                        f"и в sources.{group_name}"
+                    )
+                group_by_source[source] = group_name
+        return self
 
     @model_validator(mode="after")
     def site_sources_are_web(self) -> Self:

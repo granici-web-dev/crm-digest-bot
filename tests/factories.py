@@ -136,8 +136,8 @@ def make_search_page(
 
 
 class FakeClientsSearch:
-    # Как живой mefi: равные created_at приходят в порядке, который зависит от запрошенного
-    # окна страницы, поэтому листание по created_at теряет и дублирует клиентов на стыках.
+    # Как живой mefi: равные значения сортировки (created_at или name) приходят в порядке,
+    # который зависит от окна страницы, поэтому на стыках клиенты теряются и дублируются.
     def __init__(self, clients: list[dict[str, Any]]) -> None:
         self.clients = clients
         self.request_bodies: list[dict[str, Any]] = []
@@ -154,12 +154,10 @@ class FakeClientsSearch:
         ]
         per_page, page = body["per_page"], body["page"]
         offset = (page - 1) * per_page
-        if body["sort"] == "name":
-            ordered = sorted(matching, key=lambda client: client["name"].casefold())
-        else:
-            ordered = sorted(
-                matching, key=lambda client: (client["created_at"], hash((client["id"], offset)))
-            )
+        sort_key = "name" if body["sort"] == "name" else "created_at"
+        ordered = sorted(
+            matching, key=lambda client: (client[sort_key], hash((client["id"], offset)))
+        )
         return httpx.Response(
             200,
             json=make_search_page(

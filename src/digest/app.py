@@ -2,7 +2,7 @@ import asyncio
 import logging
 import signal
 from collections.abc import Mapping
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from functools import partial
 from pathlib import Path
 from typing import NamedTuple
@@ -21,7 +21,13 @@ from digest.bot.chat_handlers import ChatDeps
 from digest.bot.dispatcher import bot_dispatcher
 from digest.bot.polling import PollingHealth, supervise_polling, watch_polling_silence
 from digest.bot.settings_menu import standard_send_time
-from digest.config import SETTINGS_LEVELS, SNAPSHOT_RETRY_DELAY, AppConfig, SettingsLevel
+from digest.config import (
+    FINAL_SNAPSHOT_CHECK_DELAY,
+    SETTINGS_LEVELS,
+    SNAPSHOT_RETRY_DELAY,
+    AppConfig,
+    SettingsLevel,
+)
 from digest.db.schema import schedules
 from digest.delivery.ops import OpsChannel, notify_ops
 from digest.delivery.telegram import create_bot
@@ -31,7 +37,12 @@ from digest.reports.modules import IMPLEMENTED_MODULES
 from digest.reports.periods import ReportLevel
 from digest.reports.runner import ReportDeps, run_report
 from digest.settings import Settings
-from digest.snapshot import SnapshotSources, describe_error, run_daily_snapshot
+from digest.snapshot import (
+    SnapshotSources,
+    dates_without_success_snapshot,
+    describe_error,
+    run_daily_snapshot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +165,44 @@ async def snapshot_job(deps: ReportDeps, snapshot_sources: SnapshotSources) -> N
         await notify_ops(deps.ops, outcome.clients_alert)
 
 
+async def missing_final_snapshot_alerts(
+    engine: AsyncEngine, tenant_id: str, now: datetime, window_end: time
+) -> list[str]:
+    today = now.date()
+    yesterday = today - timedelta(days=1)
+    # Снапшот сегодняшней даты до конца окна ещё не должен существовать.
+    checked_dates = [yesterday, today] if now.time() >= window_end else [yesterday]
+    alerts = []
+    for snapshot_date in await dates_without_success_snapshot(engine, tenant_id, checked_dates):
+        if snapshot_date == today:
+            alerts.append(
+                f"Нет финального снапшота mefi за {snapshot_date:%d.%m.%Y}: отчёты за этот день "
+                "не построятся. До полуночи его можно снять вручную: python -m digest snapshot."
+            )
+        else:
+            alerts.append(
+                f"Нет финального снапшота mefi за {snapshot_date:%d.%m.%Y}: отчёты за этот день "
+                "не построятся, задним числом его не снять."
+            )
+    return alerts
+
+
+async def final_snapshot_check_job(deps: ReportDeps) -> None:
+    # Сбой джобы 19:00 алертит сама джоба; эта проверка ловит день, когда процесс лежал
+    # и джоба не запускалась вовсе.
+    time_settings = deps.config.status_mapping.time
+    now = datetime.now(ZoneInfo(time_settings.timezone))
+    try:
+        alerts = await missing_final_snapshot_alerts(
+            deps.engine, deps.tenant_id, now, time_settings.daily_window_end
+        )
+    except Exception as error:
+        logger.error("final snapshot check failed", extra={"error": describe_error(error)})
+        alerts = [f"Проверка финального снапшота упала: {describe_error(error)}."]
+    for alert in alerts:
+        await notify_ops(deps.ops, alert)
+
+
 async def report_job(deps: ReportDeps, level: ReportLevel, backup_dir: Path | None) -> None:
     now = datetime.now(ZoneInfo(deps.config.status_mapping.time.timezone))
     try:
@@ -203,6 +252,14 @@ def schedule_snapshot_jobs(
             id=f"snapshot_{attempt_at:%H%M}",
             misfire_grace_time=int(SNAPSHOT_MISFIRE_GRACE.total_seconds()),
         )
+    check_at = (datetime.combine(date.min, window_end) + FINAL_SNAPSHOT_CHECK_DELAY).time()
+    scheduler.add_job(
+        final_snapshot_check_job,
+        CronTrigger(hour=check_at.hour, minute=check_at.minute, timezone=timezone),
+        args=[deps],
+        id=f"snapshot_check_{check_at:%H%M}",
+        misfire_grace_time=int(REPORT_MISFIRE_GRACE.total_seconds()),
+    )
 
 
 def startup_announcement(app_version: str, dry_run: bool) -> str:
@@ -257,6 +314,7 @@ async def run_app(engine: AsyncEngine, config: AppConfig, app_settings: Settings
     schedule_alert = nonstandard_schedule_alert(config, schedules_by_level)
     if schedule_alert is not None:
         await notify_ops(deps.ops, schedule_alert)
+    await final_snapshot_check_job(deps)
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
