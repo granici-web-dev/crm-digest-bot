@@ -47,7 +47,7 @@ async def run_manual_report(
         report_date, time_settings.daily_window_end, tzinfo=ZoneInfo(time_settings.timezone)
     )
     try:
-        outcome = await run_report(level, now, deps)
+        outcome = await run_report(level, now, deps, late=False)
     finally:
         await deps.report_bot.session.close()
         await deps.ops.bot.session.close()

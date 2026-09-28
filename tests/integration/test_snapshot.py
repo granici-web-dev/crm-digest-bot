@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator, Callable, Coroutine, Iterator
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -13,7 +13,7 @@ from pydantic import SecretStr, ValidationError
 from sqlalchemy import insert, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from digest.app import missing_final_snapshot_alerts
+from digest.app import missing_final_snapshot_alert
 from digest.config import AppConfig
 from digest.db.lead_frame import SnapshotMissingError, load_lead_frame
 from digest.db.schema import client_snapshots, lead_snapshots, snapshot_runs
@@ -828,37 +828,24 @@ async def test_missing_final_snapshot_of_today_is_alerted_after_window_end(
 ) -> None:
     await store_runs(engine, [(date(2026, 9, 23), "success"), (date(2026, 9, 24), "failed")])
 
-    alerts = await missing_final_snapshot_alerts(
-        engine, "sofabelle", datetime(2026, 9, 24, 19, 40, tzinfo=BUCHAREST), time(19, 0)
+    alert = await missing_final_snapshot_alert(
+        engine, "sofabelle", datetime(2026, 9, 24, 19, 40, tzinfo=BUCHAREST)
     )
 
-    assert alerts == [
+    assert alert == (
         "Нет финального снапшота mefi за 24.09.2026: отчёты за этот день не построятся. "
         "До полуночи его можно снять вручную: python -m digest snapshot."
-    ]
-
-
-async def test_before_window_end_only_yesterday_is_checked(engine: AsyncEngine) -> None:
-    await store_runs(engine, [(date(2026, 9, 23), "preview")])
-
-    alerts = await missing_final_snapshot_alerts(
-        engine, "sofabelle", datetime(2026, 9, 24, 9, 0, tzinfo=BUCHAREST), time(19, 0)
     )
 
-    assert alerts == [
-        "Нет финального снапшота mefi за 23.09.2026: отчёты за этот день не построятся, "
-        "задним числом его не снять."
-    ]
 
+async def test_final_snapshot_of_today_gives_no_alert(engine: AsyncEngine) -> None:
+    await store_runs(engine, [(date(2026, 9, 24), "success")])
 
-async def test_final_snapshots_of_today_and_yesterday_give_no_alert(engine: AsyncEngine) -> None:
-    await store_runs(engine, [(date(2026, 9, 23), "success"), (date(2026, 9, 24), "success")])
-
-    alerts = await missing_final_snapshot_alerts(
-        engine, "sofabelle", datetime(2026, 9, 24, 19, 40, tzinfo=BUCHAREST), time(19, 0)
+    alert = await missing_final_snapshot_alert(
+        engine, "sofabelle", datetime(2026, 9, 24, 19, 40, tzinfo=BUCHAREST)
     )
 
-    assert alerts == []
+    assert alert is None
 
 
 SYNTHETIC_PERSONAL_DATA = (

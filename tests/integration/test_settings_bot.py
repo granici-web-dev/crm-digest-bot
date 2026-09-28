@@ -342,7 +342,7 @@ async def test_runner_skips_module_switched_off_in_settings(harness: SettingsHar
     await store_successful_snapshot(harness.deps.engine, date(2026, 9, 25))
     await harness.press(ModuleSwitch(module_id="d1", enabled=False).pack())
     outcome = await run_report(
-        "daily", datetime(2026, 9, 25, 19, 30, tzinfo=BUCHAREST), harness.deps
+        "daily", datetime(2026, 9, 25, 19, 30, tzinfo=BUCHAREST), harness.deps, late=False
     )
 
     assert outcome == "success"

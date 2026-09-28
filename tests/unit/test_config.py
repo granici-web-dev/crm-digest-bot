@@ -437,6 +437,14 @@ def test_weekly_send_times_without_default_option_fail_config_load() -> None:
         ModuleRegistry.model_validate(raw_modules)
 
 
+def test_catch_up_days_without_weekly_fail_config_load() -> None:
+    raw_modules = repository_yaml("modules.yaml")
+    del raw_modules["catch_up_days"]["weekly"]
+
+    with pytest.raises(ValidationError, match=r"catch_up_days: нет значения для \['weekly'\]"):
+        ModuleRegistry.model_validate(raw_modules)
+
+
 def test_default_send_times_come_from_send_times(app_config: AppConfig) -> None:
     assert app_config.modules.default_send_time("daily") == time(19, 30)
     assert app_config.modules.default_send_time("weekly") == time(9, 0)

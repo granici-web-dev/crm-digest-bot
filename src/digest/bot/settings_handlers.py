@@ -206,7 +206,7 @@ async def choose_send_time(
     timezone = ZoneInfo(deps.config.status_mapping.time.timezone)
     if schedule_enabled and report_missed_today(old_cron, new_cron, now, timezone):
         # Повторную отправку за тот же период отсекает report_runs, дубля в группе не будет.
-        outcome = await run_report(level, now, deps)
+        outcome = await run_report(level, now, deps, late=False)
         if outcome in ("success", "partial"):
             await deps.report_bot.send_message(callback.from_user.id, MISSED_REPORT_SENT_TEXT)
             await notify_ops(deps.ops, f"Настройки: {level}: {MISSED_REPORT_SENT_TEXT}")

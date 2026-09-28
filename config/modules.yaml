@@ -93,6 +93,10 @@ send_times:
   weekly:  ["08:00", "09:00", "10:00"]
   monthly: ["08:00", "09:00", "10:00"]
 
+# Догон отчёта при старте процесса: сколько дней после штатного дня отправки он ещё уходит
+# с пометкой «Raport trimis cu întârziere». 0 = только в тот же день. Yearly не догоняется.
+catch_up_days: { daily: 0, weekly: 2, monthly: 4 }
+
 chat:             # режим вопросов; включается целиком, переключатель в /settings
   enabled: false
   trigger: [mention, reply]

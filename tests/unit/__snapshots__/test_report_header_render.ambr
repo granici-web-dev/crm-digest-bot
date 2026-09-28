@@ -1,0 +1,15 @@
+# serializer version: 1
+# name: test_report_on_time_has_no_late_lines
+  '''
+  <b>Raport zilnic Sofabelle</b>
+  27.09.2026 19:00 → 28.09.2026 19:00
+  '''
+# ---
+# name: test_report_sent_late_with_late_snapshot
+  '''
+  Raport trimis cu întârziere
+  <b>Raport zilnic Sofabelle</b>
+  27.09.2026 19:00 → 28.09.2026 19:00
+  Date extrase din mefi la 21:47, nu la 19:00; schimbările de status dintre 19:00 și 21:47 sunt incluse în ziua de azi.
+  '''
+# ---

@@ -60,6 +60,7 @@ async def test_report_and_snapshot_jobs_tolerate_late_start(app_config: AppConfi
         "snapshot_1900": 300,
         "snapshot_1910": 300,
         "snapshot_check_1940": 1800,
+        "missed_snapshot_check_0900": 1800,
         "report_daily": 1800,
     }
 

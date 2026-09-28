@@ -42,7 +42,7 @@ from digest.reports.lead_links import LeadLinks
 from digest.reports.modules import ReportModuleFunction
 from digest.reports.periods import ReportLevel, report_period
 from digest.reports.render import render
-from digest.snapshot import describe_error
+from digest.snapshot import describe_error, snapshot_taken_late, success_snapshot_started_at
 
 logger = logging.getLogger(__name__)
 
@@ -394,13 +394,22 @@ async def snapshot_if_successful(deps: ReportDeps, snapshot_date: date) -> Previ
     return PreviousSnapshot(snapshot_date, lead_frame)
 
 
+async def late_snapshot_taken_at(deps: ReportDeps, snapshot_date: date) -> datetime | None:
+    time_settings = deps.config.status_mapping.time
+    started_at = await success_snapshot_started_at(deps.engine, deps.tenant_id, snapshot_date)
+    if started_at is None or not snapshot_taken_late(started_at, snapshot_date, time_settings):
+        return None
+    return started_at.astimezone(ZoneInfo(time_settings.timezone))
+
+
 async def build_report(
-    deps: ReportDeps, level: ReportLevel, period: Period, snapshot_date: date
+    deps: ReportDeps, level: ReportLevel, period: Period, snapshot_date: date, late: bool
 ) -> BuiltReport | None:
     modules = await runnable_modules(deps, level)
     if not modules:
         return None
     render_values = {
+        "late": late,
         "level": level,
         "period_label": period_label(level, period),
         "snapshot_date": snapshot_date,
@@ -418,12 +427,17 @@ async def build_report(
             "report",
             blocks=[],
             snapshot_missing=True,
+            late_snapshot_at=None,
             unavailable_sources=[],
             **render_values,
         )
         return BuiltReport(text, "partial", snapshot_date)
 
     await alert_snapshot_findings(deps, snapshot_date, lead_frame)
+    # Поздний снапшот сдвигает только ежедневный отчёт: его разница снапшотов захватила вечер.
+    late_snapshot_at = (
+        await late_snapshot_taken_at(deps, snapshot_date) if level == "daily" else None
+    )
     previous_date = await previous_success_snapshot_date(deps.engine, deps.tenant_id, snapshot_date)
     previous = (
         PreviousSnapshot(
@@ -485,6 +499,8 @@ async def build_report(
         "report",
         blocks=blocks,
         snapshot_missing=False,
+        late_snapshot_at=late_snapshot_at,
+        daily_window_end=deps.config.status_mapping.time.daily_window_end,
         unavailable_sources=sorted(unavailable_sources),
         **render_values,
     )
@@ -494,7 +510,9 @@ async def build_report(
     return BuiltReport(text, status, snapshot_date, tuple(photos), tuple(documents))
 
 
-async def run_report(level: ReportLevel, now: datetime, deps: ReportDeps) -> ReportRunOutcome:
+async def run_report(
+    level: ReportLevel, now: datetime, deps: ReportDeps, *, late: bool
+) -> ReportRunOutcome:
     chat_id = deps.report_chat_id
     time_settings = deps.config.status_mapping.time
     timezone = ZoneInfo(time_settings.timezone)
@@ -529,7 +547,7 @@ async def run_report(level: ReportLevel, now: datetime, deps: ReportDeps) -> Rep
         )
 
     try:
-        report = await build_report(deps, level, period, snapshot_date)
+        report = await build_report(deps, level, period, snapshot_date, late)
         parts = split_message(report.text) if report is not None else []
     except Exception as error:
         logger.error("report build failed", extra={**log_extra, "error": describe_error(error)})

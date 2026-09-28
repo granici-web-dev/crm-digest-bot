@@ -13,6 +13,7 @@ from sqlalchemy import delete, func, insert, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from digest.config import (
+    SNAPSHOT_RETRY_DELAY,
     UNMAPPED,
     ClientSettings,
     CompletenessThresholds,
@@ -20,6 +21,7 @@ from digest.config import (
     LeadCategory,
     OfertatField,
     StatusMapping,
+    TimeSettings,
 )
 from digest.contact_keys import email_contact_key, phone_contact_key
 from digest.db.schema import client_snapshots, lead_snapshots, snapshot_runs
@@ -36,6 +38,7 @@ logger = logging.getLogger(__name__)
 
 BUCHAREST = ZoneInfo("Europe/Bucharest")
 ALERT_ID_LIMIT = 10
+MISSED_SNAPSHOT_ERROR = "missed"
 
 # preview: снапшот, снятый до конца ежедневного окна. Отчёты и чат читают только success.
 SnapshotRunStatus = Literal["success", "preview"]
@@ -854,6 +857,87 @@ async def dates_without_success_snapshot(
             ).scalars()
         )
     return [snapshot_date for snapshot_date in snapshot_dates if snapshot_date not in done_dates]
+
+
+def snapshot_taken_late(
+    started_at: datetime, snapshot_date: date, time_settings: TimeSettings
+) -> bool:
+    # Штатный повтор стартует ровно через SNAPSHOT_RETRY_DELAY: всё позже него снято не по
+    # расписанию и захватило смены статусов после конца окна.
+    scheduled_at = datetime.combine(
+        snapshot_date, time_settings.daily_window_end, tzinfo=ZoneInfo(time_settings.timezone)
+    )
+    return started_at > scheduled_at + SNAPSHOT_RETRY_DELAY
+
+
+async def success_snapshot_started_at(
+    engine: AsyncEngine, tenant_id: str, snapshot_date: date
+) -> datetime | None:
+    async with engine.connect() as connection:
+        started_at: datetime | None = await connection.scalar(
+            select(snapshot_runs.c.started_at).where(
+                snapshot_runs.c.tenant_id == tenant_id,
+                snapshot_runs.c.snapshot_date == snapshot_date,
+                snapshot_runs.c.status == "success",
+            )
+        )
+    return started_at
+
+
+async def snapshot_run_in_progress(
+    engine: AsyncEngine, tenant_id: str, snapshot_date: date, younger_than: timedelta
+) -> bool:
+    async with engine.connect() as connection:
+        running_run_id = await connection.scalar(
+            select(snapshot_runs.c.id).where(
+                snapshot_runs.c.tenant_id == tenant_id,
+                snapshot_runs.c.snapshot_date == snapshot_date,
+                snapshot_runs.c.status == "running",
+                snapshot_runs.c.started_at > func.now() - younger_than,
+            )
+        )
+    return running_run_id is not None
+
+
+async def record_missed_snapshot_dates(
+    engine: AsyncEngine, tenant_id: str, snapshot_dates: list[date]
+) -> list[date]:
+    # Строка failed/missed это память «об этой дате уже сообщили»: рестарт, второй процесс
+    # и следующая проверка её видят и молчат. Отчёты читают только success и её не замечают.
+    newly_missed = []
+    for snapshot_date in snapshot_dates:
+        this_date_runs = (snapshot_runs.c.tenant_id == tenant_id) & (
+            snapshot_runs.c.snapshot_date == snapshot_date
+        )
+        async with engine.begin() as connection:
+            await connection.execute(snapshot_run_lock(tenant_id, snapshot_date))
+            closed_run_id = await connection.scalar(
+                select(snapshot_runs.c.id).where(
+                    this_date_runs,
+                    or_(
+                        snapshot_runs.c.status == "success",
+                        (snapshot_runs.c.status == "failed")
+                        & (snapshot_runs.c.error == MISSED_SNAPSHOT_ERROR),
+                    ),
+                )
+            )
+            if closed_run_id is not None:
+                continue
+            previous_attempts = await connection.scalar(
+                select(func.count()).select_from(snapshot_runs).where(this_date_runs)
+            )
+            await connection.execute(
+                insert(snapshot_runs).values(
+                    tenant_id=tenant_id,
+                    snapshot_date=snapshot_date,
+                    attempt=(previous_attempts or 0) + 1,
+                    status="failed",
+                    finished_at=func.clock_timestamp(),
+                    error=MISSED_SNAPSHOT_ERROR,
+                )
+            )
+        newly_missed.append(snapshot_date)
+    return newly_missed
 
 
 async def ensure_run_still_current(

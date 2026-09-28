@@ -215,4 +215,5 @@ snapshot:
 time:
   timezone: "Europe/Bucharest"
   daily_window_end: "19:00"
+  missed_snapshot_check: "09:00"   # утром ops узнаёт о вчерашнем снапшоте, которого нет и уже не будет
   working_hours: { start: "10:00", end: "19:00" }   # правило переноса для недельного счёта

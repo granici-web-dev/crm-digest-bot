@@ -1,6 +1,12 @@
 {% set titles = {"daily": "Raport zilnic", "weekly": "Raport săptămânal", "monthly": "Raport lunar", "yearly": "Raport anual"} %}
+{% if late %}
+Raport trimis cu întârziere
+{% endif %}
 <b>{{ titles[level] }} {{ tenant_display_name }}</b>
 {{ period_label }}
+{% if late_snapshot_at %}
+Date extrase din mefi la {{ late_snapshot_at.strftime("%H:%M") }}, nu la {{ daily_window_end.strftime("%H:%M") }}; schimbările de status dintre {{ daily_window_end.strftime("%H:%M") }} și {{ late_snapshot_at.strftime("%H:%M") }} sunt incluse în ziua de azi.
+{% endif %}
 
 
 {% if snapshot_missing %}

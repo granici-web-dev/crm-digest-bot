@@ -10,6 +10,7 @@ from pydantic import (
     ConfigDict,
     Field,
     JsonValue,
+    NonNegativeInt,
     PositiveFloat,
     PositiveInt,
     PrivateAttr,
@@ -144,6 +145,7 @@ class WorkingHours(StrictConfigModel):
 class TimeSettings(StrictConfigModel):
     timezone: Literal["Europe/Bucharest"]
     daily_window_end: time
+    missed_snapshot_check: time
     working_hours: WorkingHours
 
 
@@ -374,6 +376,7 @@ class ModuleRegistry(StrictConfigModel):
     yearly: dict[str, ReportModule]
     chat: ChatSettings
     send_times: dict[SettingsLevel, Annotated[list[time], Field(min_length=1)]]
+    catch_up_days: dict[SettingsLevel, NonNegativeInt]
 
     @property
     def all_modules(self) -> dict[str, ReportModule]:
@@ -432,6 +435,13 @@ class ModuleRegistry(StrictConfigModel):
                     f"send_times.{level}: время по умолчанию это вариант "
                     f"№{DEFAULT_SEND_TIME_INDEX[level] + 1}, вариантов меньше"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def catch_up_days_cover_settings_levels(self) -> Self:
+        missing = [level for level in SETTINGS_LEVELS if level not in self.catch_up_days]
+        if missing:
+            raise ValueError(f"catch_up_days: нет значения для {missing}")
         return self
 
     def default_send_time(self, level: SettingsLevel) -> time:

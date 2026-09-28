@@ -2,7 +2,7 @@ import asyncio
 import logging
 import signal
 from collections.abc import Mapping
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 from functools import partial
 from pathlib import Path
 from typing import NamedTuple
@@ -21,6 +21,7 @@ from digest.bot.chat_handlers import ChatDeps
 from digest.bot.dispatcher import bot_dispatcher
 from digest.bot.polling import PollingHealth, supervise_polling, watch_polling_silence
 from digest.bot.settings_menu import standard_send_time
+from digest.catch_up import late_snapshot_due, missed_snapshot_alert, report_catch_up_due
 from digest.config import (
     FINAL_SNAPSHOT_CHECK_DELAY,
     SETTINGS_LEVELS,
@@ -28,20 +29,24 @@ from digest.config import (
     AppConfig,
     SettingsLevel,
 )
+from digest.db.lead_frame import previous_success_snapshot_date
 from digest.db.schema import schedules
 from digest.delivery.ops import OpsChannel, notify_ops
 from digest.delivery.telegram import create_bot
 from digest.mefi.client import MefiClient, create_mefi_http_client
 from digest.reports.lead_links import LeadLinks
 from digest.reports.modules import IMPLEMENTED_MODULES
-from digest.reports.periods import ReportLevel
-from digest.reports.runner import ReportDeps, run_report
+from digest.reports.periods import ReportLevel, report_period
+from digest.reports.runner import STALE_RUNNING_AFTER, ReportDeps, run_report
 from digest.settings import Settings
 from digest.snapshot import (
+    SnapshotOutcome,
     SnapshotSources,
     dates_without_success_snapshot,
     describe_error,
+    record_missed_snapshot_dates,
     run_daily_snapshot,
+    snapshot_run_in_progress,
 )
 
 logger = logging.getLogger(__name__)
@@ -148,8 +153,9 @@ def create_report_deps(
     )
 
 
-async def snapshot_job(deps: ReportDeps, snapshot_sources: SnapshotSources) -> None:
-    now = datetime.now(ZoneInfo(deps.config.status_mapping.time.timezone))
+async def take_snapshot(
+    deps: ReportDeps, snapshot_sources: SnapshotSources, now: datetime
+) -> SnapshotOutcome | None:
     try:
         outcome = await run_daily_snapshot(
             deps.engine, snapshot_sources, deps.config.status_mapping, deps.tenant_id, now
@@ -160,53 +166,139 @@ async def snapshot_job(deps: ReportDeps, snapshot_sources: SnapshotSources) -> N
         await notify_ops(
             deps.ops, f"Снапшот за {now:%d.%m.%Y %H:%M} не удался: {describe_error(error)}."
         )
-        return
+        return None
     if outcome.clients_alert is not None:
         await notify_ops(deps.ops, outcome.clients_alert)
+    return outcome
 
 
-async def missing_final_snapshot_alerts(
-    engine: AsyncEngine, tenant_id: str, now: datetime, window_end: time
-) -> list[str]:
-    today = now.date()
-    yesterday = today - timedelta(days=1)
-    # Снапшот сегодняшней даты до конца окна ещё не должен существовать.
-    checked_dates = [yesterday, today] if now.time() >= window_end else [yesterday]
-    alerts = []
-    for snapshot_date in await dates_without_success_snapshot(engine, tenant_id, checked_dates):
-        if snapshot_date == today:
-            alerts.append(
-                f"Нет финального снапшота mefi за {snapshot_date:%d.%m.%Y}: отчёты за этот день "
-                "не построятся. До полуночи его можно снять вручную: python -m digest snapshot."
-            )
-        else:
-            alerts.append(
-                f"Нет финального снапшота mefi за {snapshot_date:%d.%m.%Y}: отчёты за этот день "
-                "не построятся, задним числом его не снять."
-            )
-    return alerts
+async def snapshot_job(deps: ReportDeps, snapshot_sources: SnapshotSources) -> None:
+    now = datetime.now(ZoneInfo(deps.config.status_mapping.time.timezone))
+    await take_snapshot(deps, snapshot_sources, now)
+
+
+async def missing_final_snapshot_alert(
+    engine: AsyncEngine, tenant_id: str, now: datetime
+) -> str | None:
+    if not await dates_without_success_snapshot(engine, tenant_id, [now.date()]):
+        return None
+    return (
+        f"Нет финального снапшота mefi за {now:%d.%m.%Y}: отчёты за этот день "
+        "не построятся. До полуночи его можно снять вручную: python -m digest snapshot."
+    )
 
 
 async def final_snapshot_check_job(deps: ReportDeps) -> None:
     # Сбой джобы 19:00 алертит сама джоба; эта проверка ловит день, когда процесс лежал
-    # и джоба не запускалась вовсе.
-    time_settings = deps.config.status_mapping.time
-    now = datetime.now(ZoneInfo(time_settings.timezone))
+    # и джоба не запускалась вовсе. Прошедшие даты закрывает report_missed_snapshots.
+    now = datetime.now(ZoneInfo(deps.config.status_mapping.time.timezone))
     try:
-        alerts = await missing_final_snapshot_alerts(
-            deps.engine, deps.tenant_id, now, time_settings.daily_window_end
-        )
+        alert = await missing_final_snapshot_alert(deps.engine, deps.tenant_id, now)
     except Exception as error:
         logger.error("final snapshot check failed", extra={"error": describe_error(error)})
-        alerts = [f"Проверка финального снапшота упала: {describe_error(error)}."]
-    for alert in alerts:
+        alert = f"Проверка финального снапшота упала: {describe_error(error)}."
+    if alert is not None:
         await notify_ops(deps.ops, alert)
+
+
+async def report_missed_snapshots(deps: ReportDeps, today: date) -> None:
+    try:
+        last_success = await previous_success_snapshot_date(deps.engine, deps.tenant_id, today)
+        # До первого снапшота пропускать нечего: свежая база не должна алертить о прошлом.
+        if last_success is None:
+            return
+        gap_dates = [
+            last_success + timedelta(days=offset)
+            for offset in range(1, (today - last_success).days)
+        ]
+        missed = await record_missed_snapshot_dates(deps.engine, deps.tenant_id, gap_dates)
+    except Exception as error:
+        logger.error("missed snapshot check failed", extra={"error": describe_error(error)})
+        await notify_ops(
+            deps.ops, f"Проверка пропущенных снапшотов упала: {describe_error(error)}."
+        )
+        return
+    if missed:
+        await notify_ops(deps.ops, missed_snapshot_alert(missed))
+
+
+async def missed_snapshot_job(deps: ReportDeps) -> None:
+    now = datetime.now(ZoneInfo(deps.config.status_mapping.time.timezone))
+    await report_missed_snapshots(deps, now.date())
+
+
+async def take_late_snapshot(
+    deps: ReportDeps, snapshot_sources: SnapshotSources, now: datetime
+) -> None:
+    # После полуночи дата уже другая: вчерашний снапшот не снять, его закроет проверка пропусков.
+    if not late_snapshot_due(now, deps.config.status_mapping.time):
+        return
+    today = now.date()
+    if not await dates_without_success_snapshot(deps.engine, deps.tenant_id, [today]):
+        return
+    # Живой running значит, что снапшот снимает другой процесс: второй погасил бы его.
+    if await snapshot_run_in_progress(deps.engine, deps.tenant_id, today, STALE_RUNNING_AFTER):
+        logger.info("late snapshot skipped, run in progress", extra={"date": today.isoformat()})
+        return
+    outcome = await take_snapshot(deps, snapshot_sources, now)
+    if outcome is not None and outcome.status == "success":
+        await notify_ops(deps.ops, f"Снапшот за {today:%d.%m.%Y} снят с опозданием в {now:%H:%M}.")
+
+
+async def catch_up_reports(
+    deps: ReportDeps, now: datetime, schedules_by_level: Mapping[ReportLevel, StoredSchedule]
+) -> None:
+    time_settings = deps.config.status_mapping.time
+    timezone = ZoneInfo(time_settings.timezone)
+    for level in SETTINGS_LEVELS:
+        schedule = schedules_by_level.get(level)
+        if schedule is None or not schedule.enabled:
+            continue
+        period = report_period(level, now, time_settings)
+        catch_up_days = deps.config.modules.catch_up_days[level]
+        if not report_catch_up_due(schedule.cron, period, now, catch_up_days, timezone):
+            continue
+        # Без сегодняшнего снапшота ежедневный отчёт состоял бы из одной пометки «нет данных».
+        if level == "daily" and await dates_without_success_snapshot(
+            deps.engine, deps.tenant_id, [now.date()]
+        ):
+            logger.info(
+                "daily catch-up skipped, no snapshot", extra={"date": now.date().isoformat()}
+            )
+            continue
+        try:
+            await run_report(level, now, deps, late=True)
+        except Exception as error:
+            logger.error(
+                "report catch-up failed", extra={"level": level, "error": describe_error(error)}
+            )
+            await notify_ops(deps.ops, f"Догон отчёта {level} упал: {describe_error(error)}.")
+
+
+async def catch_up_on_startup(
+    deps: ReportDeps,
+    snapshot_sources: SnapshotSources,
+    now: datetime,
+    schedules_by_level: Mapping[ReportLevel, StoredSchedule],
+) -> None:
+    # Порядок важен: ежедневный догон читает снапшот, который снимается первым шагом.
+    try:
+        await take_late_snapshot(deps, snapshot_sources, now)
+    except Exception as error:
+        logger.error("late snapshot failed", extra={"error": describe_error(error)})
+        await notify_ops(deps.ops, f"Поздний снапшот при старте упал: {describe_error(error)}.")
+    await report_missed_snapshots(deps, now.date())
+    try:
+        await catch_up_reports(deps, now, schedules_by_level)
+    except Exception as error:
+        logger.error("report catch-up failed", extra={"error": describe_error(error)})
+        await notify_ops(deps.ops, f"Догон отчётов при старте упал: {describe_error(error)}.")
 
 
 async def report_job(deps: ReportDeps, level: ReportLevel, backup_dir: Path | None) -> None:
     now = datetime.now(ZoneInfo(deps.config.status_mapping.time.timezone))
     try:
-        await run_report(level, now, deps)
+        await run_report(level, now, deps, late=False)
     except Exception as error:
         logger.error("report job failed", extra={"level": level, "error": describe_error(error)})
         await notify_ops(deps.ops, f"Прогон отчёта {level} упал: {describe_error(error)}.")
@@ -260,6 +352,14 @@ def schedule_snapshot_jobs(
         id=f"snapshot_check_{check_at:%H%M}",
         misfire_grace_time=int(REPORT_MISFIRE_GRACE.total_seconds()),
     )
+    missed_check_at = time_settings.missed_snapshot_check
+    scheduler.add_job(
+        missed_snapshot_job,
+        CronTrigger(hour=missed_check_at.hour, minute=missed_check_at.minute, timezone=timezone),
+        args=[deps],
+        id=f"missed_snapshot_check_{missed_check_at:%H%M}",
+        misfire_grace_time=int(REPORT_MISFIRE_GRACE.total_seconds()),
+    )
 
 
 def startup_announcement(app_version: str, dry_run: bool) -> str:
@@ -298,13 +398,17 @@ async def run_app(engine: AsyncEngine, config: AppConfig, app_settings: Settings
         clients_client=MefiClient(mefi_clients_http_client),
         contact_hash_key=app_settings.contact_hash_key,
     )
-    scheduler = AsyncIOScheduler(timezone=ZoneInfo(config.status_mapping.time.timezone))
+    timezone = ZoneInfo(config.status_mapping.time.timezone)
+    scheduler = AsyncIOScheduler(timezone=timezone)
     schedule_snapshot_jobs(scheduler, deps, snapshot_sources)
     reschedule = partial(schedule_report_job, scheduler, deps, app_settings.backup_dir)
     schedules_by_level = await stored_schedules(engine, app_settings.tenant_id)
     for level, schedule in schedules_by_level.items():
         if schedule.enabled:
             reschedule(level, schedule.cron)
+    # Граница с планировщиком: срабатывания до этого момента догоняет catch-up, после него
+    # APScheduler (джобы, добавленные при старте, прошедших срабатываний не знают).
+    started_at = datetime.now(timezone)
     scheduler.start()
     logger.info(
         "scheduler started",
@@ -314,7 +418,10 @@ async def run_app(engine: AsyncEngine, config: AppConfig, app_settings: Settings
     schedule_alert = nonstandard_schedule_alert(config, schedules_by_level)
     if schedule_alert is not None:
         await notify_ops(deps.ops, schedule_alert)
-    await final_snapshot_check_job(deps)
+    # Задачей, а не await: поздний снапшот идёт минуты, polling ждать его не должен.
+    catch_up_task = asyncio.create_task(
+        catch_up_on_startup(deps, snapshot_sources, started_at, schedules_by_level)
+    )
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -327,7 +434,7 @@ async def run_app(engine: AsyncEngine, config: AppConfig, app_settings: Settings
         deps,
         reschedule,
         app_settings.telegram_admin_ids,
-        clock=partial(datetime.now, ZoneInfo(config.status_mapping.time.timezone)),
+        clock=partial(datetime.now, timezone),
         chat=ChatDeps(anthropic_client, app_settings.anthropic_model, chat_ids(app_settings)),
     )
     start_polling = partial(
@@ -362,9 +469,9 @@ async def run_app(engine: AsyncEngine, config: AppConfig, app_settings: Settings
     await stop.wait()
     logger.info("shutdown requested")
     scheduler.shutdown(wait=False)
-    for task in polling_tasks:
+    for task in [*polling_tasks, catch_up_task]:
         task.cancel()
-    await asyncio.gather(*polling_tasks, return_exceptions=True)
+    await asyncio.gather(*polling_tasks, catch_up_task, return_exceptions=True)
     await mefi_http_client.aclose()
     await mefi_clients_http_client.aclose()
     if anthropic_client is not None:
