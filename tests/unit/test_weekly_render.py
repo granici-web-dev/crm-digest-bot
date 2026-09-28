@@ -117,9 +117,9 @@ def test_showroom_source_table_has_without_source_column_and_totals(
 ) -> None:
     tables = weekly_lead_tables(week_frame(app_config), SUNDAY, app_config)
 
-    table = showroom_source_table(tables)
+    table = showroom_source_table(tables, "Fără sursă")
 
-    assert table[0] == ["Showroom", "Site", "Telefon", "WhatsApp", "(fără sursă)", "TOTAL"]
+    assert table[0] == ["Showroom", "Site", "Telefon", "WhatsApp", "Fără sursă", "TOTAL"]
     assert table[1] == ["Brașov", 1, 0, 0, 0, 1]
     assert table[4] == ["(fără showroom)", 1, 0, 0, 0, 1]
     assert table[-1] == ["TOTAL", 3, 1, 1, 0, 5]
@@ -128,7 +128,7 @@ def test_showroom_source_table_has_without_source_column_and_totals(
 def test_day_detail_table_closes_each_day_with_total(app_config: AppConfig) -> None:
     tables = weekly_lead_tables(week_frame(app_config), SUNDAY, app_config)
 
-    table = day_detail_table(tables)
+    table = day_detail_table(tables, "Fără sursă")
 
     assert table[1:4] == [
         ["21-09-2026  Luni"],

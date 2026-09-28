@@ -22,15 +22,14 @@ from digest.reports.render import RO_WEEKDAYS, render, target_label, text
 TableRow = list[str | int]
 
 WITHOUT_SHOWROOM = "(fără showroom)"
-WITHOUT_SOURCE = "(fără sursă)"
 
 
 def showroom_label(showroom: str | None) -> str:
     return WITHOUT_SHOWROOM if showroom is None else showroom
 
 
-def source_label(source: str | None) -> str:
-    return WITHOUT_SOURCE if source is None else source
+def source_labels(sources: tuple[str | None, ...], without_source_label: str) -> list[str]:
+    return [without_source_label if source is None else source for source in sources]
 
 
 def short_day_label(day: date) -> str:
@@ -76,8 +75,12 @@ def day_showroom_table(counts: DayShowroomCounts, first_header: str) -> list[Tab
     return [header, *rows, total]
 
 
-def showroom_source_table(tables: WeeklyLeadTables) -> list[TableRow]:
-    header: TableRow = ["Showroom", *map(source_label, tables.sources), "TOTAL"]
+def showroom_source_table(tables: WeeklyLeadTables, without_source_label: str) -> list[TableRow]:
+    header: TableRow = [
+        "Showroom",
+        *source_labels(tables.sources, without_source_label),
+        "TOTAL",
+    ]
     rows: list[TableRow] = [
         [showroom_label(showroom), *by_source.values(), tables.showroom_total(showroom)]
         for showroom, by_source in tables.by_showroom_source.items()
@@ -90,8 +93,10 @@ def showroom_source_table(tables: WeeklyLeadTables) -> list[TableRow]:
     return [header, *rows, total]
 
 
-def day_detail_table(tables: WeeklyLeadTables) -> list[TableRow]:
-    rows: list[TableRow] = [["Zi / Showroom", *map(source_label, tables.sources), "TOTAL"]]
+def day_detail_table(tables: WeeklyLeadTables, without_source_label: str) -> list[TableRow]:
+    rows: list[TableRow] = [
+        ["Zi / Showroom", *source_labels(tables.sources, without_source_label), "TOTAL"]
+    ]
     for day, by_showroom in tables.by_day_showroom_source.items():
         rows.append([long_day_label(day)])
         for showroom, by_source in by_showroom.items():
@@ -128,7 +133,9 @@ def weekly_leads_report(lead_frame: pd.DataFrame, context: ReportContext) -> Mod
             day_showroom_rows=text_rows(
                 day_showroom_table(tables.by_day_showroom, "Zi lucrătoare")
             ),
-            showroom_source_rows=text_rows(showroom_source_table(tables)),
+            showroom_source_rows=text_rows(
+                showroom_source_table(tables, context.config.status_mapping.without_source_label)
+            ),
             working_hours=working_hours_label(context.config),
             excluded_sources=excluded_sources_label(context.config),
         )

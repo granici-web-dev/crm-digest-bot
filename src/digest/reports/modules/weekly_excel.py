@@ -108,6 +108,7 @@ def weekly_workbook(lead_frame: pd.DataFrame, context: ReportContext) -> bytes:
     tables = weekly_lead_tables(lead_frame, report_date, config)
     week_range = week_range_label(tables.by_day_showroom.days)
     sources = excluded_sources_label(config)
+    without_source_label = config.status_mapping.without_source_label
     output = BytesIO()
     workbook = xlsxwriter.Workbook(output, {"in_memory": True})
 
@@ -121,14 +122,14 @@ def weekly_workbook(lead_frame: pd.DataFrame, context: ReportContext) -> bytes:
         0, 0, sheet_text("day_showroom_source_title", week_range=week_range, sources=sources)
     )
     detail.write(1, 0, sheet_text("day_showroom_source_hint"))
-    write_table(detail, 2, day_detail_table(tables))
+    write_table(detail, 2, day_detail_table(tables, without_source_label))
 
     by_source = workbook.add_worksheet(sheet_text("sheet_showroom_source"))
     by_source.write(
         0, 0, sheet_text("showroom_source_title", week_range=week_range, sources=sources)
     )
     by_source.write(1, 0, sheet_text("showroom_source_hint", week_range=week_range))
-    write_table(by_source, 2, showroom_source_table(tables))
+    write_table(by_source, 2, showroom_source_table(tables, without_source_label))
 
     write_lead_sheet(
         workbook,

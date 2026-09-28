@@ -207,7 +207,7 @@ def showroom_keys(showroom: pd.Series, config: AppConfig) -> tuple[str | None, .
 
 def source_keys(source: pd.Series) -> tuple[str | None, ...]:
     # Порядок колонок как в ручных отчётах июля: по убыванию итога недели, при равенстве по
-    # алфавиту, «(fără sursă)» последней.
+    # алфавиту, лиды без источника последней колонкой.
     totals = Counter(source.dropna())
     return (*sorted(totals, key=lambda name: (-totals[name], name)), None)
 

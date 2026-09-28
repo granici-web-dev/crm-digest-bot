@@ -101,7 +101,7 @@ def test_summary_sheets_have_manual_headers_and_totals(app_config: AppConfig) ->
     assert summary[-1] == ("TOTAL", 2, 1, 1, 1, 5)
 
     by_source = sheet_rows(book, "Showroom × sursă")
-    assert by_source[2] == ("Showroom", "Site", "WhatsApp", "(fără sursă)", "TOTAL")
+    assert by_source[2] == ("Showroom", "Site", "WhatsApp", "Fără sursă", "TOTAL")
     assert by_source[-1] == ("TOTAL", 3, 1, 1, 5)
 
     detail = sheet_rows(book, "Zi × showroom × sursă")
