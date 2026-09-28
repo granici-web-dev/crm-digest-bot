@@ -440,5 +440,50 @@ def test_monthly_workbook_client_sheet_matches_repeat_clients(app_config: AppCon
         "Ofertat",
         "Consilier",
         "Revine",
+        "Motiv",
     )
-    assert [(row[0], row[2], row[8]) for row in rows[1:]] == [("10", datetime(2026, 9, 20), "DA")]
+    assert [(row[0], row[2], row[8], row[9]) for row in rows[1:]] == [
+        ("10", datetime(2026, 9, 20), "DA", "telefon/e-mail")
+    ]
+
+
+def repeat_client_frame(app_config: AppConfig) -> pd.DataFrame:
+    return prepare_lead_frame(
+        [
+            lead(
+                1,
+                at(date(2026, 9, 2), 12),
+                category="WON",
+                status_name="Clienți",
+                source_name="Client Fidel",
+                converted_at=at(date(2026, 9, 4), 12),
+            ),
+            lead(
+                2,
+                at(date(2026, 9, 3), 12),
+                category="WON",
+                status_name="Clienți",
+                source_name="Telefon",
+                converted_at=at(date(2026, 9, 5), 12),
+            ),
+        ],
+        app_config,
+    )
+
+
+def test_repeat_clients_text_names_the_reason(app_config: AppConfig) -> None:
+    text = IMPLEMENTED_MODULES["m11"](repeat_client_frame(app_config), context(app_config)).text
+
+    assert "Clienți care revin</b>: 1 din 2 (50,0%)" in text
+    assert "Motiv: telefon/e-mail 0, Client Fidel 1" in text
+
+
+def test_client_sheet_names_repeat_client_source_as_reason(app_config: AppConfig) -> None:
+    result = IMPLEMENTED_MODULES["m19"](repeat_client_frame(app_config), context(app_config))
+    assert result.document is not None
+    rows = sheet_rows(load_workbook(BytesIO(result.document.content)), "Clienți luna")
+
+    assert [(row[0], row[8], row[9]) for row in rows[1:]] == [
+        ("1", "DA", "Client Fidel"),
+        ("2", "NU", None),
+    ]

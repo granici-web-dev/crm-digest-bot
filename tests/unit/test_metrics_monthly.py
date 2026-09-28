@@ -11,6 +11,8 @@ from digest.metrics.frame import prepare_lead_frame
 from digest.metrics.kpi import Period
 from digest.metrics.monthly import (
     BELOW_ALL_LEVELS,
+    REPEAT_BY_CONTACT,
+    REPEAT_BY_SOURCE,
     RepeatClientCounts,
     ScrRow,
     month_window,
@@ -409,8 +411,45 @@ def test_monthly_client_rows_are_month_clients_with_repeat_mark(app_config: AppC
 
     rows = monthly_client_rows(leads, SEPTEMBER_END, app_config)
 
-    assert tuple(rows.columns) == (*LEAD_ROW_COLUMNS, "is_repeat")
+    assert tuple(rows.columns) == (*LEAD_ROW_COLUMNS, "is_repeat", "repeat_reason")
     assert list(rows["lead_id"]) == [3, 2]
     assert list(rows["day"]) == [date(2026, 9, 2), date(2026, 9, 20)]
     assert list(rows["is_repeat"]) == [False, True]
+    assert list(rows["repeat_reason"]) == [None, REPEAT_BY_CONTACT]
     assert len(rows) == monthly_repeat_clients(leads, SEPTEMBER_END, app_config).company.clients
+
+
+def test_repeat_client_source_counts_once_and_contact_match_wins(app_config: AppConfig) -> None:
+    leads = frame(
+        app_config,
+        client(1, at(date(2026, 3, 10), 12), "phone-a"),
+        # Первая покупка до mefi: контакт не совпадает, повторный по источнику.
+        client(2, at(date(2026, 9, 10), 12), "phone-new", source_name="Client Fidel"),
+        # Оба признака: одна причина, контакт, считается один раз.
+        client(3, at(date(2026, 9, 11), 12), "phone-a", source_name="Client Fidel"),
+        client(4, at(date(2026, 9, 12), 12), "phone-b", source_name="Telefon"),
+        # Client Fidel вне месяца в клиенты месяца не входит.
+        client(5, at(date(2026, 8, 10), 12), "phone-c", source_name="Client Fidel"),
+    )
+
+    repeat_clients = monthly_repeat_clients(leads, SEPTEMBER_END, app_config)
+    rows = monthly_client_rows(leads, SEPTEMBER_END, app_config)
+
+    assert repeat_clients.company == RepeatClientCounts(clients=3, repeat=2, by_source=1)
+    assert repeat_clients.company.by_contact == 1
+    assert dict(zip(rows["lead_id"], rows["repeat_reason"], strict=True)) == {
+        2: REPEAT_BY_SOURCE,
+        3: REPEAT_BY_CONTACT,
+        4: None,
+    }
+
+
+def test_repeat_client_source_without_converted_at_is_not_a_month_client(
+    app_config: AppConfig,
+) -> None:
+    leads = frame(app_config, client(1, None, "phone-a", source_name="Client Fidel"))
+
+    repeat_clients = monthly_repeat_clients(leads, SEPTEMBER_END, app_config)
+
+    assert repeat_clients.company == RepeatClientCounts(clients=0, repeat=0)
+    assert repeat_clients.won_without_converted_at == 1

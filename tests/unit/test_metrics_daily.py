@@ -181,6 +181,7 @@ def test_repository_sources_are_all_covered_by_the_row_invariant(app_config: App
         *sources.whatsapp,
         *sources.partner,
         *sources.other,
+        *sources.repeat_client,
     ]
     assert sorted(grouped) == sorted(ALL_CONFIGURED_SOURCES)
 
@@ -526,6 +527,33 @@ def test_other_sources_go_to_alte_and_unknown_ones_are_reported(app_config: AppC
     assert counts.total.leads_other == 4
     assert counts.total.leads_phone == 1
     assert counts.unknown_source_lead_ids == (3, 4)
+
+
+def test_repeat_client_source_stays_in_alte_and_rows_sum_to_leads(app_config: AppConfig) -> None:
+    # До группы sources.repeat_client «Client Fidel» шёл в Alte через sources.other: строка и
+    # итог не меняются, и источник не считается неизвестным.
+    today = frame(
+        app_config,
+        lead(1, source_name="Client Fidel"),
+        lead(2, source_name="Client Fidel", contact_phone_key=PHONE_KEY),
+        lead(3, source_name="Recomandare"),
+        lead(4, source_name="Telefon"),
+        old_lead(5, contact_phone_key=PHONE_KEY),
+    )
+
+    counts = counts_of(app_config, today)
+
+    total = counts.total
+    assert (total.leads_other, total.leads_phone, total.showroom_visits) == (3, 1, 0)
+    assert total.leads == (
+        total.leads_partner
+        + total.leads_other
+        + total.leads_web
+        + total.leads_phone
+        + total.leads_whatsapp
+    )
+    assert total.leads == 4
+    assert counts.unknown_source_lead_ids == ()
 
 
 @pytest.mark.parametrize(

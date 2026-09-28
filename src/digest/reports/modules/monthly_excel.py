@@ -7,6 +7,8 @@ import xlsxwriter
 from digest.config import KPI_NAMES
 from digest.metrics.kpi import kpis_from
 from digest.metrics.monthly import (
+    REPEAT_BY_CONTACT,
+    REPEAT_BY_SOURCE,
     month_window,
     monthly_client_rows,
     monthly_funnel,
@@ -217,11 +219,18 @@ def monthly_workbook(lead_frame: pd.DataFrame, context: ReportContext) -> bytes:
         client_rows.assign(
             is_repeat=client_rows["is_repeat"].map(
                 {True: sheet_text("repeat_yes"), False: sheet_text("repeat_no")}
-            )
+            ),
+            # Причина по источнику подписана самим источником, как в mefi («Client Fidel»).
+            repeat_reason=client_rows["repeat_reason"]
+            .map({REPEAT_BY_CONTACT: sheet_text("repeat_by_contact")})
+            .where(client_rows["repeat_reason"].ne(REPEAT_BY_SOURCE), client_rows["source_name"]),
         ),
         context.config,
         context.lead_links,
-        (("is_repeat", sheet_text("column_repeat")),),
+        (
+            ("is_repeat", sheet_text("column_repeat")),
+            ("repeat_reason", sheet_text("column_repeat_reason")),
+        ),
     )
     workbook.close()
     return output.getvalue()

@@ -192,13 +192,22 @@ class SourceGroups(StrictConfigModel):
     whatsapp: list[str]
     partner: list[str]
     other: list[str]
+    repeat_client: list[str]
 
     @model_validator(mode="after")
     def row_groups_are_disjoint(self) -> Self:
         # Строки d1 взаимоисключающие только при непересекающихся группах: источник в двух
         # группах молча посчитался бы в двух строках (site это подмножество web, не строка).
         group_by_source: dict[str, str] = {}
-        for group_name in ("showroom_visit", "web", "phone", "whatsapp", "partner", "other"):
+        for group_name in (
+            "showroom_visit",
+            "web",
+            "phone",
+            "whatsapp",
+            "partner",
+            "other",
+            "repeat_client",
+        ):
             for source in getattr(self, group_name):
                 if source in group_by_source:
                     raise ValueError(

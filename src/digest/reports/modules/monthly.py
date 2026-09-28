@@ -18,7 +18,7 @@ from digest.metrics.monthly import (
 from digest.reports.charts import chart_labels, funnel_chart, trend_chart
 from digest.reports.context import ModuleResult, ReportContext, ReportPhoto
 from digest.reports.modules.weekly import WITHOUT_SHOWROOM
-from digest.reports.render import render, target_label
+from digest.reports.render import render, target_label, text
 
 # m5 в Telegram: девять KPI не помещаются в одну строку <code> на телефоне.
 COCKPIT_KPI_LINES = (KPI_NAMES[:5], KPI_NAMES[5:])
@@ -157,5 +157,7 @@ def repeat_clients_report(lead_frame: pd.DataFrame, context: ReportContext) -> M
             "repeat_clients",
             repeat_clients=monthly_repeat_clients(lead_frame, context.report_date, context.config),
             without_showroom=WITHOUT_SHOWROOM,
+            repeat_by_contact=text("repeat_by_contact"),
+            repeat_sources=", ".join(context.config.status_mapping.sources.repeat_client),
         )
     )

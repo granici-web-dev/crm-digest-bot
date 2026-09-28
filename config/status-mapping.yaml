@@ -187,7 +187,10 @@ sources:
   partner: ["Colaborare", "Arhirtect"]
   # Google (id 1) и Teren (id 4): лидов нет, имена из enums.md не проверены.
   # "BIFE 2026" встречается и как источник, и как статус (выставка BIFE-SIM 2026).
-  other: ["Recomandare", "Client Fidel", "Google", "Teren", "BIFE 2026"]
+  other: ["Recomandare", "Google", "Teren", "BIFE 2026"]
+  # m11: клиент с этим источником повторный без совпадения контакта: первая покупка таких
+  # клиентов была до mefi, по телефону их не найти (снапшот 28.09.2026). В d1 строка Alte.
+  repeat_client: ["Client Fidel"]
 
 # Порядок блоков в отчётах, как в ручном отчёте продавцов.
 showrooms: ["Brașov", "București", "Cluj"]

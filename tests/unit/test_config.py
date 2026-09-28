@@ -372,6 +372,8 @@ def test_new_sources_are_in_groups(app_config: AppConfig) -> None:
     sources = app_config.status_mapping.sources
     assert "FacebookMessanger" in sources.web
     assert "BIFE 2026" in sources.other
+    assert sources.repeat_client == ["Client Fidel"]
+    assert "Client Fidel" not in sources.other
 
 
 def test_site_sources_must_be_web() -> None:
@@ -382,7 +384,9 @@ def test_site_sources_must_be_web() -> None:
         StatusMapping.model_validate(raw_mapping)
 
 
-@pytest.mark.parametrize("group_name", ["showroom_visit", "phone", "whatsapp", "partner", "other"])
+@pytest.mark.parametrize(
+    "group_name", ["showroom_visit", "phone", "whatsapp", "partner", "other", "repeat_client"]
+)
 def test_source_in_two_row_groups_fails_config_load(group_name: str) -> None:
     raw_mapping = repository_yaml("status-mapping.yaml")
     raw_mapping["sources"][group_name].append("Meta ADS")

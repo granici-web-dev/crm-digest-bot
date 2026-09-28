@@ -92,9 +92,12 @@ def lead_row_flags(today_frame: pd.DataFrame, period: Period, config: AppConfig)
             *sources.whatsapp,
             *sources.partner,
             *sources.other,
+            *sources.repeat_client,
         ]
     )
-    is_other = is_revenire | source.isin(sources.other) | is_unknown_source
+    # Повторный клиент по источнику (m11) в d1 обычный лид строки Alte, как sources.other.
+    is_other_source = source.isin([*sources.other, *sources.repeat_client])
+    is_other = is_revenire | is_other_source | is_unknown_source
     counted = in_window & ~is_partner
     return pd.DataFrame(
         {

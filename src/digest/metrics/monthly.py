@@ -28,6 +28,9 @@ from digest.metrics.weekly import (
 
 TREND_MONTHS = 6
 BELOW_ALL_LEVELS = "below_levels"
+# Причина повторного клиента m11, значение столбца repeat_reason.
+REPEAT_BY_CONTACT = "contact"
+REPEAT_BY_SOURCE = "source"
 
 
 @dataclass(frozen=True)
@@ -118,6 +121,12 @@ class MonthlyLossReasons:
 class RepeatClientCounts:
     clients: int
     repeat: int
+    # Часть repeat: источник из sources.repeat_client без совпадения контакта.
+    by_source: int = 0
+
+    @property
+    def by_contact(self) -> int:
+        return self.repeat - self.by_source
 
     @property
     def share(self) -> float | None:
@@ -233,11 +242,28 @@ def monthly_lead_rows(
     return lead_rows(leads.assign(day=leads["created_at"].dt.tz_localize(None).dt.date))
 
 
-def repeat_client_flags(lead_frame: pd.DataFrame) -> pd.Series:
-    # docs/kpi-definitions.md, «Месячное окно», m11: клиент повторный, если непустой ключ телефона
-    # или e-mail совпал с другим лидом WON, чей converted_at строго раньше. Сравнение внутри
-    # одного снапшота, как revenire d1 (ADR-006); равные converted_at друг друга не повторяют.
+def repeat_client_reasons(lead_frame: pd.DataFrame, config: AppConfig) -> pd.Series:
+    # docs/kpi-definitions.md, «Месячное окно», m11. Совпадение контакта проверяется первым:
+    # оно доказывает покупку в mefi, источник это слово продавца. Клиент с обоими признаками
+    # получает одну причину и считается один раз.
     clients = lead_frame[lead_frame["is_clienti"] & lead_frame["converted_at"].notna()]
+    by_contact = contact_repeat_flags(clients)
+    by_source = clients["source_name"].isin(config.status_mapping.sources.repeat_client)
+    # Не через присваивание по маске: оно превращает None в NaN.
+    return pd.Series(
+        [
+            REPEAT_BY_CONTACT if contact else REPEAT_BY_SOURCE if source else None
+            for contact, source in zip(by_contact, by_source, strict=True)
+        ],
+        index=clients.index,
+        dtype=object,
+    )
+
+
+def contact_repeat_flags(clients: pd.DataFrame) -> pd.Series:
+    # Непустой ключ телефона или e-mail совпал с другим лидом WON, чей converted_at строго
+    # раньше. Сравнение внутри одного снапшота, как revenire d1 (ADR-006); равные converted_at
+    # друг друга не повторяют.
     flags = pd.Series(False, index=clients.index)
     earlier_phone_keys: set[str] = set()
     earlier_email_keys: set[str] = set()
@@ -254,13 +280,18 @@ def month_clients(lead_frame: pd.DataFrame, report_date: date, config: AppConfig
     window = month_window(report_date, config.status_mapping.time)
     converted_at = lead_frame["converted_at"]
     in_window = converted_at.ge(window.start) & converted_at.lt(window.end)
+    reasons = repeat_client_reasons(lead_frame, config)
     return lead_frame[lead_frame["is_clienti"] & in_window].assign(
-        is_repeat=repeat_client_flags(lead_frame)
+        repeat_reason=reasons, is_repeat=reasons.notna()
     )
 
 
 def repeat_client_counts(clients: pd.DataFrame) -> RepeatClientCounts:
-    return RepeatClientCounts(len(clients), int(clients["is_repeat"].sum()))
+    return RepeatClientCounts(
+        len(clients),
+        int(clients["is_repeat"].sum()),
+        int(clients["repeat_reason"].eq(REPEAT_BY_SOURCE).sum()),
+    )
 
 
 def monthly_repeat_clients(
@@ -290,6 +321,6 @@ def monthly_client_rows(
     # Те же клиенты, что «din N» в m11; день листа это день converted_at по Бухаресту.
     clients = month_clients(lead_frame, report_date, config)
     rows = clients.assign(day=clients["converted_at"].dt.tz_localize(None).dt.date)
-    return rows.sort_values(["day", "converted_at"])[[*LEAD_ROW_COLUMNS, "is_repeat"]].reset_index(
-        drop=True
-    )
+    return rows.sort_values(["day", "converted_at"])[
+        [*LEAD_ROW_COLUMNS, "is_repeat", "repeat_reason"]
+    ].reset_index(drop=True)
