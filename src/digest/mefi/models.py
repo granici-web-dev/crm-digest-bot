@@ -43,6 +43,8 @@ LENIENT_FIELD_ADAPTERS: dict[str, TypeAdapter[Any]] = {
     "status_changed_at": TypeAdapter(AwareDatetime),
     "last_contact_at": TypeAdapter(AwareDatetime),
     "converted_at": TypeAdapter(AwareDatetime),
+    "phone": TypeAdapter(str),
+    "email": TypeAdapter(str),
 }
 CUSTOM_FIELD_ADAPTER = TypeAdapter(MefiCustomField)
 
@@ -79,6 +81,9 @@ class MefiLead(MefiModel):
     status_changed_at: AwareDatetime | None = None
     last_contact_at: AwareDatetime | None = None
     converted_at: AwareDatetime | None = None
+    # Только для ключей контакта (digest.contact_keys): в raw снапшота phone и email не пишутся.
+    phone: str | None = None
+    email: str | None = None
     custom_fields: list[MefiCustomField] = []
     invalid_shape_fields: list[InvalidShapeField] = []
 

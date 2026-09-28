@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from collections.abc import AsyncIterator, Callable, Coroutine, Iterator
 from datetime import UTC, date, datetime, time
 from typing import Any
@@ -9,7 +10,7 @@ import httpx
 import pytest
 import respx
 from pydantic import SecretStr, ValidationError
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.app import missing_final_snapshot_alerts
@@ -33,6 +34,7 @@ from factories import (
     TEST_CONTACT_HASH_KEY,
     FakeClientsSearch,
     make_client,
+    make_custom_fields,
     make_lead,
     make_search_page,
     recorded_search_clients,
@@ -857,3 +859,122 @@ async def test_final_snapshots_of_today_and_yesterday_give_no_alert(engine: Asyn
     )
 
     assert alerts == []
+
+
+SYNTHETIC_PERSONAL_DATA = (
+    "SINTETIC-NUME",
+    "711000001",
+    "sintetic.lead@example.test",
+    "1900101009991",
+    "711000002",
+    "RO99999991",
+    "Strada Sintetica 9",
+    "711000003",
+    "711000004",
+    "711000005",
+    "SINTETIC-CLIENT",
+    "ZZ999991",
+    "2900101009992",
+    "RO49SINT0000000000009993",
+    "Strada Facturare 7",
+    "sintetic.example.test",
+    "711000006",
+    "711000007",
+    "711000008",
+    "711000009",
+    "1900101009994",
+)
+
+
+def lead_with_synthetic_personal_data() -> dict[str, Any]:
+    textarea = "Revine, sunati pe +40 711 000 004"
+    return make_lead(
+        id=1,
+        name="Ion SINTETIC-NUME",
+        phone="+40 711 000 001",
+        email="sintetic.lead@example.test",
+        identity={"card_number": None, "personal_id": "1900101009991"},
+        business={"name": "SRL", "phone": "+40711000002"},
+        company={"name": "SRL", "fiscal_code": "RO99999991"},
+        location={"address_line": "Strada Sintetica 9", "city": "Cluj"},
+        description="Sunati +40711000003",
+        custom_fields=[
+            *make_custom_fields(),
+            {
+                "field_id": 8,
+                "name": "Revenire 1 (Data+Info)",
+                "type": "textarea",
+                "value": textarea,
+            },
+            {"field_id": 51, "name": "Mesaj", "type": "textarea", "value": textarea},
+            {"field_id": 60, "name": "Telefon 2", "type": "input", "value": "+40711000005"},
+        ],
+    )
+
+
+def client_with_synthetic_personal_data() -> dict[str, Any]:
+    return make_client(
+        id=10,
+        name="Maria SINTETIC-CLIENT",
+        identity={"card_number": "ZZ999991", "personal_id": "2900101009992"},
+        banking={"bank_name": "BANCA", "iban": "RO49SINT0000000000009993"},
+        billing={"address": "Strada Facturare 7", "city": "Cluj"},
+        shipping={"address": "Strada Facturare 7", "city": "Cluj"},
+        website="https://sintetic.example.test",
+        custom_fields=[
+            {"field_id": 15, "name": "Showroom", "type": "select", "value": "Cluj"},
+            {"field_id": 13, "name": "Informatii", "type": "textarea", "value": "+40711000006"},
+            {"field_id": 60, "name": "Telefon 2", "type": "input", "value": "+40711000007"},
+        ],
+        responsibles=[{"id": 12, "name": "Dragoi Mihaela", "phone": "+40711000008"}],
+        elimination={
+            "type": "lost",
+            "reason": {"id": 3, "name": "BUGET"},
+            "detailed_reason": "Clientul a sunat de pe +40711000009",
+        },
+        cnp="1900101009994",
+    )
+
+
+async def stored_text_of(engine: AsyncEngine, table_name: str) -> str:
+    async with engine.connect() as connection:
+        return str(
+            await connection.scalar(
+                text(f"SELECT coalesce(string_agg(stored::text, ' '), '') FROM {table_name} stored")
+            )
+        )
+
+
+async def test_synthetic_personal_data_reaches_no_table_log_or_alert(
+    engine: AsyncEngine,
+    mefi_client: MefiClient,
+    mefi_mock: respx.MockRouter,
+    app_config: AppConfig,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    mefi_returns(mefi_mock, [lead_with_synthetic_personal_data()])
+    mefi_returns_clients(mefi_mock, [client_with_synthetic_personal_data()])
+
+    outcome = await snapshot_with_clients(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
+
+    run = await run_row(engine, outcome.run_id)
+    assert (run.status, run.clients_status, run.leads_written, run.clients_written) == (
+        "success",
+        "success",
+        1,
+        1,
+    )
+    stored = " ".join(
+        [
+            await stored_text_of(engine, "lead_snapshots"),
+            await stored_text_of(engine, "client_snapshots"),
+            await stored_text_of(engine, "snapshot_runs"),
+            outcome.clients_alert or "",
+            caplog.text,
+        ]
+    )
+    leaked = [value for value in SYNTHETIC_PERSONAL_DATA if value in stored]
+    assert leaked == []
+    assert outcome.clients_alert is not None
+    assert "custom_fields.60 «Telefon 2»" in outcome.clients_alert

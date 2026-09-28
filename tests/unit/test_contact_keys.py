@@ -16,8 +16,8 @@ def test_different_phone_numbers_give_different_keys() -> None:
     assert phone_contact_key("0712345678", SECRET) != phone_contact_key("0712345679", SECRET)
 
 
-@pytest.mark.parametrize("phone", ["123", "", "   ", "71234567", None, 712345678])
-def test_phone_shorter_than_nine_digits_or_not_text_has_no_key(phone: object) -> None:
+@pytest.mark.parametrize("phone", ["123", "", "   ", "71234567", None])
+def test_phone_shorter_than_nine_digits_has_no_key(phone: str | None) -> None:
     assert phone_contact_key(phone, SECRET) is None
 
 
@@ -27,8 +27,8 @@ def test_email_is_trimmed_and_lowercased() -> None:
     )
 
 
-@pytest.mark.parametrize("email", ["", "   ", None, 5])
-def test_empty_or_not_text_email_has_no_key(email: object) -> None:
+@pytest.mark.parametrize("email", ["", "   ", None])
+def test_empty_email_has_no_key(email: str | None) -> None:
     assert email_contact_key(email, SECRET) is None
 
 

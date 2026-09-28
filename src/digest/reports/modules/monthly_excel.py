@@ -31,11 +31,18 @@ COUNT_HEADERS = (
     ("clienti", "Clienți"),
 )
 FUNNEL_KPI_NAMES = ("scr", "l2o", "o2c")
+# O2C = Clienți / Oferte (docs/kpi-definitions.md): ступень статуса «Clienți», а не договор.
+KPI_HEADER_WORDS = {"o2c": "Ofertă→Client"}
 NAME_COLUMN_WIDTH = 22
 VALUE_COLUMN_WIDTH = 10
 MISSING_VALUE = "—"
 TARGET_MET_COLOR = "#008300"
 TARGET_MISSED_COLOR = "#c62828"
+
+
+def kpi_header(kpi_name: str) -> str:
+    words = KPI_HEADER_WORDS.get(kpi_name)
+    return kpi_name.upper() if words is None else f"{kpi_name.upper()} ({words})"
 
 
 def write_share(
@@ -64,7 +71,7 @@ def write_manager_sheet(
             "Consilier",
             "Showroom",
             *(label for _, label in COUNT_HEADERS),
-            *(name.upper() for name in KPI_NAMES),
+            *(kpi_header(name) for name in KPI_NAMES),
         ],
     )
     worksheet.write(1, 0, "Țintă")
@@ -102,7 +109,7 @@ def write_funnel_sheet(
         [
             "Showroom",
             *(label for _, label in COUNT_HEADERS),
-            *(name.upper() for name in FUNNEL_KPI_NAMES),
+            *(kpi_header(name) for name in FUNNEL_KPI_NAMES),
         ],
     )
     rows = [

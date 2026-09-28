@@ -48,9 +48,12 @@ def test_coinciding_chat_ids_fail_settings_load(overrides: dict[str, int]) -> No
         make_settings(**overrides)
 
 
-def test_short_contact_hash_key_fails_settings_load() -> None:
-    with pytest.raises(ValidationError, match="CONTACT_HASH_KEY короче 32"):
-        make_settings(contact_hash_key="k" * 31)
+def test_short_contact_hash_key_fails_settings_load_without_showing_it() -> None:
+    short_key = "shortsecret-" + "7" * 19
+
+    with pytest.raises(ValidationError, match="CONTACT_HASH_KEY короче 32") as error:
+        make_settings(contact_hash_key=short_key)
+    assert short_key not in str(error.value)
 
 
 @pytest.mark.parametrize(("dry_run", "chat_id"), [(True, TEST_CHAT_ID), (False, GROUP_CHAT_ID)])

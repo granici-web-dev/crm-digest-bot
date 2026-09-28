@@ -328,7 +328,7 @@ def test_monthly_workbook_funnel_and_loss_sheets(app_config: AppConfig) -> None:
         "Clienți",
         "SCR",
         "L2O",
-        "O2C",
+        "O2C (Ofertă→Client)",
     )
     assert funnel[1][:5] == ("Brașov", 10, 10, 2, 1)
     total = row_labelled(funnel, "Total")

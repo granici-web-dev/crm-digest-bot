@@ -269,6 +269,20 @@ def test_invalid_secondary_fields_become_null_and_are_recorded(app_config: AppCo
     ]
 
 
+def test_contact_that_is_not_text_gets_no_key_and_is_recorded(app_config: AppConfig) -> None:
+    parsed, _ = parse_leads([make_lead(phone=712345678, email=5)])
+
+    row, problems = lead_to_snapshot_row(
+        parsed[0], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping, CONTACT_SECRET
+    )
+
+    assert (row["contact_phone_key"], row["contact_email_key"]) == (None, None)
+    assert problems == [
+        CustomFieldProblem(None, "phone", "invalid_shape", None),
+        CustomFieldProblem(None, "email", "invalid_shape", None),
+    ]
+
+
 def test_null_custom_fields_is_not_a_shape_problem() -> None:
     parsed, skipped = parse_leads([make_lead(custom_fields=None)])
 

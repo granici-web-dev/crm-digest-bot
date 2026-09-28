@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 import pytest
 
 from digest.config import AppConfig
-from digest.metrics.frame import prepare_lead_frame, unknown_manager_ids
+from digest.metrics.frame import prepare_client_frame, prepare_lead_frame, unknown_manager_ids
 from digest.snapshot import categorize
 from factories import make_snapshot_row, raw_repository_config
 
@@ -99,6 +99,13 @@ def test_naive_timestamp_fails_instead_of_being_read_as_utc(app_config: AppConfi
 
     with pytest.raises(ValueError, match="created_at"):
         prepare_lead_frame([row], app_config)
+
+
+def test_naive_client_timestamp_fails_instead_of_being_read_as_utc(app_config: AppConfig) -> None:
+    row = {"client_id": 1, "created_at": datetime(2026, 9, 23, 16, 30), "showroom": "Cluj"}
+
+    with pytest.raises(ValueError, match="created_at клиента"):
+        prepare_client_frame([row], app_config)
 
 
 def test_useful_and_leads_exclusions_follow_config_flags() -> None:

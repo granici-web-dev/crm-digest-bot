@@ -8,6 +8,8 @@ from zoneinfo import ZoneInfo
 from digest.app import create_report_deps, run_app, seed_defaults
 from digest.config import load_app_config
 from digest.db.engine import create_database_engine
+from digest.delivery.ops import OpsChannel, notify_ops
+from digest.delivery.telegram import create_bot
 from digest.log_format import configure_logging
 from digest.mefi.client import MefiClient, create_mefi_http_client
 from digest.reports.periods import REPORT_LEVELS, ReportLevel
@@ -61,6 +63,10 @@ async def run_manual_snapshot(app_settings: Settings) -> int:
     clients_http_client = create_mefi_http_client(
         app_settings.mefi_base_url, app_settings.mefi_clients_api_key
     )
+    ops = OpsChannel(
+        create_bot(app_settings.telegram_ops_bot_token.get_secret_value()),
+        app_settings.telegram_ops_chat_id,
+    )
     now = datetime.now(ZoneInfo(config.status_mapping.time.timezone))
     try:
         sources = SnapshotSources(
@@ -71,12 +77,19 @@ async def run_manual_snapshot(app_settings: Settings) -> int:
         outcome = await run_daily_snapshot(
             engine, sources, config.status_mapping, app_settings.tenant_id, now
         )
+        # Ручной прогон алертит как плановый: сбой клиентов не должен остаться только в консоли.
+        if outcome.clients_alert is not None:
+            await notify_ops(ops, outcome.clients_alert)
     except Exception as error:
         logger.error("manual snapshot failed", extra={"error": describe_error(error)})
+        await notify_ops(
+            ops, f"Ручной снапшот за {now:%d.%m.%Y %H:%M} не удался: {describe_error(error)}."
+        )
         return 1
     finally:
         await http_client.aclose()
         await clients_http_client.aclose()
+        await ops.bot.session.close()
         await engine.dispose()
     print(f"snapshot_run {outcome.run_id} {outcome.status}")
     if outcome.status == "preview":

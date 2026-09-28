@@ -220,7 +220,7 @@ Vizite showroom: 14 (Brașov 5, București 6, Cluj 3)
 
 ```
 52 lead-uri → 41 utile (–11 irelevante) → 19 oferte → 4 contracte
-Lead→Ofertă 46% · Ofertă→Contract 21%
+Lead→Ofertă 46% · Ofertă→Client 21%
 ```
 
 Пример RU:

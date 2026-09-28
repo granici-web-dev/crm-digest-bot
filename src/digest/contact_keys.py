@@ -11,8 +11,8 @@ def contact_key(normalized_contact: str, secret: bytes) -> str:
     return hmac.new(secret, normalized_contact.encode(), hashlib.sha256).hexdigest()
 
 
-def phone_contact_key(phone: object, secret: bytes) -> str | None:
-    if not isinstance(phone, str):
+def phone_contact_key(phone: str | None, secret: bytes) -> str | None:
+    if phone is None:
         return None
     digits = NON_DIGITS.sub("", phone)
     # +40 712 345 678, 0712 345 678 и 712345678 это один номер: общие у них последние 9 цифр.
@@ -22,8 +22,8 @@ def phone_contact_key(phone: object, secret: bytes) -> str | None:
     return contact_key(digits[-PHONE_KEY_DIGITS:], secret)
 
 
-def email_contact_key(email: object, secret: bytes) -> str | None:
-    if not isinstance(email, str):
+def email_contact_key(email: str | None, secret: bytes) -> str | None:
+    if email is None:
         return None
     normalized_email = email.strip().lower()
     if not normalized_email:

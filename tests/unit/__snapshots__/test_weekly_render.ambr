@@ -42,7 +42,7 @@
   '''
   <b>Pâlnia săptămânii</b> (lead-uri create în săptămână)
   Lead-uri (toate sursele, inclusiv vizite) 6 → Utile 6 (irelevante 0) → Oferte 1 → Clienți 0
-  Lead→Ofertă 17% · Ofertă→Contract 0%
+  Lead→Ofertă 17% · Ofertă→Client 0%
   <i>Clienți: din lead-urile săptămânii, status la data raportului. Ofertele și clienții din aceste lead-uri vor mai crește.</i>
   '''
 # ---

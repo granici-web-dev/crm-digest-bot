@@ -332,8 +332,8 @@ def lead_to_snapshot_row(
             status_mapping.raw_custom_fields.keep,
         ),
         # Сами phone и email вырезаны raw_strip: для правил визита d1 хватает равенства ключей.
-        "contact_phone_key": phone_contact_key(parsed_lead.raw.get("phone"), contact_secret),
-        "contact_email_key": email_contact_key(parsed_lead.raw.get("email"), contact_secret),
+        "contact_phone_key": phone_contact_key(lead.phone, contact_secret),
+        "contact_email_key": email_contact_key(lead.email, contact_secret),
     }
     problems = [
         problem

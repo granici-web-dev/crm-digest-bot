@@ -3,13 +3,13 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Any
 
 import httpx
 from pydantic import SecretStr
 
-from digest.mefi.models import MefiSearchPage
+from digest.mefi.models import MefiClientRecord, MefiSearchPage
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +87,6 @@ class ClientsRangeShortfall:
 class MefiClientsDump:
     clients: list[dict[str, Any]]
     api_total: int
-    rate_limited_count: int
     # Сумма meta.total диапазонов: расходится с api_total, если клиентов добавили или удалили
     # между запросами выгрузки.
     ranges_total: int
@@ -175,12 +174,12 @@ class MefiClient:
         )
         api_total = probe.meta.total
         if not probe.data:
-            return MefiClientsDump([], api_total, rate_limited_count, 0, [])
+            return MefiClientsDump([], api_total, 0, [])
         # Сортировка mefi без тай-брейка: у импорта 05.02 474 клиента за 11 секунд, и на
         # стыках страниц created_at одни и те же клиенты приходят дважды, а другие ни разу
         # (docs/mefi-clients-notes.md, «Выгрузка»). Поэтому делим по дням до диапазонов
         # в одну страницу. День сдвинут на запас: в какой таймзоне mefi режет дни, неизвестно.
-        earliest_created = datetime.fromisoformat(probe.data[0]["created_at"]).date()
+        earliest_created = MefiClientRecord.model_validate(probe.data[0]).created_at.date()
         pending_ranges = [(earliest_created - timedelta(days=1), created_until)]
         while pending_ranges:
             created_from, created_to = pending_ranges.pop()
@@ -215,7 +214,6 @@ class MefiClient:
         return MefiClientsDump(
             clients=[*clients_by_id.values(), *clients_without_int_id],
             api_total=api_total,
-            rate_limited_count=rate_limited_count,
             ranges_total=ranges_total,
             range_shortfalls=sorted(range_shortfalls, key=lambda shortfall: shortfall.created_from),
         )

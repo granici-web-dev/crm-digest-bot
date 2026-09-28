@@ -81,6 +81,9 @@ def unknown_manager_ids(lead_frame: pd.DataFrame, config: AppConfig) -> set[int]
 
 def prepare_client_frame(rows: list[dict[str, Any]], config: AppConfig) -> pd.DataFrame:
     client_frame = pd.DataFrame.from_records(rows, columns=list(CLIENT_FRAME_COLUMNS))
+    # Как у лидов: naive-время utc=True сдвинуло бы окно Contract Cantitate на 2–3 часа.
+    if any(value.tzinfo is None for value in client_frame["created_at"].dropna()):
+        raise ValueError("created_at клиента: время без таймзоны, окна отчётов посчитать нельзя")
     client_frame["created_at"] = pd.to_datetime(client_frame["created_at"], utc=True).dt.tz_convert(
         config.status_mapping.time.timezone
     )

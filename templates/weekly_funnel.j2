@@ -1,5 +1,5 @@
 {% set counts = funnel.counts %}
 <b>Pâlnia săptămânii</b> (lead-uri create în săptămână)
 Lead-uri (toate sursele, inclusiv vizite) {{ counts.leads }} → Utile {{ counts.useful }} (irelevante {{ counts.irr_leads }}) → Oferte {{ counts.offers }} → Clienți {{ counts.clienti }}
-Lead→Ofertă {{ funnel.kpis.l2o | percent }} · Ofertă→Contract {{ funnel.kpis.o2c | percent }}
+Lead→Ofertă {{ funnel.kpis.l2o | percent }} · Ofertă→Client {{ funnel.kpis.o2c | percent }}
 <i>{{ clienti_note }}. Ofertele și clienții din aceste lead-uri vor mai crește.</i>

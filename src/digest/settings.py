@@ -9,14 +9,20 @@ CONTACT_HASH_KEY_MIN_LENGTH = 32
 
 class DatabaseSettings(BaseSettings):
     # Миграциям нужен только DATABASE_URL: без токенов ботов alembic тоже должен работать.
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_ignore_empty=True)
+    model_config = SettingsConfigDict(
+        env_file=".env", extra="ignore", env_ignore_empty=True, hide_input_in_errors=True
+    )
 
     database_url: SecretStr
 
 
 class Settings(BaseSettings):
     # env_ignore_empty: пустое DRY_RUN= из .env.example значит «не задано», а не ошибка bool.
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_ignore_empty=True)
+    # hide_input_in_errors: SecretStr не маскирует input_value в тексте ValidationError,
+    # и короткий CONTACT_HASH_KEY или битый токен попали бы в лог старта.
+    model_config = SettingsConfigDict(
+        env_file=".env", extra="ignore", env_ignore_empty=True, hide_input_in_errors=True
+    )
 
     database_url: SecretStr
     mefi_base_url: str

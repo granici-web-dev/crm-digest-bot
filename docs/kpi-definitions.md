@@ -49,7 +49,7 @@
 |---|---|---|---|
 | SCR | Sales Conversion Rate | `CLIENTI / USEFUL` | > 10 % |
 | L2O | Lead to Offer | `OFFERS / USEFUL` | > 50 %, информативно |
-| O2C | Offer to Contract | `CLIENTI / OFFERS` | > 20 %, информативно |
+| O2C | Offer to Client | `CLIENTI / OFFERS` | > 20 %, информативно |
 | CDR | Contact Discipline Rate | `(LEADS − NAR) / LEADS` | > 90 % |
 | PLR | Price Lost Rate | `BUGET / (LEADS − IRR_LEADS − NAR)` | < 25 % |
 | SC | Showroom Conversion | `count(CLIENTI ∩ SHOWROOM_VISITS) / count(SHOWROOM_VISITS)` | > 20 % |
