@@ -1,13 +1,19 @@
 from collections import Counter
 from dataclasses import dataclass
-from datetime import date, time, timedelta
+from datetime import date, timedelta
 
 import pandas as pd
 
 from digest.config import AppConfig, TimeSettings
 from digest.metrics.breakdown import BreakdownColumn, lead_counts_by_column
 from digest.metrics.cockpit import meets_target
-from digest.metrics.daily import PreviousSnapshot, daily_window, transition_flags
+from digest.metrics.daily import (
+    PreviousSnapshot,
+    daily_window,
+    daily_window_days,
+    shifted_days,
+    transition_flags,
+)
 from digest.metrics.kpi import (
     Kpis,
     LeadCounts,
@@ -151,14 +157,6 @@ def weekly_window(report_date: date, time_settings: TimeSettings) -> Period:
     )
 
 
-def shifted_days(created_at: pd.Series, same_day: pd.Series) -> pd.Series:
-    # tz_localize(None) оставляет время по Бухаресту: день берётся по местным часам, в том числе
-    # в день перевода часов.
-    local_day = created_at.dt.tz_localize(None).dt.normalize()
-    days: pd.Series = (local_day + pd.to_timedelta((~same_day).astype(int), unit="D")).dt.date
-    return days
-
-
 def working_days(created_at: pd.Series, time_settings: TimeSettings) -> pd.Series:
     # Правило ручного понедельничного отчёта (docs/kpi-definitions.md, «Недельные окна»): лид в
     # [10:00, 19:00) по Бухаресту идёт в свой день, любой другой, включая утро до 10:00,
@@ -166,13 +164,6 @@ def working_days(created_at: pd.Series, time_settings: TimeSettings) -> pd.Serie
     hours = time_settings.working_hours
     local_time = created_at.dt.time
     return shifted_days(created_at, local_time.ge(hours.start) & local_time.lt(hours.end))
-
-
-def daily_window_days(created_at: pd.Series, time_settings: TimeSettings) -> pd.Series:
-    # День D = ежедневное окно daily_window(D) = [D−1 19:00, D 19:00): время до конца окна
-    # остаётся в своём дне. Совпадение с daily_window проверяет test_metrics_weekly.
-    window_end: time = time_settings.daily_window_end
-    return shifted_days(created_at, created_at.dt.time.lt(window_end))
 
 
 def weekly_leads(lead_frame: pd.DataFrame, report_date: date, config: AppConfig) -> pd.DataFrame:

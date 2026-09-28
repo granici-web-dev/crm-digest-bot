@@ -59,6 +59,21 @@ def daily_window(report_date: date, time_settings: TimeSettings) -> Period:
     )
 
 
+def shifted_days(created_at: pd.Series, same_day: pd.Series) -> pd.Series:
+    # tz_localize(None) оставляет время по Бухаресту: день берётся по местным часам, в том числе
+    # в день перевода часов.
+    local_day = created_at.dt.tz_localize(None).dt.normalize()
+    days: pd.Series = (local_day + pd.to_timedelta((~same_day).astype(int), unit="D")).dt.date
+    return days
+
+
+def daily_window_days(created_at: pd.Series, time_settings: TimeSettings) -> pd.Series:
+    # День D = ежедневное окно daily_window(D) = [D−1 19:00, D 19:00): время до конца окна
+    # остаётся в своём дне. Совпадение с daily_window проверяет test_metrics_weekly.
+    window_end: time = time_settings.daily_window_end
+    return shifted_days(created_at, created_at.dt.time.lt(window_end))
+
+
 def matches_contact_created_before(lead_frame: pd.DataFrame, moment: datetime) -> pd.Series:
     # Совпадение контакта: равен непустой ключ телефона или e-mail (digest.contact_keys).
     # Сравнение внутри одного снапшота: истории ключей не нужно, смена секрета ничего не ломает.

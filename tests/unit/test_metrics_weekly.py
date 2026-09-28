@@ -6,13 +6,12 @@ import pandas as pd
 import pytest
 
 from digest.config import AppConfig
-from digest.metrics.daily import PreviousSnapshot, daily_window
+from digest.metrics.daily import PreviousSnapshot, daily_window, daily_window_days
 from digest.metrics.frame import prepare_lead_frame
 from digest.metrics.weekly import (
     LEAD_ROW_COLUMNS,
     converted_count,
     converted_count_by_showroom,
-    daily_window_days,
     relative_change,
     week_over_week,
     weekly_funnel,
