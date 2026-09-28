@@ -8,11 +8,20 @@ from digest.reports.render import render
 REPORT_DATE = date(2026, 8, 12)
 
 
-def fixed_counts(has_previous_snapshot: bool, without_showroom: int) -> SellerFormatCounts:
+def fixed_counts(
+    has_previous_snapshot: bool, has_clients_snapshot: bool, without_showroom: int
+) -> SellerFormatCounts:
     def row(*values: int) -> SellerFormatRow:
-        leads, transitions = values[:5], values[5:]
+        web, phone, whatsapp, partner, other, visits, offers, contracts = values
         return SellerFormatRow(
-            *leads, *(transitions if has_previous_snapshot else (None, None, None))
+            web,
+            phone,
+            whatsapp,
+            partner,
+            other,
+            visits,
+            offers if has_previous_snapshot else None,
+            contracts if has_clients_snapshot else None,
         )
 
     return SellerFormatCounts(
@@ -21,16 +30,17 @@ def fixed_counts(has_previous_snapshot: bool, without_showroom: int) -> SellerFo
             "București": row(0, 1, 2, 0, 0, 3, 0, 0),
             "Cluj": row(0, 0, 0, 0, 0, 2, 2, 0),
         },
-        without_showroom_lead_count=without_showroom,
+        without_showroom_count=without_showroom,
         total=row(2, 2, 2, 0, 0, 6, 3, 0),
         has_previous_snapshot=has_previous_snapshot,
+        has_clients_snapshot=has_clients_snapshot,
         unknown_source_lead_ids=(),
         missing_from_previous_lead_ids=(),
     )
 
 
 def test_seller_format_matches_seller_whatsapp_layout(snapshot: SnapshotAssertion) -> None:
-    counts = fixed_counts(has_previous_snapshot=True, without_showroom=1)
+    counts = fixed_counts(has_previous_snapshot=True, has_clients_snapshot=True, without_showroom=1)
 
     assert (
         render(
@@ -43,8 +53,12 @@ def test_seller_format_matches_seller_whatsapp_layout(snapshot: SnapshotAssertio
     )
 
 
-def test_seller_format_without_previous_snapshot_shows_dashes(snapshot: SnapshotAssertion) -> None:
-    counts = fixed_counts(has_previous_snapshot=False, without_showroom=0)
+def test_seller_format_without_previous_and_clients_snapshots_shows_dashes(
+    snapshot: SnapshotAssertion,
+) -> None:
+    counts = fixed_counts(
+        has_previous_snapshot=False, has_clients_snapshot=False, without_showroom=0
+    )
 
     assert (
         render(

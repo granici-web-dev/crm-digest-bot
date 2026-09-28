@@ -45,7 +45,7 @@
   <b>TOTAL</b> · Leads 6 · Vizite 6 · Oferte 3 · Contracte 0
   '''
 # ---
-# name: test_seller_format_without_previous_snapshot_shows_dashes
+# name: test_seller_format_without_previous_and_clients_snapshots_shows_dashes
   '''
   <b>Sofabelle Brașov:</b>
   12.08.2026
@@ -54,7 +54,7 @@
   Leads WhatsApp: 0
   Leads Designer/Colaboratori: 0
   Leads Alte/Showroom (revenire): 0
-  Vizita in showroom: —
+  Vizita in showroom: 1
   Oferta: —
   Reoferta: —
   Contract Cantitate: —
@@ -67,7 +67,7 @@
   Leads WhatsApp: 2
   Leads Designer/Colaboratori: 0
   Leads Alte/Showroom (revenire): 0
-  Vizita in showroom: —
+  Vizita in showroom: 3
   Oferta: —
   Reoferta: —
   Contract Cantitate: —
@@ -80,15 +80,16 @@
   Leads WhatsApp: 0
   Leads Designer/Colaboratori: 0
   Leads Alte/Showroom (revenire): 0
-  Vizita in showroom: —
+  Vizita in showroom: 2
   Oferta: —
   Reoferta: —
   Contract Cantitate: —
   Încasări: —
   
   ———
-  <b>TOTAL</b> · Leads 6 · Vizite — · Oferte — · Contracte —
+  <b>TOTAL</b> · Leads 6 · Vizite 6 · Oferte — · Contracte —
   
-  <i>Vizita, Oferta, Contract: lipsește snapshotul CRM de ieri, nu se poate calcula.</i>
+  <i>Oferta și tranzițiile Designer/Colaboratori: lipsește snapshotul CRM de ieri, nu se pot calcula.</i>
+  <i>Contract Cantitate: datele mefi clienți indisponibile.</i>
   '''
 # ---

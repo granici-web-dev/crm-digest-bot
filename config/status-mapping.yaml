@@ -148,19 +148,19 @@ clients:
     - elimination.detailed_reason
 
 sources:
-  showroom_visit: ["Showroom"]             # считается отдельно от входящих лидов
-  # Статус визита: d1 считает «Vizita in showroom» по переходу в этот статус между снапшотами.
-  showroom_visit_status: "SHOWROOM"
+  # d1: новый лид с этим источником это визит, если контакт не встречался у лида старше окна,
+  # иначе revenire в Alte (ADR-006). Визит в mefi фиксируется источником, не статусом.
+  showroom_visit: ["Showroom"]
   # "FacebookMessanger" — написание mefi, не исправлять.
   web: ["Site", "Mail", "Meta ADS", "FacebookMessanger"]   # строка «Leads Mail/FB/IG» в формате продавцов
   site: ["Site"]                           # из web: правило d5 «0 лидов с сайта»
   phone: ["Telefon"]
   whatsapp: ["WhatsApp"]
-  partner: ["Colaborare"]
-  # "Arhirtect" — опечатка в самой mefi (id 7), не исправлять.
+  # "Arhirtect" — опечатка в самой mefi (id 7), не исправлять. Архитектор это партнёр (ADR-006).
+  partner: ["Colaborare", "Arhirtect"]
   # Google (id 1) и Teren (id 4): лидов нет, имена из enums.md не проверены.
   # "BIFE 2026" встречается и как источник, и как статус (выставка BIFE-SIM 2026).
-  other: ["Recomandare", "Arhirtect", "Client Fidel", "Google", "Teren", "BIFE 2026"]
+  other: ["Recomandare", "Client Fidel", "Google", "Teren", "BIFE 2026"]
 
 # Порядок блоков в отчётах, как в ручном отчёте продавцов.
 showrooms: ["Brașov", "București", "Cluj"]

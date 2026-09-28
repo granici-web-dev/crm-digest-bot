@@ -6,7 +6,7 @@ Leads Telefon: {{ row.leads_phone }}
 Leads WhatsApp: {{ row.leads_whatsapp }}
 Leads Designer/Colaboratori: {{ row.leads_partner }}
 Leads Alte/Showroom (revenire): {{ row.leads_other }}
-Vizita in showroom: {{ row.showroom_visits | dash }}
+Vizita in showroom: {{ row.showroom_visits }}
 Oferta: {{ row.offers | dash }}
 Reoferta: —
 Contract Cantitate: {{ row.contracts | dash }}
@@ -15,12 +15,15 @@ Contract Cantitate: {{ row.contracts | dash }}
 {% for showroom, row in counts.by_showroom.items() %}
 {{ block(tenant_display_name ~ " " ~ showroom, row) }}
 {% endfor %}
-{% if counts.without_showroom_lead_count > 0 %}
-Fără showroom: {{ counts.without_showroom_lead_count }}
+{% if counts.without_showroom_count > 0 %}
+Fără showroom: {{ counts.without_showroom_count }}
 {% endif %}
 ———
-<b>TOTAL</b> · Leads {{ counts.total.leads }} · Vizite {{ counts.total.showroom_visits | dash }} · Oferte {{ counts.total.offers | dash }} · Contracte {{ counts.total.contracts | dash }}
+<b>TOTAL</b> · Leads {{ counts.total.leads }} · Vizite {{ counts.total.showroom_visits }} · Oferte {{ counts.total.offers | dash }} · Contracte {{ counts.total.contracts | dash }}
 
 {% if not counts.has_previous_snapshot %}
-<i>Vizita, Oferta, Contract: lipsește snapshotul CRM de ieri, nu se poate calcula.</i>
+<i>Oferta și tranzițiile Designer/Colaboratori: lipsește snapshotul CRM de ieri, nu se pot calcula.</i>
+{% endif %}
+{% if not counts.has_clients_snapshot %}
+<i>Contract Cantitate: datele mefi clienți indisponibile.</i>
 {% endif %}

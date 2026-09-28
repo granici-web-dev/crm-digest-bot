@@ -514,7 +514,7 @@ def test_leads_match_d1_total(app_config: AppConfig) -> None:
 
     result = same_weekday_comparison(lead_frame, REPORT_DATE, app_config)
 
-    d1_total = seller_format_counts(lead_frame, None, REPORT_DATE, app_config).total
+    d1_total = seller_format_counts(lead_frame, None, None, REPORT_DATE, app_config).total
     assert result.leads == sum(getattr(d1_total, row) for row in LEAD_ROWS) == 3
     assert result.leads_week_ago == 1
     assert result.week_ago_date == date(2026, 9, 18)

@@ -77,7 +77,13 @@ def week_frame(app_config: AppConfig) -> pd.DataFrame:
 def context(app_config: AppConfig, lead_frame: pd.DataFrame) -> ReportContext:
     week_ago = PreviousSnapshot(SUNDAY - timedelta(days=7), lead_frame[lead_frame["lead_id"].eq(6)])
     return ReportContext(
-        SUNDAY, None, week_ago, app_config, "sofabelle", make_lead_links(app_config.status_mapping)
+        SUNDAY,
+        None,
+        week_ago,
+        None,
+        app_config,
+        "sofabelle",
+        make_lead_links(app_config.status_mapping),
     )
 
 

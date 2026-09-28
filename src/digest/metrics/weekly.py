@@ -298,7 +298,7 @@ def week_over_week(
     window = weekly_window(report_date, time_settings)
     offers = None
     if week_ago is not None:
-        offers = int(transition_flags(lead_frame, week_ago.frame, window, config)["offers"].sum())
+        offers = int(transition_flags(lead_frame, week_ago.frame, window)["offers"].sum())
     return WeekOverWeek(
         leads=len(weekly_leads(lead_frame, report_date, config)),
         leads_previous=len(weekly_leads(lead_frame, previous_date, config)),

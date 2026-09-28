@@ -15,7 +15,8 @@ sources:
   I: { title: "mefi clients:read",                         connected: true }
 
 daily:            # окно 19:00 вчера → 19:00 сегодня; время отправки в таблице schedules
-  d1: { name: seller_format_report, label: "Raport format consilieri",   sources: [A], enabled: true }
+  # I только для строки Contract Cantitate: без клиентов отчёт уходит с «—» в ней (ADR-006).
+  d1: { name: seller_format_report, label: "Raport format consilieri",   sources: [A, I], enabled: true }
   # last_contact_at у нового лида отстаёт от created_at до минуты (замер 25.09.2026: 982 точно, 14 до 60 с).
   d2: { name: untouched_leads, label: "Lead-uri neatinse azi",        sources: [A], enabled: true,  params: { threshold_hours: 4, lookback_days: 3, touch_tolerance_seconds: 60 } }
   d3: { name: overdue_revenire, label: "Revenire depășită",       sources: [A], enabled: true }

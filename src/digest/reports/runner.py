@@ -13,7 +13,8 @@ from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from digest.config import AppConfig, ModuleRegistry, ReportModule
+from digest.config import AppConfig, ModuleRegistry, ReportModule, SourceCode
+from digest.db.client_frame import load_client_frame
 from digest.db.lead_frame import (
     SnapshotMissingError,
     load_lead_frame,
@@ -49,6 +50,7 @@ logger = logging.getLogger(__name__)
 # краха лучше, чем отчёт, которого нет до ручного UPDATE (shape 2026-09-25-delivery, вопрос 3).
 STALE_RUNNING_AFTER = timedelta(minutes=30)
 WEEK_OVER_WEEK_MODULE_ID = "w8"
+CLIENTS_SOURCE: SourceCode = "I"
 
 ReportRunOutcome = Literal["success", "partial", "failed", "already_sent", "in_progress"]
 
@@ -378,8 +380,18 @@ async def build_report(
         if runs_week_over_week
         else None
     )
+    # Кадр клиентов нужен только модулям с источником I (clients:read), сейчас это d1.
+    reads_clients = any(
+        CLIENTS_SOURCE in deps.config.modules.all_modules[module_id].sources
+        for module_id, _ in modules
+    )
+    clients = (
+        await load_client_frame(deps.engine, deps.tenant_id, snapshot_date, deps.config)
+        if reads_clients
+        else None
+    )
     context = ReportContext(
-        snapshot_date, previous, week_ago, deps.config, deps.tenant_id, deps.lead_links
+        snapshot_date, previous, week_ago, clients, deps.config, deps.tenant_id, deps.lead_links
     )
     blocks: list[ModuleBlock] = []
     photos: list[ReportPhoto] = []

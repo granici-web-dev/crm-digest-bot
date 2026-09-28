@@ -24,6 +24,7 @@ LEAD_FRAME_COLUMNS = (
     "contact_phone_key",
     "contact_email_key",
 )
+CLIENT_FRAME_COLUMNS = ("client_id", "created_at", "showroom")
 TIMESTAMP_COLUMNS = ("created_at", "status_changed_at", "last_contact_at", "converted_at")
 
 
@@ -76,3 +77,11 @@ def unknown_manager_ids(lead_frame: pd.DataFrame, config: AppConfig) -> set[int]
     # нетронутым.
     referenced_ids = pd.concat([lead_frame["assigned_to_id"], lead_frame["created_by_id"]])
     return {int(manager_id) for manager_id in referenced_ids.dropna().unique()} - known_ids
+
+
+def prepare_client_frame(rows: list[dict[str, Any]], config: AppConfig) -> pd.DataFrame:
+    client_frame = pd.DataFrame.from_records(rows, columns=list(CLIENT_FRAME_COLUMNS))
+    client_frame["created_at"] = pd.to_datetime(client_frame["created_at"], utc=True).dt.tz_convert(
+        config.status_mapping.time.timezone
+    )
+    return client_frame

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -8,7 +8,6 @@ from digest.config import AppConfig, TimeSettings
 from digest.metrics.kpi import Period
 
 LEAD_ROWS = ("leads_web", "leads_phone", "leads_whatsapp", "leads_partner", "leads_other")
-TRANSITION_ROWS = ("showroom_visits", "offers", "contracts")
 
 
 @dataclass(frozen=True)
@@ -24,7 +23,7 @@ class SellerFormatRow:
     leads_whatsapp: int
     leads_partner: int
     leads_other: int
-    showroom_visits: int | None
+    showroom_visits: int
     offers: int | None
     contracts: int | None
 
@@ -42,9 +41,10 @@ class SellerFormatRow:
 @dataclass(frozen=True)
 class SellerFormatCounts:
     by_showroom: dict[str, SellerFormatRow]
-    without_showroom_lead_count: int
+    without_showroom_count: int
     total: SellerFormatRow
     has_previous_snapshot: bool
+    has_clients_snapshot: bool
     unknown_source_lead_ids: tuple[int, ...]
     missing_from_previous_lead_ids: tuple[int, ...]
 
@@ -59,17 +59,29 @@ def daily_window(report_date: date, time_settings: TimeSettings) -> Period:
     )
 
 
+def matches_contact_created_before(lead_frame: pd.DataFrame, moment: datetime) -> pd.Series:
+    # Совпадение контакта: равен непустой ключ телефона или e-mail (digest.contact_keys).
+    # Сравнение внутри одного снапшота: истории ключей не нужно, смена секрета ничего не ломает.
+    older = lead_frame[lead_frame["created_at"].lt(moment)]
+    older_phone_keys = set(older["contact_phone_key"].dropna())
+    older_email_keys = set(older["contact_email_key"].dropna())
+    return lead_frame["contact_phone_key"].isin(older_phone_keys) | lead_frame[
+        "contact_email_key"
+    ].isin(older_email_keys)
+
+
 def lead_row_flags(today_frame: pd.DataFrame, period: Period, config: AppConfig) -> pd.DataFrame:
-    # Строки Leads как в ручном отчёте продавцов (docs/shapes/2026-09-25-delivery.md, «d1: счёт»):
-    # взаимоисключающие, по created_at в окне. Лид с источником Showroom вне ACTIVE_FOLLOWUP
-    # это визит, а не лид. Источник вне всех групп попадает в Alte и в алерт: не пропадает молча.
+    # Строки d1 по правилам владельца 28.09.2026 (ADR-006): взаимоисключающие, по created_at
+    # в окне. Лид с источником Showroom это визит, если контакт не встречался у лида, созданного
+    # раньше начала окна, и revenire (Alte), если встречался. Источник вне всех групп попадает
+    # в Alte и в алерт: не пропадает молча.
     sources = config.status_mapping.sources
     source = today_frame["source_name"]
-    category = today_frame["category"]
     created_at = today_frame["created_at"]
     in_window = created_at.ge(period.start) & created_at.lt(period.end)
-    is_partner = category.eq("PARTNERSHIP") | source.isin(sources.partner)
+    is_partner = today_frame["category"].eq("PARTNERSHIP") | source.isin(sources.partner)
     is_showroom_source = source.isin(sources.showroom_visit)
+    is_revenire = is_showroom_source & matches_contact_created_before(today_frame, period.start)
     is_web, is_phone = source.isin(sources.web), source.isin(sources.phone)
     is_whatsapp = source.isin(sources.whatsapp)
     is_unknown_source = ~source.isin(
@@ -82,11 +94,7 @@ def lead_row_flags(today_frame: pd.DataFrame, period: Period, config: AppConfig)
             *sources.other,
         ]
     )
-    is_other = (
-        (is_showroom_source & category.eq("ACTIVE_FOLLOWUP"))
-        | source.isin(sources.other)
-        | is_unknown_source
-    )
+    is_other = is_revenire | source.isin(sources.other) | is_unknown_source
     counted = in_window & ~is_partner
     return pd.DataFrame(
         {
@@ -95,51 +103,65 @@ def lead_row_flags(today_frame: pd.DataFrame, period: Period, config: AppConfig)
             "leads_web": counted & ~is_other & is_web,
             "leads_phone": counted & ~is_other & is_phone,
             "leads_whatsapp": counted & ~is_other & is_whatsapp,
+            "showroom_visits": counted & is_showroom_source & ~is_revenire,
             "unknown_source": counted & is_unknown_source,
         }
     )
 
 
 def transition_flags(
-    today_frame: pd.DataFrame, previous_frame: pd.DataFrame, period: Period, config: AppConfig
+    today_frame: pd.DataFrame, previous_frame: pd.DataFrame, period: Period
 ) -> pd.DataFrame:
     # status_changed_at в mefi хранит только последнее изменение (CLAUDE.md, инвариант 3):
-    # переход в визит, оферту, контракт виден только как разница двух снапшотов.
+    # переход в оферту или в PARTNERSHIP виден только как разница двух снапшотов.
     # Новый лид создан не раньше предыдущего снапшота (начало окна). Лид старше, которого вчера
     # не было (например, пропущен как битый), в разницу не входит: его статус не переход за день.
-    sources = config.status_mapping.sources
     previous = previous_frame.set_index("lead_id")
     lead_id = today_frame["lead_id"]
+    created_at = today_frame["created_at"]
     in_previous = lead_id.isin(previous.index)
-    is_new = ~in_previous & today_frame["created_at"].ge(period.start)
-    is_visit_status = today_frame["status_name"].eq(sources.showroom_visit_status)
-    was_visit_status = lead_id.map(previous["status_name"]).eq(sources.showroom_visit_status)
+    is_new = ~in_previous & created_at.ge(period.start)
     was_ofertat = lead_id.map(previous["is_ofertat"]).eq(True)
-    was_clienti = lead_id.map(previous["is_clienti"]).eq(True)
+    was_partnership = lead_id.map(previous["category"]).eq("PARTNERSHIP")
+    # Лид, созданный в окне, уже посчитан как новый: его переход второй раз не считается.
+    created_before_window = created_at.lt(period.start)
     return pd.DataFrame(
         {
-            "showroom_visits": (is_new & (today_frame["is_showroom_visit"] | is_visit_status))
-            | (in_previous & is_visit_status & ~was_visit_status),
             "offers": today_frame["is_ofertat"] & (is_new | (in_previous & ~was_ofertat)),
-            "contracts": today_frame["is_clienti"] & (is_new | (in_previous & ~was_clienti)),
+            "partner_transitions": in_previous
+            & created_before_window
+            & today_frame["category"].eq("PARTNERSHIP")
+            & ~was_partnership,
             "missing_from_previous": ~in_previous & ~is_new,
         }
     )
 
 
-def row_from(flags: pd.DataFrame, has_previous_snapshot: bool) -> SellerFormatRow:
-    def transition_count(name: str) -> int | None:
-        return int(flags[name].sum()) if has_previous_snapshot else None
+def new_client_flags(clients_frame: pd.DataFrame, period: Period, config: AppConfig) -> pd.Series:
+    # Contract Cantitate = новые клиенты mefi за окно (решение владельца 28.09.2026, ADR-006).
+    # Клиенты до contracts_count_from это ручной ввод старых договоров, не считаются никогда.
+    client_settings = config.status_mapping.clients
+    count_from = datetime.combine(
+        client_settings.contracts_count_from,
+        time(),
+        tzinfo=ZoneInfo(config.status_mapping.time.timezone),
+    )
+    created_at = clients_frame["created_at"]
+    return created_at.ge(period.start) & created_at.lt(period.end) & created_at.ge(count_from)
 
+
+def row_from(
+    flags: pd.DataFrame, contracts: int | None, has_previous_snapshot: bool
+) -> SellerFormatRow:
     return SellerFormatRow(
         leads_web=int(flags["leads_web"].sum()),
         leads_phone=int(flags["leads_phone"].sum()),
         leads_whatsapp=int(flags["leads_whatsapp"].sum()),
         leads_partner=int(flags["leads_partner"].sum()),
         leads_other=int(flags["leads_other"].sum()),
-        showroom_visits=transition_count("showroom_visits"),
-        offers=transition_count("offers"),
-        contracts=transition_count("contracts"),
+        showroom_visits=int(flags["showroom_visits"].sum()),
+        offers=int(flags["offers"].sum()) if has_previous_snapshot else None,
+        contracts=contracts,
     )
 
 
@@ -160,6 +182,7 @@ def comparable_previous(
 def seller_format_counts(
     today_frame: pd.DataFrame,
     previous: PreviousSnapshot | None,
+    clients_frame: pd.DataFrame | None,
     report_date: date,
     config: AppConfig,
 ) -> SellerFormatCounts:
@@ -167,23 +190,52 @@ def seller_format_counts(
     flags = lead_row_flags(today_frame, period, config)
     comparable = comparable_previous(previous, report_date)
     if comparable is not None:
-        flags = flags.join(transition_flags(today_frame, comparable.frame, period, config))
+        transitions = transition_flags(today_frame, comparable.frame, period)
+        # Без вчерашнего снапшота строка Designer/Colaboratori считает только новые лиды,
+        # а не «—»: продавцы привыкли видеть в ней число (ответ пользователя 28.09.2026).
+        flags["leads_partner"] |= transitions["partner_transitions"]
+        flags = flags.join(transitions[["offers", "missing_from_previous"]])
     else:
-        flags = flags.assign(**dict.fromkeys([*TRANSITION_ROWS, "missing_from_previous"], False))
+        flags = flags.assign(offers=False, missing_from_previous=False)
     has_previous_snapshot = comparable is not None
     showroom = today_frame["showroom"]
+    # Шоурум каждого нового клиента окна; None, если снапшота клиентов за дату нет.
+    new_client_showrooms = (
+        None
+        if clients_frame is None
+        else clients_frame.loc[new_client_flags(clients_frame, period, config), "showroom"]
+    )
+
+    def contracts_in(showroom_name: str) -> int | None:
+        if new_client_showrooms is None:
+            return None
+        return int(new_client_showrooms.eq(showroom_name).sum())
+
     # Шоурум вне списка showrooms получает свой блок: лиды не пропадают молча (как в kpi.py).
-    observed = sorted(set(showroom.dropna()) - set(config.status_mapping.showrooms))
+    observed_showrooms = set(showroom.dropna())
+    if new_client_showrooms is not None:
+        observed_showrooms |= set(new_client_showrooms.dropna())
     by_showroom = {
-        name: row_from(flags[showroom.eq(name)], has_previous_snapshot)
-        for name in [*config.status_mapping.showrooms, *observed]
+        name: row_from(flags[showroom.eq(name)], contracts_in(name), has_previous_snapshot)
+        for name in [
+            *config.status_mapping.showrooms,
+            *sorted(observed_showrooms - set(config.status_mapping.showrooms)),
+        ]
     }
-    counted_anywhere = flags[[*LEAD_ROWS, *TRANSITION_ROWS]].any(axis=1)
+    counted_anywhere = flags[[*LEAD_ROWS, "showroom_visits", "offers"]].any(axis=1)
+    without_showroom_count = int((counted_anywhere & showroom.isna()).sum())
+    if new_client_showrooms is not None:
+        without_showroom_count += int(new_client_showrooms.isna().sum())
     return SellerFormatCounts(
         by_showroom=by_showroom,
-        without_showroom_lead_count=int((counted_anywhere & showroom.isna()).sum()),
-        total=row_from(flags, has_previous_snapshot),
+        without_showroom_count=without_showroom_count,
+        total=row_from(
+            flags,
+            None if new_client_showrooms is None else len(new_client_showrooms),
+            has_previous_snapshot,
+        ),
         has_previous_snapshot=has_previous_snapshot,
+        has_clients_snapshot=clients_frame is not None,
         unknown_source_lead_ids=flagged_lead_ids(today_frame, flags["unknown_source"]),
         missing_from_previous_lead_ids=flagged_lead_ids(
             today_frame, flags["missing_from_previous"]

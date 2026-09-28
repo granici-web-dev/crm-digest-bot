@@ -123,11 +123,11 @@ def test_missing_showroom_visit_sources_fails_config_load() -> None:
         StatusMapping.model_validate(raw_mapping)
 
 
-def test_showroom_visit_status_must_be_a_mapped_status() -> None:
+def test_client_raw_strip_outside_known_keys_fails_config_load() -> None:
     raw_mapping = repository_yaml("status-mapping.yaml")
-    raw_mapping["sources"]["showroom_visit_status"] = "VIZITA"
+    raw_mapping["clients"]["raw_strip"].append("passport.number")
 
-    with pytest.raises(ValidationError, match="showroom_visit_status"):
+    with pytest.raises(ValidationError, match=r"clients.raw_strip \['passport'\]"):
         StatusMapping.model_validate(raw_mapping)
 
 

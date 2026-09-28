@@ -6,7 +6,9 @@ from digest.reports.render import render
 
 
 def seller_format_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
-    counts = seller_format_counts(lead_frame, context.previous, context.report_date, context.config)
+    counts = seller_format_counts(
+        lead_frame, context.previous, context.clients, context.report_date, context.config
+    )
     alerts: list[str] = []
     if counts.unknown_source_lead_ids:
         alerts.append(
@@ -17,8 +19,14 @@ def seller_format_report(lead_frame: pd.DataFrame, context: ReportContext) -> Mo
     if counts.missing_from_previous_lead_ids:
         alerts.append(
             f"d1: лиды старше окна, которых нет во вчерашнем снапшоте "
-            f"({len(counts.missing_from_previous_lead_ids)}), в Vizita/Oferta/Contract не вошли, "
-            f"id: {list(counts.missing_from_previous_lead_ids)}."
+            f"({len(counts.missing_from_previous_lead_ids)}), в Oferta и переходы "
+            f"Designer/Colaboratori не вошли, id: {list(counts.missing_from_previous_lead_ids)}."
+        )
+    if not counts.has_clients_snapshot:
+        # Сбой источника I не блокирует отчёт (инвариант 6): «—» только в строке Contract.
+        alerts.append(
+            f"d1: нет успешного снапшота клиентов mefi за {context.report_date:%d.%m.%Y}, "
+            "Contract Cantitate «—»."
         )
     text = render(
         "seller_format_report",

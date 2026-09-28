@@ -110,7 +110,13 @@ def month_frame(app_config: AppConfig) -> pd.DataFrame:
 
 def context(app_config: AppConfig) -> ReportContext:
     return ReportContext(
-        MONTH_END, None, None, app_config, "sofabelle", make_lead_links(app_config.status_mapping)
+        MONTH_END,
+        None,
+        None,
+        None,
+        app_config,
+        "sofabelle",
+        make_lead_links(app_config.status_mapping),
     )
 
 

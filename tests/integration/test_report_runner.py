@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from digest.app import default_schedules, report_job, seed_defaults
 from digest.config import AppConfig
 from digest.db.schema import (
+    client_snapshots,
     lead_snapshots,
     module_settings,
     report_runs,
@@ -417,6 +418,89 @@ async def test_older_previous_snapshot_is_not_diffed(harness: Harness) -> None:
 
     assert "Oferte —" in harness.group_text
     assert "lipsește snapshotul CRM de ieri" in harness.group_text
+
+
+async def store_clients(
+    engine: AsyncEngine, snapshot_date: date, clients: list[tuple[int, datetime, str]]
+) -> None:
+    async with engine.begin() as connection:
+        await connection.execute(
+            insert(client_snapshots),
+            [
+                {
+                    "tenant_id": TENANT_ID,
+                    "snapshot_date": snapshot_date,
+                    "client_id": client_id,
+                    "created_at": created_at,
+                    "showroom": showroom,
+                    "raw": {},
+                }
+                for client_id, created_at, showroom in clients
+            ],
+        )
+
+
+async def test_d1_counts_contracts_from_clients_snapshot(harness: Harness) -> None:
+    await store_snapshot(
+        harness.deps.engine, REPORT_DATE, [todays_lead(1)], clients_status="success"
+    )
+    in_window = datetime(2026, 9, 25, 12, 0, tzinfo=BUCHAREST)
+    await store_clients(
+        harness.deps.engine,
+        REPORT_DATE,
+        [
+            (1, in_window, "Cluj"),
+            (2, in_window, "Cluj"),
+            (3, in_window - timedelta(days=2), "Cluj"),
+        ],
+    )
+
+    await run_report("daily", NOW, harness.deps)
+
+    cluj_block = harness.group_text.split("<b>Sofabelle Cluj:</b>")[1]
+    assert "Contract Cantitate: 2" in cluj_block
+    assert "Contracte 2" in harness.group_text
+    assert "datele mefi clienți indisponibile" not in harness.group_text
+    assert not any("снапшота клиентов" in alert for alert in harness.ops_texts)
+
+
+async def test_seller_format_report_without_clients_snapshot(harness: Harness) -> None:
+    await store_snapshot(
+        harness.deps.engine, REPORT_DATE, [todays_lead(1)], clients_status="failed"
+    )
+
+    outcome = await run_report("daily", NOW, harness.deps)
+
+    assert outcome == "success"
+    assert "Contract Cantitate: —" in harness.group_text
+    assert "Contracte —" in harness.group_text
+    assert harness.group_text.count("Contract Cantitate: datele mefi clienți indisponibile.") == 1
+    assert "Leads Mail/FB/IG: 1" in harness.group_text
+    assert any(
+        alert.startswith("d1: нет успешного снапшота клиентов mefi за 25.09.2026")
+        for alert in harness.ops_texts
+    )
+
+
+async def test_clients_are_not_loaded_without_modules_reading_them(harness: Harness) -> None:
+    contexts: list[ReportContext] = []
+
+    def capture(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
+        contexts.append(context)
+        return ModuleResult("ok")
+
+    harness.deps = replace(harness.deps, modules={**IMPLEMENTED_MODULES, "d2": capture})
+    await store_snapshot(
+        harness.deps.engine, REPORT_DATE, [todays_lead(1)], clients_status="success"
+    )
+    async with harness.deps.engine.begin() as connection:
+        await connection.execute(
+            insert(module_settings).values(tenant_id=TENANT_ID, module_id="d1", enabled=False)
+        )
+
+    await run_report("daily", NOW, harness.deps)
+
+    assert [context.clients for context in contexts] == [None]
 
 
 async def test_report_without_implemented_modules_is_not_sent(harness: Harness) -> None:
