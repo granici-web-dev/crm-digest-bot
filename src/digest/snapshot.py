@@ -8,7 +8,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
-from pydantic import JsonValue, ValidationError
+from pydantic import JsonValue, SecretStr, ValidationError
 from sqlalchemy import func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
@@ -20,6 +20,7 @@ from digest.config import (
     OfertatField,
     StatusMapping,
 )
+from digest.contact_keys import email_contact_key, phone_contact_key
 from digest.db.schema import lead_snapshots, snapshot_runs
 from digest.mefi.client import (
     MefiClient,
@@ -195,7 +196,11 @@ def data_revenire_from(
 
 
 def lead_to_snapshot_row(
-    parsed_lead: ParsedLead, tenant_id: str, snapshot_date: date, status_mapping: StatusMapping
+    parsed_lead: ParsedLead,
+    tenant_id: str,
+    snapshot_date: date,
+    status_mapping: StatusMapping,
+    contact_secret: bytes,
 ) -> tuple[dict[str, Any], list[CustomFieldProblem]]:
     lead = parsed_lead.lead
     custom_fields = status_mapping.custom_fields
@@ -225,6 +230,9 @@ def lead_to_snapshot_row(
         "last_contact_at": lead.last_contact_at,
         "converted_at": lead.converted_at,
         "raw": strip_contacts(parsed_lead.raw, status_mapping.raw_strip),
+        # Сами phone и email вырезаны raw_strip: для правил визита d1 хватает равенства ключей.
+        "contact_phone_key": phone_contact_key(parsed_lead.raw.get("phone"), contact_secret),
+        "contact_email_key": email_contact_key(parsed_lead.raw.get("email"), contact_secret),
     }
     problems = [
         problem
@@ -285,12 +293,16 @@ async def write_snapshot(
     tenant_id: str,
     snapshot_date: date,
     status_mapping: StatusMapping,
+    contact_hash_key: SecretStr,
 ) -> SnapshotCounters:
     parsed_leads, skipped_leads = parse_leads(dump.leads)
+    contact_secret = contact_hash_key.get_secret_value().encode()
     rows: list[dict[str, Any]] = []
     problems_by_lead: list[tuple[int, CustomFieldProblem]] = []
     for parsed_lead in parsed_leads:
-        row, problems = lead_to_snapshot_row(parsed_lead, tenant_id, snapshot_date, status_mapping)
+        row, problems = lead_to_snapshot_row(
+            parsed_lead, tenant_id, snapshot_date, status_mapping, contact_secret
+        )
         rows.append(row)
         problems_by_lead.extend((parsed_lead.lead.id, problem) for problem in problems)
 
@@ -350,9 +362,15 @@ def completeness_failure(
     return None
 
 
+@dataclass(frozen=True)
+class SnapshotSources:
+    leads_client: MefiClient
+    contact_hash_key: SecretStr
+
+
 async def run_daily_snapshot(
     engine: AsyncEngine,
-    mefi_client: MefiClient,
+    sources: SnapshotSources,
     status_mapping: StatusMapping,
     tenant_id: str,
     now: datetime,
@@ -404,10 +422,15 @@ async def run_daily_snapshot(
     started_at = time.monotonic()
     this_run = snapshot_runs.c.id == run_id
     try:
-        dump = await mefi_client.search_all_leads()
+        dump = await sources.leads_client.search_all_leads()
         async with engine.begin() as connection:
             counters = await write_snapshot(
-                connection, dump, tenant_id, snapshot_date, status_mapping
+                connection,
+                dump,
+                tenant_id,
+                snapshot_date,
+                status_mapping,
+                sources.contact_hash_key,
             )
             failure = completeness_failure(counters, status_mapping.snapshot.completeness)
             if failure is not None:

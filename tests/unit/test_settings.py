@@ -21,6 +21,8 @@ def make_settings(**overrides: Any) -> Settings:
         "database_url": "postgresql+asyncpg://digest:secret@localhost:5432/digest",
         "mefi_base_url": "https://example.test/api/v1",
         "mefi_api_key": "key",
+        "mefi_clients_api_key": "clients-key",
+        "contact_hash_key": "k" * 32,
         "tenant_id": "sofabelle",
         "telegram_bot_token": TEST_BOT_TOKEN,
         "telegram_ops_bot_token": TEST_BOT_TOKEN,
@@ -44,6 +46,11 @@ def make_settings(**overrides: Any) -> Settings:
 def test_coinciding_chat_ids_fail_settings_load(overrides: dict[str, int]) -> None:
     with pytest.raises(ValidationError, match="chat_id должны различаться"):
         make_settings(**overrides)
+
+
+def test_short_contact_hash_key_fails_settings_load() -> None:
+    with pytest.raises(ValidationError, match="CONTACT_HASH_KEY короче 32"):
+        make_settings(contact_hash_key="k" * 31)
 
 
 @pytest.mark.parametrize(("dry_run", "chat_id"), [(True, TEST_CHAT_ID), (False, GROUP_CHAT_ID)])

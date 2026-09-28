@@ -21,6 +21,8 @@ LEAD_FRAME_COLUMNS = (
     "status_changed_at",
     "last_contact_at",
     "converted_at",
+    "contact_phone_key",
+    "contact_email_key",
 )
 TIMESTAMP_COLUMNS = ("created_at", "status_changed_at", "last_contact_at", "converted_at")
 

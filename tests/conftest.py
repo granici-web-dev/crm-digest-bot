@@ -15,6 +15,7 @@ from digest.db.engine import create_database_engine
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 TABLES_TRUNCATED_BETWEEN_TESTS = (
     "lead_snapshots",
+    "client_snapshots",
     "snapshot_runs",
     "settings",
     "module_settings",

@@ -13,7 +13,7 @@ from digest.mefi.client import MefiClient, create_mefi_http_client
 from digest.reports.periods import REPORT_LEVELS, ReportLevel
 from digest.reports.runner import run_report
 from digest.settings import Settings
-from digest.snapshot import describe_error, run_daily_snapshot
+from digest.snapshot import SnapshotSources, describe_error, run_daily_snapshot
 
 CONFIG_DIR = Path(__file__).resolve().parents[2] / "config"
 
@@ -60,8 +60,11 @@ async def run_manual_snapshot(app_settings: Settings) -> int:
     http_client = create_mefi_http_client(app_settings.mefi_base_url, app_settings.mefi_api_key)
     now = datetime.now(ZoneInfo(config.status_mapping.time.timezone))
     try:
+        sources = SnapshotSources(
+            leads_client=MefiClient(http_client), contact_hash_key=app_settings.contact_hash_key
+        )
         run_id = await run_daily_snapshot(
-            engine, MefiClient(http_client), config.status_mapping, app_settings.tenant_id, now
+            engine, sources, config.status_mapping, app_settings.tenant_id, now
         )
     except Exception as error:
         logger.error("manual snapshot failed", extra={"error": describe_error(error)})

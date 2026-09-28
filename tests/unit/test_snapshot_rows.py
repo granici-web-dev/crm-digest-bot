@@ -13,6 +13,7 @@ from digest.snapshot import (
 from factories import make_custom_fields, make_lead, recorded_search_leads
 
 SNAPSHOT_DATE = date(2026, 9, 24)
+CONTACT_SECRET = b"k" * 32
 
 
 def test_null_status_is_unmapped(app_config: AppConfig) -> None:
@@ -22,7 +23,9 @@ def test_null_status_is_unmapped(app_config: AppConfig) -> None:
 def test_unknown_status_is_counted_as_unmapped(app_config: AppConfig) -> None:
     parsed, skipped = parse_leads([make_lead(status={"id": 99, "name": "STATUS NOU"})])
 
-    row, _ = lead_to_snapshot_row(parsed[0], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping)
+    row, _ = lead_to_snapshot_row(
+        parsed[0], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping, CONTACT_SECRET
+    )
 
     assert skipped == []
     assert row["category"] == "UNMAPPED"
@@ -56,7 +59,7 @@ def test_showroom_name_mismatch_nulls_value_and_records_mismatch(app_config: App
     parsed, _ = parse_leads([make_lead(custom_fields=custom_fields)])
 
     row, problems = lead_to_snapshot_row(
-        parsed[0], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping
+        parsed[0], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping, CONTACT_SECRET
     )
 
     assert row["showroom"] is None
@@ -74,7 +77,9 @@ def test_unknown_ofertat_value_is_null(app_config: AppConfig) -> None:
     )
 
     rows_and_problems = [
-        lead_to_snapshot_row(lead, "sofabelle", SNAPSHOT_DATE, app_config.status_mapping)
+        lead_to_snapshot_row(
+            lead, "sofabelle", SNAPSHOT_DATE, app_config.status_mapping, CONTACT_SECRET
+        )
         for lead in parsed
     ]
 
@@ -86,7 +91,9 @@ def test_recorded_leads_map_to_expected_rows(app_config: AppConfig) -> None:
     parsed, skipped = parse_leads(recorded_search_leads())
 
     rows = [
-        lead_to_snapshot_row(lead, "sofabelle", SNAPSHOT_DATE, app_config.status_mapping)
+        lead_to_snapshot_row(
+            lead, "sofabelle", SNAPSHOT_DATE, app_config.status_mapping, CONTACT_SECRET
+        )
         for lead in parsed
     ]
 
@@ -147,7 +154,7 @@ def test_unknown_top_level_key_is_recorded_without_value(app_config: AppConfig) 
     parsed, _ = parse_leads([make_lead(whatsapp_number="+40700000003")])
 
     row, problems = lead_to_snapshot_row(
-        parsed[0], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping
+        parsed[0], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping, CONTACT_SECRET
     )
 
     assert problems == [CustomFieldProblem(None, "whatsapp_number", "unknown_raw_key", None)]
@@ -160,7 +167,7 @@ def test_lead_without_is_duplicate_is_kept_with_null(app_config: AppConfig) -> N
 
     parsed, skipped = parse_leads([lead])
     row, problems = lead_to_snapshot_row(
-        parsed[0], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping
+        parsed[0], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping, CONTACT_SECRET
     )
 
     assert skipped == []
@@ -172,7 +179,7 @@ def test_invalid_status_is_unmapped_and_recorded(app_config: AppConfig) -> None:
     parsed, skipped = parse_leads([make_lead(status={"id": "16", "name": None})])
 
     row, problems = lead_to_snapshot_row(
-        parsed[0], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping
+        parsed[0], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping, CONTACT_SECRET
     )
 
     assert skipped == []
@@ -196,7 +203,7 @@ def test_invalid_secondary_fields_become_null_and_are_recorded(app_config: AppCo
     )
 
     row, problems = lead_to_snapshot_row(
-        parsed[0], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping
+        parsed[0], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping, CONTACT_SECRET
     )
 
     assert skipped == []

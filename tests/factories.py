@@ -4,12 +4,15 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from pydantic import SecretStr
+
 from digest.config import StatusMapping, read_yaml
 from digest.reports.lead_links import LeadLinks
 from digest.snapshot import categorize
 
 BUCHAREST = ZoneInfo("Europe/Bucharest")
 
+TEST_CONTACT_HASH_KEY = SecretStr("test-contact-hash-key-" + "0" * 16)
 MEFI_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "mefi"
 CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
 
@@ -172,6 +175,8 @@ def make_snapshot_row(**overrides: Any) -> dict[str, Any]:
         "status_changed_at": None,
         "last_contact_at": datetime(2026, 9, 23, 11, 0, tzinfo=BUCHAREST),
         "converted_at": None,
+        "contact_phone_key": None,
+        "contact_email_key": None,
     }
     row.update(overrides)
     return row

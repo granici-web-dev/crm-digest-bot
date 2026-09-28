@@ -34,6 +34,7 @@ metadata = MetaData(
 
 LEAD_CATEGORIES = ("WON", "ACTIVE", "ACTIVE_FOLLOWUP", "LOST", "PARTNERSHIP", "UNMAPPED")
 SNAPSHOT_RUN_STATUSES = ("running", "success", "failed")
+CLIENTS_SNAPSHOT_STATUSES = ("success", "failed")
 ChatQuestionStatus = Literal[
     "answered",
     "no_tool",
@@ -87,8 +88,24 @@ lead_snapshots = Table(
     _timestamptz("last_contact_at"),
     _timestamptz("converted_at"),
     Column("raw", JSONB, nullable=False),
+    Column("contact_phone_key", Text),
+    Column("contact_email_key", Text),
     PrimaryKeyConstraint("tenant_id", "snapshot_date", "lead_id"),
     CheckConstraint(f"category IN ({_sql_in_list(LEAD_CATEGORIES)})", name="category"),
+)
+
+client_snapshots = Table(
+    "client_snapshots",
+    metadata,
+    _tenant_id_column(),
+    Column("snapshot_date", Date, nullable=False),
+    Column("client_id", Integer, nullable=False),
+    _timestamptz("created_at", nullable=False),
+    Column("showroom", Text),
+    Column("state", Text),
+    Column("source_name", Text),
+    Column("raw", JSONB, nullable=False),
+    PrimaryKeyConstraint("tenant_id", "snapshot_date", "client_id"),
 )
 
 snapshot_runs = Table(
@@ -115,7 +132,16 @@ snapshot_runs = Table(
     Column("won_converted_mismatch_ids", ARRAY(Integer)),
     Column("custom_field_mismatches", JSONB),
     Column("error", Text),
+    Column("clients_status", Text),
+    Column("clients_api_total", Integer),
+    Column("clients_written", Integer),
+    Column("clients_skipped", Integer),
+    Column("clients_unknown_keys", ARRAY(Text)),
+    Column("clients_error", Text),
     CheckConstraint(f"status IN ({_sql_in_list(SNAPSHOT_RUN_STATUSES)})", name="status"),
+    CheckConstraint(
+        f"clients_status IN ({_sql_in_list(CLIENTS_SNAPSHOT_STATUSES)})", name="clients_status"
+    ),
     # Отчёты берут дату только при единственном success: второй success за дату невозможен.
     Index(
         "uq_snapshot_runs_success_per_date",

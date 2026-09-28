@@ -31,7 +31,7 @@ from digest.reports.modules import IMPLEMENTED_MODULES
 from digest.reports.periods import ReportLevel
 from digest.reports.runner import ReportDeps, run_report
 from digest.settings import Settings
-from digest.snapshot import describe_error, run_daily_snapshot
+from digest.snapshot import SnapshotSources, describe_error, run_daily_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -137,11 +137,11 @@ def create_report_deps(
     )
 
 
-async def snapshot_job(deps: ReportDeps, mefi_client: MefiClient) -> None:
+async def snapshot_job(deps: ReportDeps, snapshot_sources: SnapshotSources) -> None:
     now = datetime.now(ZoneInfo(deps.config.status_mapping.time.timezone))
     try:
         await run_daily_snapshot(
-            deps.engine, mefi_client, deps.config.status_mapping, deps.tenant_id, now
+            deps.engine, snapshot_sources, deps.config.status_mapping, deps.tenant_id, now
         )
     except Exception as error:
         # str(error) может содержать тело ответа mefi или строки raw: наружу только describe_error.
@@ -186,7 +186,7 @@ def schedule_report_job(
 
 
 def schedule_snapshot_jobs(
-    scheduler: AsyncIOScheduler, deps: ReportDeps, mefi_client: MefiClient
+    scheduler: AsyncIOScheduler, deps: ReportDeps, snapshot_sources: SnapshotSources
 ) -> None:
     time_settings = deps.config.status_mapping.time
     timezone = ZoneInfo(time_settings.timezone)
@@ -196,7 +196,7 @@ def schedule_snapshot_jobs(
         scheduler.add_job(
             snapshot_job,
             CronTrigger(hour=attempt_at.hour, minute=attempt_at.minute, timezone=timezone),
-            args=[deps, mefi_client],
+            args=[deps, snapshot_sources],
             id=f"snapshot_{attempt_at:%H%M}",
             misfire_grace_time=int(SNAPSHOT_MISFIRE_GRACE.total_seconds()),
         )
@@ -229,9 +229,12 @@ async def run_app(engine: AsyncEngine, config: AppConfig, app_settings: Settings
     mefi_http_client = create_mefi_http_client(
         app_settings.mefi_base_url, app_settings.mefi_api_key
     )
-    mefi_client = MefiClient(mefi_http_client)
+    snapshot_sources = SnapshotSources(
+        leads_client=MefiClient(mefi_http_client),
+        contact_hash_key=app_settings.contact_hash_key,
+    )
     scheduler = AsyncIOScheduler(timezone=ZoneInfo(config.status_mapping.time.timezone))
-    schedule_snapshot_jobs(scheduler, deps, mefi_client)
+    schedule_snapshot_jobs(scheduler, deps, snapshot_sources)
     reschedule = partial(schedule_report_job, scheduler, deps, app_settings.backup_dir)
     schedules_by_level = await stored_schedules(engine, app_settings.tenant_id)
     for level, schedule in schedules_by_level.items():

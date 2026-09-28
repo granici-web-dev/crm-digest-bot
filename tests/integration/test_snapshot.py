@@ -19,8 +19,8 @@ from digest.mefi.client import (
     RequestPacer,
     create_mefi_http_client,
 )
-from digest.snapshot import SnapshotIncomplete, run_daily_snapshot
-from factories import make_lead, make_search_page, recorded_search_leads
+from digest.snapshot import SnapshotIncomplete, SnapshotSources, run_daily_snapshot
+from factories import TEST_CONTACT_HASH_KEY, make_lead, make_search_page, recorded_search_leads
 
 BASE_URL = "https://mefi.test/api/v1"
 SEARCH_URL = f"{BASE_URL}/leads/search"
@@ -52,9 +52,8 @@ def mefi_returns(mefi_mock: respx.MockRouter, leads: list[dict[str, Any]]) -> re
 async def snapshot(
     engine: AsyncEngine, mefi_client: MefiClient, app_config: AppConfig, now: datetime
 ) -> int:
-    return await run_daily_snapshot(
-        engine, mefi_client, app_config.status_mapping, "sofabelle", now
-    )
+    sources = SnapshotSources(leads_client=mefi_client, contact_hash_key=TEST_CONTACT_HASH_KEY)
+    return await run_daily_snapshot(engine, sources, app_config.status_mapping, "sofabelle", now)
 
 
 async def run_row(engine: AsyncEngine, run_id: int) -> Any:
@@ -108,6 +107,42 @@ async def test_snapshot_below_thresholds_is_success_with_alert_data(
         ).scalar_one()
     assert "phone" not in raw
     assert raw["location"]["city"] == "Bacau"
+
+
+async def test_snapshot_writes_contact_keys_and_no_contacts(
+    engine: AsyncEngine,
+    mefi_client: MefiClient,
+    mefi_mock: respx.MockRouter,
+    app_config: AppConfig,
+) -> None:
+    leads = recorded_search_leads()
+    mefi_returns(mefi_mock, leads)
+
+    await snapshot(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
+
+    async with engine.connect() as connection:
+        rows = (
+            await connection.execute(
+                select(
+                    lead_snapshots.c.lead_id,
+                    lead_snapshots.c.raw,
+                    lead_snapshots.c.contact_phone_key,
+                    lead_snapshots.c.contact_email_key,
+                ).order_by(lead_snapshots.c.lead_id)
+            )
+        ).all()
+    stored_text = " ".join(
+        f"{row.raw} {row.contact_phone_key} {row.contact_email_key}" for row in rows
+    )
+    for lead in leads:
+        for contact in (lead["phone"], lead["email"], lead["name"]):
+            if contact:
+                assert contact not in stored_text
+        assert lead["phone"].removeprefix("+40") not in stored_text
+    assert all(row.contact_phone_key is not None for row in rows)
+    leads_with_email = sorted(lead["id"] for lead in leads if lead["email"])
+    assert [row.lead_id for row in rows if row.contact_email_key is not None] == leads_with_email
+    assert len({row.contact_phone_key for row in rows}) == 3
 
 
 async def test_failed_snapshot_leaves_no_rows_and_failed_run(
