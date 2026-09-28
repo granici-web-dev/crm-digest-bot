@@ -1,5 +1,5 @@
 import logging
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from functools import partial
@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 from aiogram import Bot
 from markupsafe import Markup
-from sqlalchemy import func, select, update
+from sqlalchemy import Row, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -233,6 +233,33 @@ def unknown_key_identity(mismatch: dict[str, Any]) -> tuple[str, int | None, str
     return mismatch["problem"], mismatch["field_id"], mismatch["expected_name"]
 
 
+async def alert_won_mismatches(deps: ReportDeps, rows: Sequence[Row[Any]]) -> None:
+    # Два разных сбоя: Clienți без converted_at это ошибка ввода, а converted_at вне Clienți
+    # значит, что контракт был и лид ушёл в другой статус, возможно расторжение договора.
+    without_conversion_ids: list[int] = []
+    converted_ids_by_status: dict[str | None, list[int]] = {}
+    for lead_id, status_name, converted_at in sorted(rows):
+        if converted_at is None:
+            without_conversion_ids.append(lead_id)
+        else:
+            converted_ids_by_status.setdefault(status_name, []).append(lead_id)
+    if without_conversion_ids:
+        await notify_ops(
+            deps.ops,
+            f"Новые лиды в Clienți без даты конверсии ({len(without_conversion_ids)}), "
+            f"id: {without_conversion_ids}.",
+        )
+    for status_name, lead_ids in sorted(
+        converted_ids_by_status.items(), key=lambda item: item[0] or ""
+    ):
+        status_label = f"«{status_name}»" if status_name is not None else "без статуса"
+        await notify_ops(
+            deps.ops,
+            f"Новые лиды с датой конверсии ушли в статус {status_label} ({len(lead_ids)}), "
+            f"id: {lead_ids}. Возможно расторжение договора.",
+        )
+
+
 async def alert_snapshot_findings(
     deps: ReportDeps, snapshot_date: date, lead_frame: pd.DataFrame
 ) -> None:
@@ -262,21 +289,42 @@ async def alert_snapshot_findings(
                 )
             )
         ).all()
-        previous_mismatches = (
+        previous_findings = (
             (
                 await connection.execute(
-                    select(snapshot_runs.c.custom_field_mismatches).where(
+                    select(
+                        snapshot_runs.c.custom_field_mismatches,
+                        snapshot_runs.c.won_converted_mismatch_ids,
+                    ).where(
                         snapshot_runs.c.tenant_id == deps.tenant_id,
                         snapshot_runs.c.snapshot_date == previous_date,
                         snapshot_runs.c.status == "success",
                     )
                 )
-            )
-            .scalars()
-            .all()
+            ).all()
             if previous_date is not None
             else []
         )
+        previous_mismatches = [mismatches for mismatches, _ in previous_findings]
+        # Как у UNMAPPED: расхождение алертится один раз, в день появления, иначе те же id
+        # приходили бы каждый вечер.
+        previously_won_mismatch_ids = {
+            lead_id for _, lead_ids in previous_findings for lead_id in lead_ids or []
+        }
+        new_won_mismatch_ids = sorted(set(won_mismatch_ids or []) - previously_won_mismatch_ids)
+        won_mismatch_rows = (
+            await connection.execute(
+                select(
+                    lead_snapshots.c.lead_id,
+                    lead_snapshots.c.status_name,
+                    lead_snapshots.c.converted_at,
+                ).where(
+                    lead_snapshots.c.tenant_id == deps.tenant_id,
+                    lead_snapshots.c.snapshot_date == snapshot_date,
+                    lead_snapshots.c.lead_id.in_(new_won_mismatch_ids),
+                )
+            )
+        ).all()
     ids_by_unknown_status: dict[str, list[int]] = {}
     without_status_ids: list[int] = []
     for lead_id, status_name in sorted(unmapped_status_rows):
@@ -328,12 +376,7 @@ async def alert_snapshot_findings(
                 "config/status-mapping.yaml: в drop, если это свободный текст о клиенте, "
                 "иначе в keep.",
             )
-    if won_mismatch_ids:
-        await notify_ops(
-            deps.ops,
-            f"Clienți и converted_at расходятся ({len(won_mismatch_ids)}), "
-            f"id: {sorted(won_mismatch_ids)}.",
-        )
+    await alert_won_mismatches(deps, won_mismatch_rows)
     unknown_ids = unknown_manager_ids(lead_frame, deps.config)
     if unknown_ids:
         await notify_ops(

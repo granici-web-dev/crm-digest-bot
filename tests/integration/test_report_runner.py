@@ -287,7 +287,10 @@ async def test_snapshot_findings_are_alerted_as_ids_only(harness: Harness) -> No
     await store_snapshot(
         harness.deps.engine,
         REPORT_DATE,
-        [todays_lead(7, category="UNMAPPED", status_name="STATUS NOU", assigned_to_id=999)],
+        [
+            todays_lead(7, category="UNMAPPED", status_name="STATUS NOU", assigned_to_id=999),
+            todays_lead(3, category="WON", status_name="Clienți"),
+        ],
         new_unmapped_lead_ids=[7],
         won_converted_mismatch_ids=[3],
     )
@@ -298,7 +301,7 @@ async def test_snapshot_findings_are_alerted_as_ids_only(harness: Harness) -> No
         "Новые лиды с неизвестным статусом «STATUS NOU», UNMAPPED (1), id: [7]. "
         "Добавьте статус в config/status-mapping.yaml." in harness.ops_texts
     )
-    assert "Clienți и converted_at расходятся (1), id: [3]." in harness.ops_texts
+    assert "Новые лиды в Clienți без даты конверсии (1), id: [3]." in harness.ops_texts
     assert (
         "Лиды на консультантах или созданные пользователями вне config/managers.yaml, "
         "assigned_to.id или created_by.id: [999]." in harness.ops_texts
@@ -365,6 +368,64 @@ async def test_unknown_raw_key_is_alerted(harness: Harness) -> None:
     # Только имя ключа и число: значение поля и id лидов в алерт не попадают.
     assert not any("POATE" in alert for alert in harness.ops_texts)
     assert not any("[1, 5]" in alert for alert in harness.ops_texts)
+
+
+def won_mismatch_leads() -> list[dict[str, Any]]:
+    converted_at = datetime(2026, 9, 10, 12, tzinfo=BUCHAREST)
+    return [
+        todays_lead(1, category="WON", status_name="Clienți"),
+        todays_lead(2, category="WON", status_name="Clienți"),
+        todays_lead(3, category="LOST", status_name="A REFUZAT", converted_at=converted_at),
+        todays_lead(4, category="LOST", status_name="BUGET", converted_at=converted_at),
+        todays_lead(5, category="LOST", status_name="A REFUZAT", converted_at=converted_at),
+        todays_lead(6, category="LOST", status_name="A REFUZAT", converted_at=converted_at),
+    ]
+
+
+async def test_won_mismatch_is_alerted_only_for_new_leads_split_by_kind(
+    harness: Harness,
+) -> None:
+    await store_snapshot(
+        harness.deps.engine,
+        REPORT_DATE - timedelta(days=1),
+        won_mismatch_leads(),
+        won_converted_mismatch_ids=[1, 3],
+    )
+    await store_snapshot(
+        harness.deps.engine,
+        REPORT_DATE,
+        won_mismatch_leads(),
+        won_converted_mismatch_ids=[1, 2, 3, 4, 5, 6],
+    )
+
+    await run_report("daily", NOW, harness.deps)
+
+    mismatch_alerts = [
+        alert
+        for alert in harness.ops_texts
+        if "без даты конверсии" in alert or "с датой конверсии" in alert
+    ]
+    assert mismatch_alerts == [
+        "Новые лиды в Clienți без даты конверсии (1), id: [2].",
+        "Новые лиды с датой конверсии ушли в статус «A REFUZAT» (2), id: [5, 6]. "
+        "Возможно расторжение договора.",
+        "Новые лиды с датой конверсии ушли в статус «BUGET» (1), id: [4]. "
+        "Возможно расторжение договора.",
+    ]
+
+
+async def test_won_mismatch_already_alerted_yesterday_is_silent(harness: Harness) -> None:
+    for snapshot_date in (REPORT_DATE - timedelta(days=1), REPORT_DATE):
+        await store_snapshot(
+            harness.deps.engine,
+            snapshot_date,
+            won_mismatch_leads(),
+            won_converted_mismatch_ids=[1, 3],
+        )
+
+    await run_report("daily", NOW, harness.deps)
+
+    assert not any("конверсии" in alert for alert in harness.ops_texts)
 
 
 def unknown_raw_key(name: str) -> dict[str, Any]:
