@@ -231,3 +231,38 @@ def test_stored_lead_raw_keeps_only_known_keys_without_detailed_reason(
         },
         {"id": 3, "status": {"id": 16}},
     ]
+
+
+def test_snapshot_runs_get_trigger_and_missed_status(postgres_container: PostgresContainer) -> None:
+    server_url = postgres_container.get_connection_url(driver="asyncpg")
+    database_url = (
+        make_url(server_url).set(database="snapshot_trigger").render_as_string(hide_password=False)
+    )
+    asyncio.run(recreate_database(server_url, "snapshot_trigger"))
+    command.upgrade(alembic_config(database_url), "0008")
+    asyncio.run(
+        execute_statements(
+            database_url,
+            [
+                "INSERT INTO snapshot_runs (tenant_id, snapshot_date, attempt, status, error) "
+                "VALUES "
+                "('sofabelle', '2026-09-25', 1, 'success', NULL), "
+                "('sofabelle', '2026-09-26', 1, 'failed', 'missed'), "
+                "('sofabelle', '2026-09-27', 1, 'failed', 'superseded')"
+            ],
+        )
+    )
+
+    command.upgrade(alembic_config(database_url), "head")
+
+    rows = asyncio.run(
+        fetch_values(
+            database_url,
+            "SELECT row(status, attempt, trigger, error)::text FROM snapshot_runs ORDER BY id",
+        )
+    )
+    assert rows == [
+        "(success,1,scheduled,)",
+        "(missed,,scheduled,)",
+        "(failed,1,scheduled,superseded)",
+    ]

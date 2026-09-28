@@ -37,7 +37,11 @@ async def store(
         if run_status is not None:
             await connection.execute(
                 insert(snapshot_runs).values(
-                    tenant_id="sofabelle", snapshot_date=SNAPSHOT_DATE, attempt=1, status=run_status
+                    tenant_id="sofabelle",
+                    snapshot_date=SNAPSHOT_DATE,
+                    attempt=1,
+                    status=run_status,
+                    trigger="scheduled",
                 )
             )
 
@@ -118,7 +122,11 @@ async def test_success_snapshot_dates_are_sorted_successes_of_tenant(engine: Asy
         for tenant_id, snapshot_date, attempt, status in runs:
             await connection.execute(
                 insert(snapshot_runs).values(
-                    tenant_id=tenant_id, snapshot_date=snapshot_date, attempt=attempt, status=status
+                    tenant_id=tenant_id,
+                    snapshot_date=snapshot_date,
+                    attempt=attempt,
+                    status=status,
+                    trigger="scheduled",
                 )
             )
 

@@ -3,6 +3,7 @@ from datetime import date, datetime, time, timedelta
 from itertools import pairwise
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self, get_args
+from zoneinfo import ZoneInfo
 
 import yaml
 from pydantic import (
@@ -27,6 +28,9 @@ Share = Annotated[float, Field(ge=0, le=1)]
 LOSS_REASONS_USED_BY_METRICS = ("IRELEVANT", "NU_RASPUNS", "BUGET", "PRODUS_NEPOTRIVIT", "STAND_BY")
 
 SNAPSHOT_RETRY_DELAY = timedelta(minutes=10)
+# Снапшот идёт минуты (пауза 1.2 с на запрос). running моложе этого снимает другой процесс, второй
+# прогон его не вытесняет. Меньше SNAPSHOT_RETRY_DELAY: повтор 19:10 вытесняет зависший 19:00.
+SNAPSHOT_RUNNING_ALIVE_FOR = timedelta(minutes=8)
 # Проверка «снапшот дня есть» после повтора, с запасом на прогон в несколько минут.
 FINAL_SNAPSHOT_CHECK_DELAY = timedelta(minutes=40)
 # Снапшот в конце окна, повтор через SNAPSHOT_RETRY_DELAY, прогон при паузе 1.2 с на запрос
@@ -147,6 +151,12 @@ class TimeSettings(StrictConfigModel):
     daily_window_end: time
     missed_snapshot_check: time
     working_hours: WorkingHours
+
+    def snapshot_retry_at(self, snapshot_date: date) -> datetime:
+        window_end = datetime.combine(
+            snapshot_date, self.daily_window_end, tzinfo=ZoneInfo(self.timezone)
+        )
+        return window_end + SNAPSHOT_RETRY_DELAY
 
 
 class CompletenessThresholds(StrictConfigModel):
@@ -368,6 +378,15 @@ class ChatSettings(StrictConfigModel):
     specific_date_history_years: PositiveInt
 
 
+class CatchUpDays(StrictConfigModel):
+    daily: NonNegativeInt
+    weekly: NonNegativeInt
+    monthly: NonNegativeInt
+
+    def for_level(self, level: SettingsLevel) -> int:
+        return {"daily": self.daily, "weekly": self.weekly, "monthly": self.monthly}[level]
+
+
 class ModuleRegistry(StrictConfigModel):
     sources: dict[SourceCode, DataSource]
     daily: dict[str, ReportModule]
@@ -376,7 +395,7 @@ class ModuleRegistry(StrictConfigModel):
     yearly: dict[str, ReportModule]
     chat: ChatSettings
     send_times: dict[SettingsLevel, Annotated[list[time], Field(min_length=1)]]
-    catch_up_days: dict[SettingsLevel, NonNegativeInt]
+    catch_up_days: CatchUpDays
 
     @property
     def all_modules(self) -> dict[str, ReportModule]:
@@ -435,13 +454,6 @@ class ModuleRegistry(StrictConfigModel):
                     f"send_times.{level}: время по умолчанию это вариант "
                     f"№{DEFAULT_SEND_TIME_INDEX[level] + 1}, вариантов меньше"
                 )
-        return self
-
-    @model_validator(mode="after")
-    def catch_up_days_cover_settings_levels(self) -> Self:
-        missing = [level for level in SETTINGS_LEVELS if level not in self.catch_up_days]
-        if missing:
-            raise ValueError(f"catch_up_days: нет значения для {missing}")
         return self
 
     def default_send_time(self, level: SettingsLevel) -> time:

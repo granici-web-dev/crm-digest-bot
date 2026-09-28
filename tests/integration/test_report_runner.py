@@ -86,6 +86,7 @@ async def store_snapshot(
                 snapshot_date=snapshot_date,
                 attempt=1,
                 status="success",
+                trigger="scheduled",
                 **run_values,
             )
         )

@@ -13,7 +13,7 @@ from sqlalchemy import delete, func, insert, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from digest.config import (
-    SNAPSHOT_RETRY_DELAY,
+    SNAPSHOT_RUNNING_ALIVE_FOR,
     UNMAPPED,
     ClientSettings,
     CompletenessThresholds,
@@ -38,11 +38,13 @@ logger = logging.getLogger(__name__)
 
 BUCHAREST = ZoneInfo("Europe/Bucharest")
 ALERT_ID_LIMIT = 10
-MISSED_SNAPSHOT_ERROR = "missed"
 
 # preview: снапшот, снятый до конца ежедневного окна. Отчёты и чат читают только success.
 SnapshotRunStatus = Literal["success", "preview"]
 SNAPSHOT_RUN_STATUSES: tuple[SnapshotRunStatus, ...] = ("success", "preview")
+SnapshotTrigger = Literal["scheduled", "retry", "catch_up", "manual"]
+# Снапшот не по расписанию снят позже 19:00 и захватил смены статусов после конца окна.
+LATE_SNAPSHOT_TRIGGERS: tuple[SnapshotTrigger, ...] = ("catch_up", "manual")
 
 
 @dataclass(frozen=True)
@@ -114,10 +116,16 @@ class SnapshotRunSuperseded(Exception):
     pass
 
 
+class SnapshotRunInProgress(Exception):
+    pass
+
+
 @dataclass(frozen=True)
 class SnapshotOutcome:
     run_id: int
     status: SnapshotRunStatus
+    # False: success за дату уже был, этот вызов лиды не снимал.
+    newly_taken: bool
     # Текст для служебного бота: сбой клиентов, незнакомые ключи, битый шоурум клиента.
     clients_alert: str | None
 
@@ -748,6 +756,7 @@ async def run_daily_snapshot(
     status_mapping: StatusMapping,
     tenant_id: str,
     now: datetime,
+    trigger: SnapshotTrigger,
 ) -> SnapshotOutcome:
     local_now = now.astimezone(BUCHAREST)
     snapshot_date = local_now.date()
@@ -770,18 +779,27 @@ async def run_daily_snapshot(
             )
         ).first()
         if success_run is None:
-            run_id = await start_snapshot_run(connection, tenant_id, snapshot_date)
+            # Под блокировкой: два процесса, прошедшие проверку одновременно, иначе вытеснили бы
+            # выгрузки друг друга.
+            if await snapshot_run_in_progress(
+                connection, tenant_id, snapshot_date, local_now, status_mapping.time
+            ):
+                raise SnapshotRunInProgress(f"снапшот за {snapshot_date} уже снимается")
+            run_id = await start_snapshot_run(
+                connection, tenant_id, snapshot_date, local_now, trigger
+            )
     if success_run is not None:
         logger.info(
             "snapshot already done",
             extra={"snapshot_date": snapshot_date.isoformat(), "run_id": success_run.id},
         )
         if success_run.clients_status == "success":
-            return SnapshotOutcome(success_run.id, "success", None)
+            return SnapshotOutcome(success_run.id, "success", False, None)
         # Лиды уже есть, клиенты в прошлой попытке упали: повтор догружает только клиентов.
         return SnapshotOutcome(
             success_run.id,
             "success",
+            False,
             await snapshot_clients(
                 engine,
                 sources.clients_client,
@@ -800,6 +818,7 @@ async def run_daily_snapshot(
     return SnapshotOutcome(
         run_id,
         run_status,
+        True,
         await snapshot_clients(
             engine,
             sources.clients_client,
@@ -813,7 +832,11 @@ async def run_daily_snapshot(
 
 
 async def start_snapshot_run(
-    connection: AsyncConnection, tenant_id: str, snapshot_date: date
+    connection: AsyncConnection,
+    tenant_id: str,
+    snapshot_date: date,
+    now: datetime,
+    trigger: SnapshotTrigger,
 ) -> int:
     this_date_runs = (snapshot_runs.c.tenant_id == tenant_id) & (
         snapshot_runs.c.snapshot_date == snapshot_date
@@ -824,16 +847,20 @@ async def start_snapshot_run(
         .where(this_date_runs, snapshot_runs.c.status == "running")
         .values(status="failed", finished_at=func.clock_timestamp(), error="superseded")
     )
-    previous_attempts = await connection.scalar(
-        select(func.count()).select_from(snapshot_runs).where(this_date_runs)
-    )
+    previous_attempts: int = (
+        await connection.execute(select(func.count(snapshot_runs.c.attempt)).where(this_date_runs))
+    ).scalar_one()
     inserted = await connection.execute(
         insert(snapshot_runs)
         .values(
             tenant_id=tenant_id,
             snapshot_date=snapshot_date,
-            attempt=(previous_attempts or 0) + 1,
+            attempt=previous_attempts + 1,
             status="running",
+            trigger=trigger,
+            # Время процесса, а не now() базы: живость running и строка позднего снапшота
+            # сравниваются с тем же now, что решал о запуске.
+            started_at=now,
         )
         .returning(snapshot_runs.c.id)
     )
@@ -859,18 +886,7 @@ async def dates_without_success_snapshot(
     return [snapshot_date for snapshot_date in snapshot_dates if snapshot_date not in done_dates]
 
 
-def snapshot_taken_late(
-    started_at: datetime, snapshot_date: date, time_settings: TimeSettings
-) -> bool:
-    # Штатный повтор стартует ровно через SNAPSHOT_RETRY_DELAY: всё позже него снято не по
-    # расписанию и захватило смены статусов после конца окна.
-    scheduled_at = datetime.combine(
-        snapshot_date, time_settings.daily_window_end, tzinfo=ZoneInfo(time_settings.timezone)
-    )
-    return started_at > scheduled_at + SNAPSHOT_RETRY_DELAY
-
-
-async def success_snapshot_started_at(
+async def late_snapshot_started_at(
     engine: AsyncEngine, tenant_id: str, snapshot_date: date
 ) -> datetime | None:
     async with engine.connect() as connection:
@@ -879,61 +895,60 @@ async def success_snapshot_started_at(
                 snapshot_runs.c.tenant_id == tenant_id,
                 snapshot_runs.c.snapshot_date == snapshot_date,
                 snapshot_runs.c.status == "success",
+                snapshot_runs.c.trigger.in_(LATE_SNAPSHOT_TRIGGERS),
             )
         )
-    return started_at
+    return started_at.astimezone(BUCHAREST) if started_at is not None else None
 
 
 async def snapshot_run_in_progress(
-    engine: AsyncEngine, tenant_id: str, snapshot_date: date, younger_than: timedelta
+    connection: AsyncConnection,
+    tenant_id: str,
+    snapshot_date: date,
+    now: datetime,
+    time_settings: TimeSettings,
 ) -> bool:
-    async with engine.connect() as connection:
-        running_run_id = await connection.scalar(
-            select(snapshot_runs.c.id).where(
-                snapshot_runs.c.tenant_id == tenant_id,
-                snapshot_runs.c.snapshot_date == snapshot_date,
-                snapshot_runs.c.status == "running",
-                snapshot_runs.c.started_at > func.now() - younger_than,
-            )
+    # Превью, начатое до конца окна, не в счёт: снапшот дня обязан его вытеснить.
+    window_end = datetime.combine(
+        snapshot_date, time_settings.daily_window_end, tzinfo=ZoneInfo(time_settings.timezone)
+    )
+    running_run_id = await connection.scalar(
+        select(snapshot_runs.c.id).where(
+            snapshot_runs.c.tenant_id == tenant_id,
+            snapshot_runs.c.snapshot_date == snapshot_date,
+            snapshot_runs.c.status == "running",
+            snapshot_runs.c.started_at >= window_end,
+            snapshot_runs.c.started_at > now - SNAPSHOT_RUNNING_ALIVE_FOR,
         )
+    )
     return running_run_id is not None
 
 
 async def record_missed_snapshot_dates(
-    engine: AsyncEngine, tenant_id: str, snapshot_dates: list[date]
+    engine: AsyncEngine, tenant_id: str, snapshot_dates: list[date], trigger: SnapshotTrigger
 ) -> list[date]:
-    # Строка failed/missed это память «об этой дате уже сообщили»: рестарт, второй процесс
-    # и следующая проверка её видят и молчат. Отчёты читают только success и её не замечают.
+    # Строка missed это память «об этой дате уже сообщили»: рестарт, второй процесс и следующая
+    # проверка её видят и молчат. Транзакция на дату, потому что блокировка тоже на дату.
     newly_missed = []
     for snapshot_date in snapshot_dates:
-        this_date_runs = (snapshot_runs.c.tenant_id == tenant_id) & (
-            snapshot_runs.c.snapshot_date == snapshot_date
-        )
         async with engine.begin() as connection:
             await connection.execute(snapshot_run_lock(tenant_id, snapshot_date))
             closed_run_id = await connection.scalar(
                 select(snapshot_runs.c.id).where(
-                    this_date_runs,
-                    or_(
-                        snapshot_runs.c.status == "success",
-                        (snapshot_runs.c.status == "failed")
-                        & (snapshot_runs.c.error == MISSED_SNAPSHOT_ERROR),
-                    ),
+                    snapshot_runs.c.tenant_id == tenant_id,
+                    snapshot_runs.c.snapshot_date == snapshot_date,
+                    snapshot_runs.c.status.in_(("success", "missed")),
                 )
             )
             if closed_run_id is not None:
                 continue
-            previous_attempts = await connection.scalar(
-                select(func.count()).select_from(snapshot_runs).where(this_date_runs)
-            )
             await connection.execute(
                 insert(snapshot_runs).values(
                     tenant_id=tenant_id,
                     snapshot_date=snapshot_date,
-                    attempt=(previous_attempts or 0) + 1,
-                    status="failed",
+                    status="missed",
+                    trigger=trigger,
                     finished_at=func.clock_timestamp(),
-                    error=MISSED_SNAPSHOT_ERROR,
                 )
             )
         newly_missed.append(snapshot_date)

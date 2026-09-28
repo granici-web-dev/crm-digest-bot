@@ -183,7 +183,11 @@ async def store_successful_snapshot(engine: AsyncEngine, snapshot_date: date) ->
         )
         await connection.execute(
             insert(snapshot_runs).values(
-                tenant_id=TENANT_ID, snapshot_date=snapshot_date, attempt=1, status="success"
+                tenant_id=TENANT_ID,
+                snapshot_date=snapshot_date,
+                attempt=1,
+                status="success",
+                trigger="scheduled",
             )
         )
 

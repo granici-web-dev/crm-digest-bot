@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator, Callable, Coroutine, Iterator
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -14,7 +14,7 @@ from sqlalchemy import insert, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.app import missing_final_snapshot_alert
-from digest.config import AppConfig
+from digest.config import SNAPSHOT_RUNNING_ALIVE_FOR, AppConfig
 from digest.db.lead_frame import SnapshotMissingError, load_lead_frame
 from digest.db.schema import client_snapshots, lead_snapshots, snapshot_runs
 from digest.mefi.client import (
@@ -26,6 +26,7 @@ from digest.mefi.client import (
 from digest.snapshot import (
     SnapshotIncomplete,
     SnapshotOutcome,
+    SnapshotRunInProgress,
     SnapshotRunSuperseded,
     SnapshotSources,
     run_daily_snapshot,
@@ -83,7 +84,9 @@ async def snapshot_with_clients(
     sources = SnapshotSources(
         leads_client=mefi_client, clients_client=mefi_client, contact_hash_key=TEST_CONTACT_HASH_KEY
     )
-    return await run_daily_snapshot(engine, sources, app_config.status_mapping, "sofabelle", now)
+    return await run_daily_snapshot(
+        engine, sources, app_config.status_mapping, "sofabelle", now, "scheduled"
+    )
 
 
 async def run_row(engine: AsyncEngine, run_id: int) -> Any:
@@ -443,7 +446,12 @@ async def test_stale_running_run_is_superseded_by_next_attempt(
     async with engine.begin() as connection:
         await connection.execute(
             insert(snapshot_runs).values(
-                tenant_id="sofabelle", snapshot_date=date(2026, 9, 24), attempt=1, status="running"
+                tenant_id="sofabelle",
+                snapshot_date=date(2026, 9, 24),
+                attempt=1,
+                status="running",
+                trigger="scheduled",
+                started_at=SEPTEMBER_24_EVENING - SNAPSHOT_RUNNING_ALIVE_FOR,
             )
         )
     mefi_returns(mefi_mock, [make_lead(id=1)])
@@ -460,6 +468,34 @@ async def test_stale_running_run_is_superseded_by_next_attempt(
         ).all()
     assert [tuple(run) for run in runs] == [(1, "failed", "superseded"), (2, "success", None)]
     assert (await run_row(engine, run_id)).attempt == 2
+
+
+async def test_fresh_running_run_is_left_alone(
+    engine: AsyncEngine,
+    mefi_client: MefiClient,
+    mefi_mock: respx.MockRouter,
+    app_config: AppConfig,
+) -> None:
+    async with engine.begin() as connection:
+        await connection.execute(
+            insert(snapshot_runs).values(
+                tenant_id="sofabelle",
+                snapshot_date=date(2026, 9, 24),
+                attempt=1,
+                status="running",
+                trigger="scheduled",
+                started_at=SEPTEMBER_24_EVENING + timedelta(minutes=1),
+            )
+        )
+    leads_route = mefi_returns(mefi_mock, [make_lead(id=1)])
+
+    with pytest.raises(SnapshotRunInProgress):
+        await snapshot(engine, mefi_client, app_config, SEPTEMBER_24_EVENING + timedelta(minutes=5))
+
+    assert leads_route.call_count == 0
+    async with engine.connect() as connection:
+        statuses = (await connection.execute(select(snapshot_runs.c.status))).scalars().all()
+    assert statuses == ["running"]
 
 
 async def test_lead_skipped_today_is_not_counted_as_missing(
@@ -817,6 +853,7 @@ async def store_runs(engine: AsyncEngine, runs: list[tuple[date, str]]) -> None:
                     "snapshot_date": run_date,
                     "attempt": 1,
                     "status": status,
+                    "trigger": "scheduled",
                 }
                 for run_date, status in runs
             ],
@@ -824,12 +861,15 @@ async def store_runs(engine: AsyncEngine, runs: list[tuple[date, str]]) -> None:
 
 
 async def test_missing_final_snapshot_of_today_is_alerted_after_window_end(
-    engine: AsyncEngine,
+    engine: AsyncEngine, app_config: AppConfig
 ) -> None:
     await store_runs(engine, [(date(2026, 9, 23), "success"), (date(2026, 9, 24), "failed")])
 
     alert = await missing_final_snapshot_alert(
-        engine, "sofabelle", datetime(2026, 9, 24, 19, 40, tzinfo=BUCHAREST)
+        engine,
+        "sofabelle",
+        datetime(2026, 9, 24, 19, 40, tzinfo=BUCHAREST),
+        app_config.status_mapping.time,
     )
 
     assert alert == (
@@ -838,11 +878,41 @@ async def test_missing_final_snapshot_of_today_is_alerted_after_window_end(
     )
 
 
-async def test_final_snapshot_of_today_gives_no_alert(engine: AsyncEngine) -> None:
+async def test_final_check_is_silent_while_late_snapshot_runs(
+    engine: AsyncEngine, app_config: AppConfig
+) -> None:
+    async with engine.begin() as connection:
+        await connection.execute(
+            insert(snapshot_runs).values(
+                tenant_id="sofabelle",
+                snapshot_date=date(2026, 9, 24),
+                attempt=1,
+                status="running",
+                trigger="catch_up",
+                started_at=datetime(2026, 9, 24, 19, 36, tzinfo=BUCHAREST),
+            )
+        )
+
+    alert = await missing_final_snapshot_alert(
+        engine,
+        "sofabelle",
+        datetime(2026, 9, 24, 19, 40, tzinfo=BUCHAREST),
+        app_config.status_mapping.time,
+    )
+
+    assert alert is None
+
+
+async def test_final_snapshot_of_today_gives_no_alert(
+    engine: AsyncEngine, app_config: AppConfig
+) -> None:
     await store_runs(engine, [(date(2026, 9, 24), "success")])
 
     alert = await missing_final_snapshot_alert(
-        engine, "sofabelle", datetime(2026, 9, 24, 19, 40, tzinfo=BUCHAREST)
+        engine,
+        "sofabelle",
+        datetime(2026, 9, 24, 19, 40, tzinfo=BUCHAREST),
+        app_config.status_mapping.time,
     )
 
     assert alert is None

@@ -42,7 +42,7 @@ from digest.reports.lead_links import LeadLinks
 from digest.reports.modules import ReportModuleFunction
 from digest.reports.periods import ReportLevel, report_period
 from digest.reports.render import render
-from digest.snapshot import describe_error, snapshot_taken_late, success_snapshot_started_at
+from digest.snapshot import describe_error, late_snapshot_started_at
 
 logger = logging.getLogger(__name__)
 
@@ -191,39 +191,51 @@ def modules_of_level(registry: ModuleRegistry, level: ReportLevel) -> dict[str, 
     }[level]
 
 
-async def runnable_modules(
-    deps: ReportDeps, level: ReportLevel
-) -> list[tuple[str, ReportModuleFunction]]:
+@dataclass(frozen=True)
+class ModuleSelection:
+    runnable: list[tuple[str, ReportModuleFunction]]
+    # Включённые модули, которые не запустятся: причина уходит в служебный бот.
+    alerts: list[str]
+
+
+async def select_modules(deps: ReportDeps, level: ReportLevel) -> ModuleSelection:
     overrides = await module_enabled_overrides(deps)
     runnable: list[tuple[str, ReportModuleFunction]] = []
+    alerts: list[str] = []
     not_implemented: list[str] = []
     for module_id, module in modules_of_level(deps.config.modules, level).items():
         if not overrides.get(module_id, module.enabled):
             continue
         blockers = deps.config.module_blockers(module_id)
         if blockers.disconnected_sources:
-            await notify_ops(
-                deps.ops,
+            alerts.append(
                 f"Модуль {module_id} включён, но источники "
-                f"{list(blockers.disconnected_sources)} не подключены: пропущен.",
+                f"{list(blockers.disconnected_sources)} не подключены: пропущен."
             )
         elif blockers.missing_kpi_status is not None:
-            await notify_ops(
-                deps.ops,
+            alerts.append(
                 f"Модуль {module_id} включён, но требует kpi.yaml status: "
-                f"{blockers.missing_kpi_status}: пропущен.",
+                f"{blockers.missing_kpi_status}: пропущен."
             )
         elif module_id not in deps.modules:
             not_implemented.append(module_id)
         else:
             runnable.append((module_id, deps.modules[module_id]))
     if not_implemented:
-        await notify_ops(
-            deps.ops,
+        alerts.append(
             f"Модули {not_implemented} отчёта {level} включены, но не реализованы: "
-            "в отчёт не попали.",
+            "в отчёт не попали."
         )
-    return runnable
+    return ModuleSelection(runnable, alerts)
+
+
+async def runnable_modules(
+    deps: ReportDeps, level: ReportLevel
+) -> list[tuple[str, ReportModuleFunction]]:
+    selection = await select_modules(deps, level)
+    for alert in selection.alerts:
+        await notify_ops(deps.ops, alert)
+    return selection.runnable
 
 
 UNKNOWN_KEY_PROBLEMS = ("unknown_raw_key", "unknown_custom_field")
@@ -394,14 +406,6 @@ async def snapshot_if_successful(deps: ReportDeps, snapshot_date: date) -> Previ
     return PreviousSnapshot(snapshot_date, lead_frame)
 
 
-async def late_snapshot_taken_at(deps: ReportDeps, snapshot_date: date) -> datetime | None:
-    time_settings = deps.config.status_mapping.time
-    started_at = await success_snapshot_started_at(deps.engine, deps.tenant_id, snapshot_date)
-    if started_at is None or not snapshot_taken_late(started_at, snapshot_date, time_settings):
-        return None
-    return started_at.astimezone(ZoneInfo(time_settings.timezone))
-
-
 async def build_report(
     deps: ReportDeps, level: ReportLevel, period: Period, snapshot_date: date, late: bool
 ) -> BuiltReport | None:
@@ -436,7 +440,9 @@ async def build_report(
     await alert_snapshot_findings(deps, snapshot_date, lead_frame)
     # Поздний снапшот сдвигает только ежедневный отчёт: его разница снапшотов захватила вечер.
     late_snapshot_at = (
-        await late_snapshot_taken_at(deps, snapshot_date) if level == "daily" else None
+        await late_snapshot_started_at(deps.engine, deps.tenant_id, snapshot_date)
+        if level == "daily"
+        else None
     )
     previous_date = await previous_success_snapshot_date(deps.engine, deps.tenant_id, snapshot_date)
     previous = (

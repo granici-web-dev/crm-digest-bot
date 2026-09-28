@@ -22,7 +22,7 @@ def due(
         cron or DEFAULT_CRONS[level],
         report_period(level, now, time_settings),
         now,
-        app_config.modules.catch_up_days[level],
+        app_config.modules.catch_up_days.for_level(level),
         BUCHAREST,
     )
 

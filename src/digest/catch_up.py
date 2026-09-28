@@ -3,19 +3,14 @@ from zoneinfo import ZoneInfo
 
 from apscheduler.triggers.cron import CronTrigger
 
-from digest.config import SNAPSHOT_RETRY_DELAY, TimeSettings
+from digest.config import TimeSettings
 from digest.metrics.kpi import Period
 
 
 def late_snapshot_due(now: datetime, time_settings: TimeSettings) -> bool:
     # До штатного повтора снапшот снимет он сам; две выгрузки за дату гасят друг друга.
-    timezone = ZoneInfo(time_settings.timezone)
-    local_now = now.astimezone(timezone)
-    retry_at = (
-        datetime.combine(local_now.date(), time_settings.daily_window_end, tzinfo=timezone)
-        + SNAPSHOT_RETRY_DELAY
-    )
-    return local_now >= retry_at
+    local_now = now.astimezone(ZoneInfo(time_settings.timezone))
+    return local_now >= time_settings.snapshot_retry_at(local_now.date())
 
 
 def report_catch_up_due(

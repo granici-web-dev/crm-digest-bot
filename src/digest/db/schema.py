@@ -33,7 +33,8 @@ metadata = MetaData(
 )
 
 LEAD_CATEGORIES = ("WON", "ACTIVE", "ACTIVE_FOLLOWUP", "LOST", "PARTNERSHIP", "UNMAPPED")
-SNAPSHOT_RUN_STATUSES = ("running", "success", "failed", "preview", "superseded")
+SNAPSHOT_RUN_STATUSES = ("running", "success", "failed", "preview", "superseded", "missed")
+SNAPSHOT_TRIGGERS = ("scheduled", "retry", "catch_up", "manual")
 CLIENTS_SNAPSHOT_STATUSES = ("success", "failed")
 ChatQuestionStatus = Literal[
     "answered",
@@ -114,8 +115,9 @@ snapshot_runs = Table(
     Column("id", BigInteger, Identity(), primary_key=True),
     _tenant_id_column(),
     Column("snapshot_date", Date, nullable=False),
-    Column("attempt", SmallInteger, nullable=False),
+    Column("attempt", SmallInteger),
     Column("status", Text, nullable=False),
+    Column("trigger", Text, nullable=False),
     Column("started_at", TIMESTAMP(timezone=True), nullable=False, server_default=func.now()),
     _timestamptz("finished_at"),
     Column("duration_ms", Integer),
@@ -139,6 +141,9 @@ snapshot_runs = Table(
     Column("clients_unknown_keys", ARRAY(Text)),
     Column("clients_error", Text),
     CheckConstraint(f"status IN ({_sql_in_list(SNAPSHOT_RUN_STATUSES)})", name="status"),
+    CheckConstraint(f"trigger IN ({_sql_in_list(SNAPSHOT_TRIGGERS)})", name="trigger"),
+    # missed это не попытка, а отметка «снапшота за дату нет и не будет»: номера попытки у неё нет.
+    CheckConstraint("(status = 'missed') = (attempt IS NULL)", name="attempt_unless_missed"),
     CheckConstraint(
         f"clients_status IN ({_sql_in_list(CLIENTS_SNAPSHOT_STATUSES)})", name="clients_status"
     ),

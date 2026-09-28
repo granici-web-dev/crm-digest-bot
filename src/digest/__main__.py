@@ -75,7 +75,7 @@ async def run_manual_snapshot(app_settings: Settings) -> int:
             contact_hash_key=app_settings.contact_hash_key,
         )
         outcome = await run_daily_snapshot(
-            engine, sources, config.status_mapping, app_settings.tenant_id, now
+            engine, sources, config.status_mapping, app_settings.tenant_id, now, "manual"
         )
         # Ручной прогон алертит как плановый: сбой клиентов не должен остаться только в консоли.
         if outcome.clients_alert is not None:
