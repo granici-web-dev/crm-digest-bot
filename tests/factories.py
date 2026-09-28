@@ -1,9 +1,11 @@
 import json
+import math
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import httpx
 from pydantic import SecretStr
 
 from digest.config import StatusMapping, read_yaml
@@ -131,6 +133,42 @@ def make_search_page(
             "total_pages": total_pages,
         },
     }
+
+
+class FakeClientsSearch:
+    # Как живой mefi: равные created_at приходят в порядке, который зависит от запрошенного
+    # окна страницы, поэтому листание по created_at теряет и дублирует клиентов на стыках.
+    def __init__(self, clients: list[dict[str, Any]]) -> None:
+        self.clients = clients
+        self.request_bodies: list[dict[str, Any]] = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        body: dict[str, Any] = json.loads(request.content)
+        self.request_bodies.append(body)
+        filters = body["filters"]
+        matching = [
+            client
+            for client in self.clients
+            if "date_from" not in filters
+            or filters["date_from"] <= client["created_at"][:10] <= filters["date_to"]
+        ]
+        per_page, page = body["per_page"], body["page"]
+        offset = (page - 1) * per_page
+        if body["sort"] == "name":
+            ordered = sorted(matching, key=lambda client: client["name"].casefold())
+        else:
+            ordered = sorted(
+                matching, key=lambda client: (client["created_at"], hash((client["id"], offset)))
+            )
+        return httpx.Response(
+            200,
+            json=make_search_page(
+                ordered[offset : offset + per_page],
+                page=page,
+                total_pages=max(1, math.ceil(len(matching) / per_page)),
+                total=len(matching),
+            ),
+        )
 
 
 class FakeTime:

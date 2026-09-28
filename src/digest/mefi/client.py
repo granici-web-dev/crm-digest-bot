@@ -3,6 +3,7 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -112,11 +113,15 @@ class MefiClient:
         page_number = 1
         while True:
             # Пустой body отдаёт только lifecycle active (CLAUDE.md, ловушки mefi).
+            # created_at asc: новые записи во время выгрузки уходят в конец и не сдвигают
+            # страницы; сортировки по id в mefi нет. Удаление записи во время выгрузки всё же
+            # сдвигает страницы назад и теряет одну запись; такой пропуск ловит проверка полноты.
             page, page_rate_limited_count = await self._search_page(
                 "/leads/search",
                 {"lifecycle": ["active", "lost", "junk"]},
                 page_number,
                 rate_limited_count,
+                sort="created_at",
             )
             rate_limited_count = page_rate_limited_count
             for lead in page.data:
@@ -133,44 +138,75 @@ class MefiClient:
                 )
             page_number += 1
 
-    async def search_all_clients(self) -> MefiClientsDump:
+    async def search_all_clients(self, created_until: date) -> MefiClientsDump:
         clients_by_id: dict[int, dict[str, Any]] = {}
         clients_without_int_id: list[dict[str, Any]] = []
-        rate_limited_count = 0
-        page_number = 1
-        while True:
-            # У клиентов, в отличие от лидов, пустой filters.state отдаёт все состояния
-            # (docs/mefi-clients-notes.md, «По state»).
-            page, page_rate_limited_count = await self._search_page(
-                "/clients/search", {}, page_number, rate_limited_count
-            )
-            rate_limited_count = page_rate_limited_count
+
+        def collect(page: MefiSearchPage) -> None:
             for client in page.data:
                 client_id = client.get("id")
                 if isinstance(client_id, int):
                     clients_by_id[client_id] = client
                 else:
                     clients_without_int_id.append(client)
-            if page_number >= page.meta.total_pages:
-                return MefiClientsDump(
-                    clients=[*clients_by_id.values(), *clients_without_int_id],
-                    api_total=page.meta.total,
-                    rate_limited_count=rate_limited_count,
+
+        # У клиентов, в отличие от лидов, пустой filters.state отдаёт все состояния
+        # (docs/mefi-clients-notes.md, «По state»).
+        probe, rate_limited_count = await self._search_page(
+            "/clients/search", {}, 1, 0, sort="created_at", per_page=1
+        )
+        api_total = probe.meta.total
+        if not probe.data:
+            return MefiClientsDump([], api_total, rate_limited_count)
+        # Сортировка mefi без тай-брейка: у импорта 05.02 474 клиента за 11 секунд, и на
+        # стыках страниц created_at одни и те же клиенты приходят дважды, а другие ни разу
+        # (docs/mefi-clients-notes.md, «Выгрузка»). Поэтому делим по дням до диапазонов
+        # в одну страницу. День сдвинут на запас: в какой таймзоне mefi режет дни, неизвестно.
+        earliest_created = datetime.fromisoformat(probe.data[0]["created_at"]).date()
+        pending_ranges = [(earliest_created - timedelta(days=1), created_until)]
+        while pending_ranges:
+            created_from, created_to = pending_ranges.pop()
+            filters = {
+                "date_field": "created_at",
+                "date_from": created_from.isoformat(),
+                "date_to": created_to.isoformat(),
+            }
+            page, rate_limited_count = await self._search_page(
+                "/clients/search", filters, 1, rate_limited_count, sort="name"
+            )
+            if page.meta.total > SEARCH_PER_PAGE and created_from < created_to:
+                middle = created_from + timedelta(days=(created_to - created_from).days // 2)
+                pending_ranges += [(created_from, middle), (middle + timedelta(days=1), created_to)]
+                continue
+            # День больше страницы листаем по имени: внутри импорта имена уникальны,
+            # равные имена на стыке страниц поймает проверка полноты снапшота.
+            collect(page)
+            for page_number in range(2, page.meta.total_pages + 1):
+                page, rate_limited_count = await self._search_page(
+                    "/clients/search", filters, page_number, rate_limited_count, sort="name"
                 )
-            page_number += 1
+                collect(page)
+        return MefiClientsDump(
+            clients=[*clients_by_id.values(), *clients_without_int_id],
+            api_total=api_total,
+            rate_limited_count=rate_limited_count,
+        )
 
     async def _search_page(
-        self, path: str, filters: dict[str, Any], page_number: int, rate_limited_count: int
+        self,
+        path: str,
+        filters: dict[str, Any],
+        page_number: int,
+        rate_limited_count: int,
+        sort: str,
+        per_page: int = SEARCH_PER_PAGE,
     ) -> tuple[MefiSearchPage, int]:
-        # created_at asc: новые записи во время выгрузки уходят в конец и не сдвигают страницы;
-        # сортировки по id в mefi нет. Удаление записи во время выгрузки всё же сдвигает страницы
-        # назад и теряет одну запись; такой пропуск ловит проверка полноты снапшота.
         request_body = {
             "filters": filters,
-            "sort": "created_at",
+            "sort": sort,
             "order": "asc",
             "page": page_number,
-            "per_page": SEARCH_PER_PAGE,
+            "per_page": per_page,
         }
         consecutive_rate_limits = 0
         while True:

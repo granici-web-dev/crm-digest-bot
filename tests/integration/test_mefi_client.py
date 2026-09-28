@@ -1,5 +1,7 @@
 import json
 from collections.abc import AsyncIterator
+from datetime import date
+from typing import Any
 
 import httpx
 import pytest
@@ -12,10 +14,18 @@ from digest.mefi.client import (
     RequestPacer,
     create_mefi_http_client,
 )
-from factories import FakeTime, make_lead, make_search_page, recorded_search_leads
+from factories import (
+    FakeClientsSearch,
+    FakeTime,
+    make_client,
+    make_lead,
+    make_search_page,
+    recorded_search_leads,
+)
 
 BASE_URL = "https://mefi.test/api/v1"
 SEARCH_URL = f"{BASE_URL}/leads/search"
+CLIENTS_SEARCH_URL = f"{BASE_URL}/clients/search"
 
 
 @pytest.fixture
@@ -164,3 +174,41 @@ async def test_clients_sharing_a_pacer_are_spaced_together(
         await MefiClient(second_http_client, pacer=pacer).search_all_leads()
 
     assert fake_time.sleeps == [7, pytest.approx(1.2)]
+
+
+def clients_with_bulk_import() -> list[dict[str, Any]]:
+    earlier = [make_client(id=1, created_at="2025-12-09T07:15:20Z")]
+    # Импорт одной секундой больше двух страниц: на стыках страниц сортировка неустойчива.
+    bulk_import = [
+        make_client(id=100 + index, name=f"Client {index:03d}", created_at="2026-02-05T13:19:35Z")
+        for index in range(230)
+    ]
+    later = [
+        make_client(id=1000 + day, created_at=f"2026-{6 + day % 4:02d}-{1 + day:02d}T09:00:00Z")
+        for day in range(20)
+    ]
+    return [*earlier, *bulk_import, *later]
+
+
+@respx.mock
+async def test_clients_dump_is_complete_when_created_at_ties_cross_pages(
+    mefi_client: MefiClient,
+) -> None:
+    clients = clients_with_bulk_import()
+    fake_search = FakeClientsSearch(clients)
+    respx.post(CLIENTS_SEARCH_URL).mock(side_effect=fake_search)
+
+    dump = await mefi_client.search_all_clients(date(2026, 9, 29))
+
+    assert sorted(client["id"] for client in dump.clients) == sorted(
+        client["id"] for client in clients
+    )
+    assert dump.api_total == len(clients)
+    probe, *range_requests = fake_search.request_bodies
+    assert (probe["filters"], probe["sort"], probe["per_page"]) == ({}, "created_at", 1)
+    assert {request["sort"] for request in range_requests} == {"name"}
+    assert all(
+        request["filters"]["date_from"] == request["filters"]["date_to"] == "2026-02-05"
+        for request in range_requests
+        if request["page"] > 1
+    )

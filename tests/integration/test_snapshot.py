@@ -511,7 +511,7 @@ async def test_clients_snapshot_stores_rows_without_personal_data(
     assert (run.status, run.clients_status, run.clients_error) == ("success", "success", None)
     assert (run.clients_api_total, run.clients_written, run.clients_skipped) == (3, 3, 0)
     assert outcome.clients_alert is None
-    assert json.loads(clients_route.calls.last.request.content)["filters"] == {}
+    assert json.loads(clients_route.calls[0].request.content)["filters"] == {}
     rows = await client_snapshot_rows(engine)
     assert [(row.client_id, row.showroom, row.state) for row in rows] == [
         (2189, "Brașov", "lost"),
@@ -555,6 +555,7 @@ async def test_rerun_loads_only_missing_clients(
     clients_route.side_effect = [
         httpx.Response(500),
         httpx.Response(200, json=make_search_page(recorded_search_clients())),
+        httpx.Response(200, json=make_search_page(recorded_search_clients())),
     ]
     first = await snapshot_with_clients(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
 
@@ -562,7 +563,7 @@ async def test_rerun_loads_only_missing_clients(
     third = await snapshot_with_clients(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
 
     assert first.run_id == second.run_id == third.run_id
-    assert (leads_route.call_count, clients_route.call_count) == (1, 2)
+    assert (leads_route.call_count, clients_route.call_count) == (1, 3)
     assert (second.clients_alert, third.clients_alert) == (None, None)
     run = await run_row(engine, first.run_id)
     assert (run.attempt, run.status, run.clients_status, run.clients_error) == (

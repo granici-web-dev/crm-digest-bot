@@ -3,7 +3,7 @@ import logging
 import time
 from collections import defaultdict
 from dataclasses import asdict, dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -520,7 +520,8 @@ async def snapshot_clients(
 ) -> str | None:
     this_run = snapshot_runs.c.id == run_id
     try:
-        dump = await clients_client.search_all_clients()
+        # День в запас: в какой таймзоне mefi режет дни фильтра, неизвестно.
+        dump = await clients_client.search_all_clients(snapshot_date + timedelta(days=1))
         async with engine.begin() as connection:
             # Два параллельных повтора за дату не должны писать клиентов дважды.
             await connection.execute(snapshot_run_lock(tenant_id, snapshot_date))
