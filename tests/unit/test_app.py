@@ -46,7 +46,11 @@ async def test_report_and_snapshot_jobs_tolerate_late_start(app_config: AppConfi
     scheduler = AsyncIOScheduler(timezone=ZoneInfo("Europe/Bucharest"))
     async with httpx.AsyncClient() as http_client:
         schedule_snapshot_jobs(
-            scheduler, deps, SnapshotSources(MefiClient(http_client), TEST_CONTACT_HASH_KEY)
+            scheduler,
+            deps,
+            SnapshotSources(
+                MefiClient(http_client), MefiClient(http_client), TEST_CONTACT_HASH_KEY
+            ),
         )
     schedule_report_job(scheduler, deps, None, "daily", "30 19 * * *")
 

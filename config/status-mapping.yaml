@@ -104,6 +104,49 @@ raw_known_keys:
   - title
   - website
 
+# Клиенты mefi (clients:read): строка Contract Cantitate в d1 (docs/mefi-clients-notes.md).
+clients:
+  # id полей клиента отличаются от лидов: Showroom у лида 14, у клиента 15.
+  showroom: { field_id: 15, name: "Showroom" }
+  # Клиенты, созданные раньше, это ручной ввод старых договоров при переходе на mefi
+  # (решение владельца 28.09.2026): в Contract Cantitate не считаются никогда.
+  contracts_count_from: 2026-06-01
+  # В raw пишутся только эти ключи: в ответе клиента банковские и паспортные данные, новое поле
+  # такого рода не должно попасть в базу ни на день. Незнакомый ключ → алерт.
+  raw_known_keys:
+    - banking
+    - billing
+    - business
+    - business_details
+    - client_type
+    - created_at
+    - currency
+    - custom_fields
+    - elimination
+    - groups
+    - id
+    - identity
+    - last_contact_at
+    - last_status_change
+    - name
+    - responsibles
+    - shipping
+    - source
+    - state
+    - status
+    - website
+  # detailed_reason это свободный текст продавца о клиенте.
+  raw_strip:
+    - name
+    - business
+    - business_details
+    - identity
+    - banking
+    - billing
+    - shipping
+    - website
+    - elimination.detailed_reason
+
 sources:
   showroom_visit: ["Showroom"]             # считается отдельно от входящих лидов
   # Статус визита: d1 считает «Vizita in showroom» по переходу в этот статус между снапшотами.

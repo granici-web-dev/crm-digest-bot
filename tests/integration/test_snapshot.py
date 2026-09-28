@@ -1,4 +1,5 @@
 import asyncio
+import json
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, date, datetime
 from typing import Any
@@ -12,18 +13,31 @@ from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.config import AppConfig
-from digest.db.schema import lead_snapshots, snapshot_runs
+from digest.db.schema import client_snapshots, lead_snapshots, snapshot_runs
 from digest.mefi.client import (
     MefiClient,
     MefiSearchUnsuccessful,
     RequestPacer,
     create_mefi_http_client,
 )
-from digest.snapshot import SnapshotIncomplete, SnapshotSources, run_daily_snapshot
-from factories import TEST_CONTACT_HASH_KEY, make_lead, make_search_page, recorded_search_leads
+from digest.snapshot import (
+    SnapshotIncomplete,
+    SnapshotOutcome,
+    SnapshotSources,
+    run_daily_snapshot,
+)
+from factories import (
+    TEST_CONTACT_HASH_KEY,
+    make_client,
+    make_lead,
+    make_search_page,
+    recorded_search_clients,
+    recorded_search_leads,
+)
 
 BASE_URL = "https://mefi.test/api/v1"
 SEARCH_URL = f"{BASE_URL}/leads/search"
+CLIENTS_SEARCH_URL = f"{BASE_URL}/clients/search"
 BUCHAREST = ZoneInfo("Europe/Bucharest")
 SEPTEMBER_23_EVENING = datetime(2026, 9, 23, 19, 0, tzinfo=BUCHAREST)
 SEPTEMBER_24_EVENING = datetime(2026, 9, 24, 19, 0, tzinfo=BUCHAREST)
@@ -52,7 +66,17 @@ def mefi_returns(mefi_mock: respx.MockRouter, leads: list[dict[str, Any]]) -> re
 async def snapshot(
     engine: AsyncEngine, mefi_client: MefiClient, app_config: AppConfig, now: datetime
 ) -> int:
-    sources = SnapshotSources(leads_client=mefi_client, contact_hash_key=TEST_CONTACT_HASH_KEY)
+    outcome = await snapshot_with_clients(engine, mefi_client, app_config, now)
+    return outcome.run_id
+
+
+async def snapshot_with_clients(
+    engine: AsyncEngine, mefi_client: MefiClient, app_config: AppConfig, now: datetime
+) -> SnapshotOutcome:
+    # Один httpx-клиент на оба ключа: respx различает запросы по пути, ключ тесту не важен.
+    sources = SnapshotSources(
+        leads_client=mefi_client, clients_client=mefi_client, contact_hash_key=TEST_CONTACT_HASH_KEY
+    )
     return await run_daily_snapshot(engine, sources, app_config.status_mapping, "sofabelle", now)
 
 
@@ -454,3 +478,117 @@ async def test_lead_skipped_today_is_not_counted_as_missing(
 
     run = await run_row(engine, run_id)
     assert (run.skipped_count, run.missing_since_previous) == (1, 1)
+
+
+def mefi_returns_clients(mefi_mock: respx.MockRouter, clients: list[dict[str, Any]]) -> respx.Route:
+    return mefi_mock.post(CLIENTS_SEARCH_URL).respond(json=make_search_page(clients))
+
+
+async def client_snapshot_rows(engine: AsyncEngine) -> list[Any]:
+    async with engine.connect() as connection:
+        return list(
+            (
+                await connection.execute(
+                    select(client_snapshots).order_by(client_snapshots.c.client_id)
+                )
+            ).all()
+        )
+
+
+async def test_clients_snapshot_stores_rows_without_personal_data(
+    engine: AsyncEngine,
+    mefi_client: MefiClient,
+    mefi_mock: respx.MockRouter,
+    app_config: AppConfig,
+) -> None:
+    clients = recorded_search_clients()
+    mefi_returns(mefi_mock, recorded_search_leads())
+    clients_route = mefi_returns_clients(mefi_mock, clients)
+
+    outcome = await snapshot_with_clients(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
+
+    run = await run_row(engine, outcome.run_id)
+    assert (run.status, run.clients_status, run.clients_error) == ("success", "success", None)
+    assert (run.clients_api_total, run.clients_written, run.clients_skipped) == (3, 3, 0)
+    assert outcome.clients_alert is None
+    assert json.loads(clients_route.calls.last.request.content)["filters"] == {}
+    rows = await client_snapshot_rows(engine)
+    assert [(row.client_id, row.showroom, row.state) for row in rows] == [
+        (2189, "Brașov", "lost"),
+        (2280, "București", "active"),
+        (2285, "Cluj", "active"),
+    ]
+    stored_text = " ".join(str(row.raw) for row in rows)
+    for client in clients:
+        assert client["name"] not in stored_text
+        for personal_key in ("identity", "banking", "billing", "shipping", "business", "website"):
+            assert f"'{personal_key}'" not in stored_text
+
+
+async def test_clients_failure_keeps_leads_success(
+    engine: AsyncEngine,
+    mefi_client: MefiClient,
+    mefi_mock: respx.MockRouter,
+    app_config: AppConfig,
+) -> None:
+    mefi_returns(mefi_mock, recorded_search_leads())
+    mefi_mock.post(CLIENTS_SEARCH_URL).respond(status_code=500)
+
+    outcome = await snapshot_with_clients(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
+
+    run = await run_row(engine, outcome.run_id)
+    assert (run.status, run.leads_written) == ("success", 3)
+    assert (run.clients_status, run.clients_error) == ("failed", "HTTPStatusError: HTTP 500")
+    assert outcome.clients_alert is not None
+    assert "Contract Cantitate в d1 будет «—»" in outcome.clients_alert
+    assert await client_snapshot_rows(engine) == []
+
+
+async def test_rerun_loads_only_missing_clients(
+    engine: AsyncEngine,
+    mefi_client: MefiClient,
+    mefi_mock: respx.MockRouter,
+    app_config: AppConfig,
+) -> None:
+    leads_route = mefi_returns(mefi_mock, recorded_search_leads())
+    clients_route = mefi_mock.post(CLIENTS_SEARCH_URL)
+    clients_route.side_effect = [
+        httpx.Response(500),
+        httpx.Response(200, json=make_search_page(recorded_search_clients())),
+    ]
+    first = await snapshot_with_clients(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
+
+    second = await snapshot_with_clients(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
+    third = await snapshot_with_clients(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
+
+    assert first.run_id == second.run_id == third.run_id
+    assert (leads_route.call_count, clients_route.call_count) == (1, 2)
+    assert (second.clients_alert, third.clients_alert) == (None, None)
+    run = await run_row(engine, first.run_id)
+    assert (run.attempt, run.status, run.clients_status, run.clients_error) == (
+        1,
+        "success",
+        "success",
+        None,
+    )
+    assert len(await client_snapshot_rows(engine)) == 3
+
+
+async def test_unknown_client_key_is_not_stored_and_alerted(
+    engine: AsyncEngine,
+    mefi_client: MefiClient,
+    mefi_mock: respx.MockRouter,
+    app_config: AppConfig,
+) -> None:
+    mefi_returns(mefi_mock, recorded_search_leads())
+    mefi_returns_clients(mefi_mock, [make_client(cnp="1900101000000")])
+
+    outcome = await snapshot_with_clients(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
+
+    run = await run_row(engine, outcome.run_id)
+    assert (run.clients_status, run.clients_unknown_keys) == ("success", ["cnp"])
+    assert outcome.clients_alert is not None
+    assert "незнакомые ключи cnp" in outcome.clients_alert
+    assert "1900101000000" not in outcome.clients_alert
+    (row,) = await client_snapshot_rows(engine)
+    assert "cnp" not in row.raw

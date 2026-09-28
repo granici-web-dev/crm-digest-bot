@@ -140,7 +140,7 @@ def create_report_deps(
 async def snapshot_job(deps: ReportDeps, snapshot_sources: SnapshotSources) -> None:
     now = datetime.now(ZoneInfo(deps.config.status_mapping.time.timezone))
     try:
-        await run_daily_snapshot(
+        outcome = await run_daily_snapshot(
             deps.engine, snapshot_sources, deps.config.status_mapping, deps.tenant_id, now
         )
     except Exception as error:
@@ -149,6 +149,9 @@ async def snapshot_job(deps: ReportDeps, snapshot_sources: SnapshotSources) -> N
         await notify_ops(
             deps.ops, f"Снапшот за {now:%d.%m.%Y %H:%M} не удался: {describe_error(error)}."
         )
+        return
+    if outcome.clients_alert is not None:
+        await notify_ops(deps.ops, outcome.clients_alert)
 
 
 async def report_job(deps: ReportDeps, level: ReportLevel, backup_dir: Path | None) -> None:
@@ -229,8 +232,13 @@ async def run_app(engine: AsyncEngine, config: AppConfig, app_settings: Settings
     mefi_http_client = create_mefi_http_client(
         app_settings.mefi_base_url, app_settings.mefi_api_key
     )
+    # Отдельный httpx-клиент на ключ clients:read, пейсер у обоих общий (IP-лимит mefi один).
+    mefi_clients_http_client = create_mefi_http_client(
+        app_settings.mefi_base_url, app_settings.mefi_clients_api_key
+    )
     snapshot_sources = SnapshotSources(
         leads_client=MefiClient(mefi_http_client),
+        clients_client=MefiClient(mefi_clients_http_client),
         contact_hash_key=app_settings.contact_hash_key,
     )
     scheduler = AsyncIOScheduler(timezone=ZoneInfo(config.status_mapping.time.timezone))
@@ -300,6 +308,7 @@ async def run_app(engine: AsyncEngine, config: AppConfig, app_settings: Settings
         task.cancel()
     await asyncio.gather(*polling_tasks, return_exceptions=True)
     await mefi_http_client.aclose()
+    await mefi_clients_http_client.aclose()
     if anthropic_client is not None:
         await anthropic_client.close()
     await deps.report_bot.session.close()

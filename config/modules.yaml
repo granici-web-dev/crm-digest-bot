@@ -12,6 +12,7 @@ sources:
   F: { title: "Excel 2024–2025",                           connected: false }
   G: { title: "себестоимость",                             connected: false }
   H: { title: "LLM из заметок",                            connected: false }
+  I: { title: "mefi clients:read",                         connected: true }
 
 daily:            # окно 19:00 вчера → 19:00 сегодня; время отправки в таблице schedules
   d1: { name: seller_format_report, label: "Raport format consilieri",   sources: [A], enabled: true }

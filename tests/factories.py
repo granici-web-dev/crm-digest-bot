@@ -32,6 +32,43 @@ def recorded_search_leads() -> list[dict[str, Any]]:
     return leads
 
 
+def recorded_search_clients() -> list[dict[str, Any]]:
+    recorded = json.loads((MEFI_FIXTURES / "clients_search_3.json").read_text(encoding="utf-8"))
+    clients: list[dict[str, Any]] = recorded["data"]
+    return clients
+
+
+def make_client(**overrides: Any) -> dict[str, Any]:
+    client: dict[str, Any] = {
+        "id": 2001,
+        "client_type": "individual",
+        "name": "CLIENT_TEST",
+        "website": None,
+        "currency": "RON",
+        "status": {"id": 1, "name": "Statusul 1"},
+        "source": {"id": 5, "name": "Showroom"},
+        "groups": [],
+        "responsibles": [{"id": 12, "name": "Dragoi Mihaela"}],
+        "state": "active",
+        "last_status_change": None,
+        "identity": {"card_number": "XX000000", "personal_id": "1900101000000"},
+        "business": None,
+        "business_details": None,
+        "banking": {"bank_name": "BANCA TEST", "iban": "RO00TEST0000000000000000"},
+        "billing": {"address": "Strada Test 1", "city": "Cluj"},
+        "shipping": {"address": "Strada Test 1", "city": "Cluj"},
+        "custom_fields": [
+            {"field_id": 15, "name": "Showroom", "type": "select", "value": "București"},
+            {"field_id": 13, "name": "Informatii", "type": "textarea", "value": "REDACTED"},
+        ],
+        "created_at": "2026-09-23T12:00:00Z",
+        "last_contact_at": None,
+        "elimination": None,
+    }
+    client.update(overrides)
+    return client
+
+
 def make_custom_fields(
     showroom: str | None = "București",
     ofertat: str | None = "❌NU",

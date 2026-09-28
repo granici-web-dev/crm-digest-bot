@@ -2,15 +2,19 @@ from datetime import date
 
 from digest.config import AppConfig, LeadCategory
 from digest.snapshot import (
+    ClientsCounters,
     CustomFieldProblem,
     SnapshotCounters,
     categorize,
+    client_to_snapshot_row,
+    clients_completeness_failure,
     completeness_failure,
     lead_to_snapshot_row,
+    parse_clients,
     parse_leads,
     strip_contacts,
 )
-from factories import make_custom_fields, make_lead, recorded_search_leads
+from factories import make_client, make_custom_fields, make_lead, recorded_search_leads
 
 SNAPSHOT_DATE = date(2026, 9, 24)
 CONTACT_SECRET = b"k" * 32
@@ -274,4 +278,83 @@ def test_skipped_leads_beyond_threshold_is_incomplete(app_config: AppConfig) -> 
     assert completeness_failure(counters(3000, 2970, 30), thresholds) is None
     assert completeness_failure(counters(3000, 2969, 31), thresholds) == (
         "пропущено 31 битых лидов из 3000"
+    )
+
+
+def test_client_row_keeps_only_known_keys_without_personal_data(app_config: AppConfig) -> None:
+    raw = make_client(
+        elimination={
+            "type": "lost",
+            "reason": {"id": 3, "name": "NU  A RASPUNS"},
+            "detailed_reason": "Clientul CLIENT_TEST a sunat de pe +40700000099",
+            "marked_at": "2026-09-23T12:00:00Z",
+            "marked_by": {"id": 12, "name": "Dragoi Mihaela"},
+        },
+        passport_scan="https://example.test/scan.pdf",
+    )
+    parsed, skipped_count = parse_clients([raw])
+
+    row, problem = client_to_snapshot_row(
+        parsed[0][0], parsed[0][1], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping.clients
+    )
+
+    assert (skipped_count, problem) == (0, None)
+    assert (row["client_id"], row["showroom"], row["state"], row["source_name"]) == (
+        2001,
+        "București",
+        "active",
+        "Showroom",
+    )
+    for personal_key in (
+        "name",
+        "identity",
+        "business",
+        "business_details",
+        "banking",
+        "billing",
+        "shipping",
+        "website",
+        "passport_scan",
+    ):
+        assert personal_key not in row["raw"]
+    assert "detailed_reason" not in row["raw"]["elimination"]
+    assert row["raw"]["elimination"]["reason"] == {"id": 3, "name": "NU  A RASPUNS"}
+    assert "CLIENT_TEST" not in str(row["raw"])
+    assert raw["name"] == "CLIENT_TEST"
+
+
+def test_client_showroom_name_mismatch_nulls_value(app_config: AppConfig) -> None:
+    raw = make_client(
+        custom_fields=[{"field_id": 15, "name": "Oras", "type": "select", "value": "Cluj"}]
+    )
+    parsed, _ = parse_clients([raw])
+
+    row, problem = client_to_snapshot_row(
+        parsed[0][0], parsed[0][1], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping.clients
+    )
+
+    assert row["showroom"] is None
+    assert problem == CustomFieldProblem(15, "Showroom", "name_mismatch", "Oras")
+
+
+def test_client_without_created_at_is_skipped() -> None:
+    broken = make_client()
+    del broken["created_at"]
+
+    parsed, skipped_count = parse_clients([broken, make_client(id=2002, source="Showroom")])
+
+    assert skipped_count == 1
+    assert [client.id for client, _ in parsed] == [2002]
+    assert parsed[0][0].source is None
+
+
+def test_clients_short_of_api_total_beyond_threshold_is_incomplete(app_config: AppConfig) -> None:
+    thresholds = app_config.status_mapping.snapshot.completeness
+
+    assert clients_completeness_failure(ClientsCounters(800, 792, 3, []), thresholds) is None
+    assert clients_completeness_failure(ClientsCounters(800, 790, 0, []), thresholds) == (
+        "получено 790 клиентов из 800"
+    )
+    assert clients_completeness_failure(ClientsCounters(800, 0, 0, []), thresholds) == (
+        "записано 0 клиентов из 800"
     )

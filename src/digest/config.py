@@ -18,7 +18,7 @@ from pydantic import (
     model_validator,
 )
 
-SourceCode = Literal["A", "B", "C", "D", "E", "F", "G", "H"]
+SourceCode = Literal["A", "B", "C", "D", "E", "F", "G", "H", "I"]
 Share = Annotated[float, Field(ge=0, le=1)]
 
 # Ключи причин, на которые ссылается metrics/: контракт между status-mapping.yaml и кодом.
@@ -139,6 +139,20 @@ class SnapshotSettings(StrictConfigModel):
     completeness: CompletenessThresholds
 
 
+class ClientSettings(StrictConfigModel):
+    showroom: CustomFieldRef
+    contracts_count_from: date
+    raw_known_keys: frozenset[str]
+    raw_strip: list[str]
+
+    @model_validator(mode="after")
+    def stripped_keys_are_known(self) -> Self:
+        unknown = sorted({path.split(".")[0] for path in self.raw_strip} - self.raw_known_keys)
+        if unknown:
+            raise ValueError(f"clients.raw_strip {unknown} нет в clients.raw_known_keys")
+        return self
+
+
 class SourceGroups(StrictConfigModel):
     showroom_visit: list[str]
     showroom_visit_status: str
@@ -182,6 +196,7 @@ class StatusMapping(StrictConfigModel):
     time: TimeSettings
     raw_strip: list[str]
     raw_known_keys: frozenset[str]
+    clients: ClientSettings
     snapshot: SnapshotSettings
 
     _category_by_status: dict[str, LeadCategory] = PrivateAttr()

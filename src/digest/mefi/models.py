@@ -105,6 +105,42 @@ class MefiLead(MefiModel):
         return lenient
 
 
+CLIENT_LENIENT_FIELD_ADAPTERS: dict[str, TypeAdapter[Any]] = {
+    "state": TypeAdapter(str),
+    "source": TypeAdapter(MefiNamedRef),
+}
+
+
+class MefiClientRecord(MefiModel):
+    id: StrictInt
+    created_at: AwareDatetime
+    state: str | None = None
+    source: MefiNamedRef | None = None
+    custom_fields: list[MefiCustomField] = []
+    invalid_shape_fields: list[InvalidShapeField] = []
+
+    # Как у лида: строго только id и created_at, битое вторичное поле становится null.
+    @model_validator(mode="before")
+    @classmethod
+    def null_invalid_secondary_fields(cls, raw: Any) -> Any:
+        if not isinstance(raw, dict):
+            return raw
+        invalid_fields: list[InvalidShapeField] = []
+        lenient = dict(raw)
+        for key, adapter in CLIENT_LENIENT_FIELD_ADAPTERS.items():
+            value = lenient.get(key)
+            if value is None:
+                continue
+            try:
+                adapter.validate_python(value)
+            except ValidationError:
+                invalid_fields.append(InvalidShapeField(None, key))
+                lenient[key] = None
+        lenient["custom_fields"] = valid_custom_fields(lenient.get("custom_fields"), invalid_fields)
+        lenient["invalid_shape_fields"] = invalid_fields
+        return lenient
+
+
 class MefiSearchMeta(MefiModel):
     page: StrictInt
     per_page: StrictInt

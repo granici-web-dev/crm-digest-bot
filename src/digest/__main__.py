@@ -58,12 +58,17 @@ async def run_manual_snapshot(app_settings: Settings) -> int:
     config = load_app_config(CONFIG_DIR)
     engine = create_database_engine(app_settings.database_url.get_secret_value())
     http_client = create_mefi_http_client(app_settings.mefi_base_url, app_settings.mefi_api_key)
+    clients_http_client = create_mefi_http_client(
+        app_settings.mefi_base_url, app_settings.mefi_clients_api_key
+    )
     now = datetime.now(ZoneInfo(config.status_mapping.time.timezone))
     try:
         sources = SnapshotSources(
-            leads_client=MefiClient(http_client), contact_hash_key=app_settings.contact_hash_key
+            leads_client=MefiClient(http_client),
+            clients_client=MefiClient(clients_http_client),
+            contact_hash_key=app_settings.contact_hash_key,
         )
-        run_id = await run_daily_snapshot(
+        outcome = await run_daily_snapshot(
             engine, sources, config.status_mapping, app_settings.tenant_id, now
         )
     except Exception as error:
@@ -71,8 +76,11 @@ async def run_manual_snapshot(app_settings: Settings) -> int:
         return 1
     finally:
         await http_client.aclose()
+        await clients_http_client.aclose()
         await engine.dispose()
-    print(f"snapshot_run {run_id}")
+    print(f"snapshot_run {outcome.run_id}")
+    if outcome.clients_alert is not None:
+        print(outcome.clients_alert)
     return 0
 
 

@@ -25,7 +25,7 @@ RETRY_AFTER_CAP_SECONDS = 120.0
 # Одиночный 429 прогон не валит (docs/mefi-api-notes.md), но пять подряд при паузе
 # 1.2 с и ожидании Retry-After значат бан IP; дальше пусть решает повтор в 19:10.
 MAX_CONSECUTIVE_RATE_LIMITS = 5
-LEADS_PER_PAGE = 100
+SEARCH_PER_PAGE = 100
 
 
 class MefiRateLimitExceeded(Exception):
@@ -74,6 +74,13 @@ class MefiLeadsDump:
     rate_limited_count: int
 
 
+@dataclass(frozen=True)
+class MefiClientsDump:
+    clients: list[dict[str, Any]]
+    api_total: int
+    rate_limited_count: int
+
+
 def retry_after_seconds(response: httpx.Response) -> float:
     header_value = response.headers.get("Retry-After")
     if header_value is None or not header_value.isdigit():
@@ -104,7 +111,13 @@ class MefiClient:
         rate_limited_count = 0
         page_number = 1
         while True:
-            page, page_rate_limited_count = await self._search_page(page_number, rate_limited_count)
+            # Пустой body отдаёт только lifecycle active (CLAUDE.md, ловушки mefi).
+            page, page_rate_limited_count = await self._search_page(
+                "/leads/search",
+                {"lifecycle": ["active", "lost", "junk"]},
+                page_number,
+                rate_limited_count,
+            )
             rate_limited_count = page_rate_limited_count
             for lead in page.data:
                 lead_id = lead.get("id")
@@ -120,25 +133,50 @@ class MefiClient:
                 )
             page_number += 1
 
+    async def search_all_clients(self) -> MefiClientsDump:
+        clients_by_id: dict[int, dict[str, Any]] = {}
+        clients_without_int_id: list[dict[str, Any]] = []
+        rate_limited_count = 0
+        page_number = 1
+        while True:
+            # У клиентов, в отличие от лидов, пустой filters.state отдаёт все состояния
+            # (docs/mefi-clients-notes.md, «По state»).
+            page, page_rate_limited_count = await self._search_page(
+                "/clients/search", {}, page_number, rate_limited_count
+            )
+            rate_limited_count = page_rate_limited_count
+            for client in page.data:
+                client_id = client.get("id")
+                if isinstance(client_id, int):
+                    clients_by_id[client_id] = client
+                else:
+                    clients_without_int_id.append(client)
+            if page_number >= page.meta.total_pages:
+                return MefiClientsDump(
+                    clients=[*clients_by_id.values(), *clients_without_int_id],
+                    api_total=page.meta.total,
+                    rate_limited_count=rate_limited_count,
+                )
+            page_number += 1
+
     async def _search_page(
-        self, page_number: int, rate_limited_count: int
+        self, path: str, filters: dict[str, Any], page_number: int, rate_limited_count: int
     ) -> tuple[MefiSearchPage, int]:
-        # Пустой body отдаёт только lifecycle active (CLAUDE.md, ловушки mefi).
-        # created_at asc: новые лиды во время выгрузки уходят в конец и не сдвигают страницы;
-        # сортировки по id в mefi нет. Удаление лида во время выгрузки всё же сдвигает страницы
-        # назад и теряет один лид; такой пропуск ловит проверка полноты снапшота.
+        # created_at asc: новые записи во время выгрузки уходят в конец и не сдвигают страницы;
+        # сортировки по id в mefi нет. Удаление записи во время выгрузки всё же сдвигает страницы
+        # назад и теряет одну запись; такой пропуск ловит проверка полноты снапшота.
         request_body = {
-            "filters": {"lifecycle": ["active", "lost", "junk"]},
+            "filters": filters,
             "sort": "created_at",
             "order": "asc",
             "page": page_number,
-            "per_page": LEADS_PER_PAGE,
+            "per_page": SEARCH_PER_PAGE,
         }
         consecutive_rate_limits = 0
         while True:
             await self._pacer.wait_turn()
             started_at = time.monotonic()
-            response = await self._http_client.post("/leads/search", json=request_body)
+            response = await self._http_client.post(path, json=request_body)
             duration_ms = round((time.monotonic() - started_at) * 1000)
             request_id = response.headers.get("x-request-id")
             if response.status_code == httpx.codes.TOO_MANY_REQUESTS:
@@ -147,6 +185,7 @@ class MefiClient:
                 logger.warning(
                     "mefi 429",
                     extra={
+                        "path": path,
                         "page": page_number,
                         "request_id": request_id,
                         "attempt": consecutive_rate_limits,
@@ -160,6 +199,7 @@ class MefiClient:
             logger.info(
                 "mefi search page",
                 extra={
+                    "path": path,
                     "page": page_number,
                     "status_code": response.status_code,
                     "request_id": request_id,
