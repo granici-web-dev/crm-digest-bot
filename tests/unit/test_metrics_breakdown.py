@@ -53,9 +53,8 @@ def test_counts_by_column_match_etalon(
     assert set(counts_by_key) == set(expected_by_key)
     for key, expected in expected_by_key.items():
         assert asdict(counts_by_key[key]) == expected["counts"], key
-        assert asdict(kpis_from(counts_by_key[key])) == pytest.approx(
-            expected["kpi"], abs=1e-9
-        ), key
+        kpis = asdict(kpis_from(counts_by_key[key]))
+        assert kpis == pytest.approx(expected["kpi"], abs=1e-9), key
 
 
 @pytest.mark.parametrize("column", ["source_name", "utm_campanie"])

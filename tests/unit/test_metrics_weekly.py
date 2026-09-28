@@ -13,10 +13,12 @@ from digest.metrics.daily import (
     lead_row_flags,
 )
 from digest.metrics.frame import prepare_lead_frame
+from digest.metrics.kpi import LeadCounts
 from digest.metrics.weekly import (
     LEAD_ROW_COLUMNS,
     converted_count,
     converted_count_by_showroom,
+    irrelevant_rows,
     relative_change,
     week_days,
     week_over_week,
@@ -593,3 +595,12 @@ def test_weekly_irrelevant_without_week_ago_has_no_previous(app_config: AppConfi
     assert result.total_irr_previous is None
     assert result.by_source[0].irr_previous is None
     assert result.previous_snapshot_date is None
+
+
+def test_irrelevant_rows_reject_threshold_that_admits_key_without_leads(
+    app_config: AppConfig,
+) -> None:
+    no_leads = LeadCounts(**dict.fromkeys(LeadCounts.__dataclass_fields__, 0))
+
+    with pytest.raises(ValueError, match="IRR не определён"):
+        irrelevant_rows({"Site": no_leads}, None, 0, 5, app_config)
