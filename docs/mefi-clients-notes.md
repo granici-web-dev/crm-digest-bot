@@ -67,7 +67,7 @@ id отличаются от лидов: Showroom у лидов 14, у клие�
 | 46 | Revenirea 3 (Data+info) | textarea | 33 |
 | 47–50 | UTM_Source, UTM_Campanie, UTM_Content, UTM_Medium | input | 3 |
 
-Textarea-поля и `identity`, `business`, `banking`, адреса это персональные данные клиента: хранить только как `raw` лидов, через `raw_strip`.
+Textarea-поля и `identity`, `business`, `banking`, адреса это персональные данные клиента. `identity`, `business`, `banking` и адреса вырезает `clients.raw_strip`; `custom_fields` пишутся в `raw` только по белому списку `clients.raw_custom_fields.keep`, textarea не пишутся (как у лидов). Незнакомое кастомное поле и незнакомый ключ внутри `elimination` и `responsibles` дают алерт и не пишутся.
 
 ## Числа
 

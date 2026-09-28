@@ -194,6 +194,49 @@ def strip_contacts(raw: dict[str, Any], paths: list[str]) -> dict[str, Any]:
     return stripped
 
 
+def keep_custom_fields(raw: dict[str, Any], keep_field_ids: frozenset[int]) -> dict[str, Any]:
+    custom_fields = raw.get("custom_fields")
+    if custom_fields is None:
+        return raw
+    if not isinstance(custom_fields, list):
+        # Битая форма уже в invalid_shape; что внутри, неизвестно, поэтому в raw не пишем.
+        return {**raw, "custom_fields": None}
+    return {
+        **raw,
+        "custom_fields": [
+            field
+            for field in custom_fields
+            if isinstance(field, dict)
+            and type(field.get("field_id")) is int
+            and field["field_id"] in keep_field_ids
+        ],
+    }
+
+
+def keep_known_nested_keys(
+    raw: dict[str, Any], known_nested_keys: dict[str, frozenset[str]]
+) -> tuple[dict[str, Any], set[str]]:
+    kept = dict(raw)
+    unknown: set[str] = set()
+
+    def only_known(value: Any, parent_key: str, known_keys: frozenset[str]) -> Any:
+        if not isinstance(value, dict):
+            return value
+        unknown.update(f"{parent_key}.{key}" for key in value.keys() - known_keys)
+        return {key: nested for key, nested in value.items() if key in known_keys}
+
+    for parent_key, known_keys in known_nested_keys.items():
+        if parent_key not in raw:
+            continue
+        value = raw[parent_key]
+        kept[parent_key] = (
+            [only_known(item, parent_key, known_keys) for item in value]
+            if isinstance(value, list)
+            else only_known(value, parent_key, known_keys)
+        )
+    return kept, unknown
+
+
 def read_custom_field(
     fields_by_id: dict[int, MefiCustomField], reference: CustomFieldRef
 ) -> tuple[JsonValue, CustomFieldProblem | None]:
@@ -282,7 +325,10 @@ def lead_to_snapshot_row(
         "status_changed_at": lead.status_changed_at,
         "last_contact_at": lead.last_contact_at,
         "converted_at": lead.converted_at,
-        "raw": strip_contacts(parsed_lead.raw, status_mapping.raw_strip),
+        "raw": keep_custom_fields(
+            strip_contacts(parsed_lead.raw, status_mapping.raw_strip),
+            status_mapping.raw_custom_fields.keep,
+        ),
         # Сами phone и email вырезаны raw_strip: для правил визита d1 хватает равенства ключей.
         "contact_phone_key": phone_contact_key(parsed_lead.raw.get("phone"), contact_secret),
         "contact_email_key": email_contact_key(parsed_lead.raw.get("email"), contact_secret),
@@ -299,6 +345,12 @@ def lead_to_snapshot_row(
     problems.extend(
         CustomFieldProblem(None, key, "unknown_raw_key", None)
         for key in sorted(parsed_lead.raw.keys() - status_mapping.raw_known_keys)
+    )
+    known_field_ids = status_mapping.raw_custom_fields.known_field_ids
+    problems.extend(
+        CustomFieldProblem(field.field_id, field.name, "unknown_custom_field", None)
+        for field in lead.custom_fields
+        if field.field_id not in known_field_ids
     )
     return row, problems
 
@@ -440,10 +492,20 @@ def client_to_snapshot_row(
     tenant_id: str,
     snapshot_date: date,
     client_settings: ClientSettings,
-) -> tuple[dict[str, Any], CustomFieldProblem | None]:
+) -> tuple[dict[str, Any], CustomFieldProblem | None, set[str]]:
     fields_by_id = {field.field_id: field for field in client.custom_fields}
     showroom, showroom_problem = showroom_from(fields_by_id, client_settings.showroom)
-    known_raw = {key: value for key, value in raw.items() if key in client_settings.raw_known_keys}
+    known_raw, unknown_keys = keep_known_nested_keys(
+        {key: value for key, value in raw.items() if key in client_settings.raw_known_keys},
+        client_settings.raw_known_nested_keys,
+    )
+    unknown_keys |= raw.keys() - client_settings.raw_known_keys
+    known_field_ids = client_settings.raw_custom_fields.known_field_ids
+    unknown_keys |= {
+        f"custom_fields.{field.field_id} «{field.name}»"
+        for field in client.custom_fields
+        if field.field_id not in known_field_ids
+    }
     row = {
         "tenant_id": tenant_id,
         "snapshot_date": snapshot_date,
@@ -452,9 +514,12 @@ def client_to_snapshot_row(
         "showroom": showroom,
         "state": client.state,
         "source_name": client.source.name if client.source else None,
-        "raw": strip_contacts(known_raw, client_settings.raw_strip),
+        "raw": keep_custom_fields(
+            strip_contacts(known_raw, client_settings.raw_strip),
+            client_settings.raw_custom_fields.keep,
+        ),
     }
-    return row, showroom_problem
+    return row, showroom_problem, unknown_keys
 
 
 async def write_client_snapshot(
@@ -469,13 +534,13 @@ async def write_client_snapshot(
     showroom_problem_client_ids: list[int] = []
     unknown_keys: set[str] = set()
     for client, raw in parsed_clients:
-        row, showroom_problem = client_to_snapshot_row(
+        row, showroom_problem, client_unknown_keys = client_to_snapshot_row(
             client, raw, tenant_id, snapshot_date, client_settings
         )
         rows.append(row)
         if showroom_problem is not None:
             showroom_problem_client_ids.append(client.id)
-        unknown_keys |= raw.keys() - client_settings.raw_known_keys
+        unknown_keys |= client_unknown_keys
     if rows:
         await connection.execute(insert(client_snapshots), rows)
     counters = ClientsCounters(
@@ -521,8 +586,9 @@ def clients_alert_text(
     if unknown_keys:
         lines.append(
             f"Клиенты mefi: незнакомые ключи {', '.join(unknown_keys)} не записаны в raw. "
-            "Проверить, нет ли в них контактов, и дописать в clients.raw_known_keys "
-            "(и в clients.raw_strip, если это персональные данные)."
+            "Проверить, нет ли в них контактов, и дописать в clients.raw_known_keys, "
+            "clients.raw_known_nested_keys или clients.raw_custom_fields "
+            "(персональные данные в clients.raw_strip или raw_custom_fields.drop)."
         )
     if showroom_problem_client_ids:
         lines.append(

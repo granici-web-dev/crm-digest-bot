@@ -399,6 +399,44 @@ async def test_unknown_raw_key_is_alerted_only_on_first_appearance(harness: Harn
     assert "«viber»" in raw_key_alerts[0]
 
 
+def unknown_custom_field(field_id: int, name: str) -> dict[str, Any]:
+    return {
+        "field_id": field_id,
+        "expected_name": name,
+        "problem": "unknown_custom_field",
+        "actual": None,
+        "lead_count": 3,
+        "lead_ids": [1, 2, 3],
+    }
+
+
+async def test_unknown_custom_field_is_alerted_only_on_first_appearance(harness: Harness) -> None:
+    await store_snapshot(
+        harness.deps.engine,
+        REPORT_DATE - timedelta(days=1),
+        [todays_lead(1)],
+        custom_field_mismatches=[unknown_custom_field(60, "Buget estimat")],
+    )
+    await store_snapshot(
+        harness.deps.engine,
+        REPORT_DATE,
+        [todays_lead(1)],
+        custom_field_mismatches=[
+            unknown_custom_field(60, "Buget estimat"),
+            unknown_custom_field(61, "Observatii"),
+        ],
+    )
+
+    await run_report("daily", NOW, harness.deps)
+
+    custom_field_alerts = [alert for alert in harness.ops_texts if "кастомное поле" in alert]
+    assert custom_field_alerts == [
+        "Незнакомое кастомное поле лида 61 «Observatii» в ответе mefi, лидов: 3, "
+        "в raw не записано. Добавьте field_id в raw_custom_fields config/status-mapping.yaml: "
+        "в drop, если это свободный текст о клиенте, иначе в keep."
+    ]
+
+
 async def test_yesterdays_snapshot_gives_transitions(harness: Harness) -> None:
     yesterday = REPORT_DATE - timedelta(days=1)
     await store_snapshot(harness.deps.engine, yesterday, [todays_lead(1, ofertat=False)])

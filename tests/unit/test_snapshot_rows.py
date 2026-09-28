@@ -119,7 +119,7 @@ def test_recorded_leads_map_to_expected_rows(app_config: AppConfig) -> None:
     )
 
 
-def test_raw_strip_removes_contact_fields_keeps_textareas(app_config: AppConfig) -> None:
+def test_raw_strip_removes_contact_fields(app_config: AppConfig) -> None:
     lead = make_lead(
         website="https://client1.example.com",
         title="Director",
@@ -133,13 +133,56 @@ def test_raw_strip_removes_contact_fields_keeps_textareas(app_config: AppConfig)
     assert "address_line" not in stripped["location"]
     assert "coordinates" not in stripped["location"]
     assert stripped["location"]["city"] == "Cluj"
-    assert stripped["custom_fields"][3] == {
-        "field_id": 7,
-        "name": "Informatii",
-        "type": "textarea",
-        "value": "REDACTED",
-    }
     assert lead["phone"] == "+40700000099"
+
+
+def test_lead_raw_keeps_only_whitelisted_custom_fields(app_config: AppConfig) -> None:
+    textarea_phone = "Revine, sunati pe +40711111177"
+    custom_fields = [
+        *make_custom_fields(),
+        {
+            "field_id": 8,
+            "name": "Revenire 1 (Data+Info)",
+            "type": "textarea",
+            "value": textarea_phone,
+        },
+        {"field_id": 51, "name": "Mesaj", "type": "textarea", "value": textarea_phone},
+        {"field_id": 38, "name": "UTM_Source", "type": "input", "value": "facebook"},
+    ]
+    parsed, _ = parse_leads([make_lead(custom_fields=custom_fields)])
+
+    row, problems = lead_to_snapshot_row(
+        parsed[0], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping, CONTACT_SECRET
+    )
+
+    assert problems == []
+    assert [field["field_id"] for field in row["raw"]["custom_fields"]] == [14, 5, 20, 38]
+    assert "+40711111177" not in str(row["raw"])
+
+
+def test_unknown_lead_custom_field_is_recorded_and_not_stored(app_config: AppConfig) -> None:
+    custom_fields = [
+        *make_custom_fields(),
+        {"field_id": 60, "name": "Telefon secundar", "type": "input", "value": "+40711111166"},
+    ]
+    parsed, _ = parse_leads([make_lead(custom_fields=custom_fields)])
+
+    row, problems = lead_to_snapshot_row(
+        parsed[0], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping, CONTACT_SECRET
+    )
+
+    assert problems == [CustomFieldProblem(60, "Telefon secundar", "unknown_custom_field", None)]
+    assert "+40711111166" not in str(row["raw"])
+
+
+def test_custom_fields_of_invalid_shape_are_not_stored(app_config: AppConfig) -> None:
+    parsed, _ = parse_leads([make_lead(custom_fields="Informatii: +40711111155")])
+
+    row, _ = lead_to_snapshot_row(
+        parsed[0], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping, CONTACT_SECRET
+    )
+
+    assert row["raw"]["custom_fields"] is None
 
 
 def test_raw_strip_removes_company_contacts(app_config: AppConfig) -> None:
@@ -297,11 +340,11 @@ def test_client_row_keeps_only_known_keys_without_personal_data(app_config: AppC
     )
     parsed, skipped = parse_clients([raw])
 
-    row, problem = client_to_snapshot_row(
+    row, problem, unknown_keys = client_to_snapshot_row(
         parsed[0][0], parsed[0][1], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping.clients
     )
 
-    assert (skipped, problem) == ([], None)
+    assert (skipped, problem, unknown_keys) == ([], None, {"passport_scan"})
     assert (row["client_id"], row["showroom"], row["state"], row["source_name"]) == (
         2001,
         "București",
@@ -332,12 +375,45 @@ def test_client_showroom_name_mismatch_nulls_value(app_config: AppConfig) -> Non
     )
     parsed, _ = parse_clients([raw])
 
-    row, problem = client_to_snapshot_row(
+    row, problem, _ = client_to_snapshot_row(
         parsed[0][0], parsed[0][1], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping.clients
     )
 
     assert row["showroom"] is None
     assert problem == CustomFieldProblem(15, "Showroom", "name_mismatch", "Oras")
+
+
+def test_client_raw_drops_textareas_unknown_custom_fields_and_nested_keys(
+    app_config: AppConfig,
+) -> None:
+    textarea_phone = "Montaj luni, sunati pe +40711111144"
+    raw = make_client(
+        custom_fields=[
+            {"field_id": 15, "name": "Showroom", "type": "select", "value": "Cluj"},
+            {"field_id": 13, "name": "Informatii", "type": "textarea", "value": textarea_phone},
+            {"field_id": 44, "name": "Revenire 1 (Data+Info)", "type": "textarea", "value": "x"},
+            {"field_id": 33, "name": "Ofertat", "type": "select", "value": "✅DA"},
+            {"field_id": 60, "name": "Telefon livrare", "type": "input", "value": "+40711111133"},
+        ],
+        responsibles=[{"id": 12, "name": "Dragoi Mihaela", "phone": "+40711111122"}],
+        elimination={"type": "lost", "reason": {"id": 3, "name": "BUGET"}, "note": textarea_phone},
+    )
+    parsed, _ = parse_clients([raw])
+
+    row, _, unknown_keys = client_to_snapshot_row(
+        parsed[0][0], parsed[0][1], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping.clients
+    )
+
+    assert unknown_keys == {
+        "custom_fields.60 «Telefon livrare»",
+        "responsibles.phone",
+        "elimination.note",
+    }
+    assert [field["field_id"] for field in row["raw"]["custom_fields"]] == [15, 33]
+    assert row["raw"]["responsibles"] == [{"id": 12, "name": "Dragoi Mihaela"}]
+    assert row["raw"]["elimination"] == {"type": "lost", "reason": {"id": 3, "name": "BUGET"}}
+    for synthetic_phone in ("+40711111144", "+40711111133", "+40711111122"):
+        assert synthetic_phone not in str(row["raw"])
 
 
 def test_client_without_created_at_is_skipped_with_id_and_reason() -> None:

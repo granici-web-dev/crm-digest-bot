@@ -3,7 +3,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from functools import partial
-from typing import Literal
+from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -226,6 +226,13 @@ async def runnable_modules(
     return runnable
 
 
+UNKNOWN_KEY_PROBLEMS = ("unknown_raw_key", "unknown_custom_field")
+
+
+def unknown_key_identity(mismatch: dict[str, Any]) -> tuple[str, int | None, str]:
+    return mismatch["problem"], mismatch["field_id"], mismatch["expected_name"]
+
+
 async def alert_snapshot_findings(
     deps: ReportDeps, snapshot_date: date, lead_frame: pd.DataFrame
 ) -> None:
@@ -292,24 +299,34 @@ async def alert_snapshot_findings(
     # Как у UNMAPPED: алерт только при первом появлении ключа, иначе он повторялся бы
     # каждый день до правки конфига.
     previously_seen_keys = {
-        mismatch["expected_name"]
+        unknown_key_identity(mismatch)
         for mismatches in previous_mismatches
         for mismatch in mismatches or []
-        if mismatch["problem"] == "unknown_raw_key"
+        if mismatch["problem"] in UNKNOWN_KEY_PROBLEMS
     }
-    unknown_raw_keys = [
+    new_unknown_keys = [
         mismatch
         for mismatch in custom_field_mismatches or []
-        if mismatch["problem"] == "unknown_raw_key"
-        and mismatch["expected_name"] not in previously_seen_keys
+        if mismatch["problem"] in UNKNOWN_KEY_PROBLEMS
+        and unknown_key_identity(mismatch) not in previously_seen_keys
     ]
-    for mismatch in unknown_raw_keys:
-        await notify_ops(
-            deps.ops,
-            f"Незнакомый ключ лида «{mismatch['expected_name']}» в ответе mefi, "
-            f"лидов: {mismatch['lead_count']}, сохранён в raw. Проверьте, не контакт ли это, "
-            "и добавьте в raw_known_keys или raw_strip config/status-mapping.yaml.",
-        )
+    for mismatch in new_unknown_keys:
+        if mismatch["problem"] == "unknown_raw_key":
+            await notify_ops(
+                deps.ops,
+                f"Незнакомый ключ лида «{mismatch['expected_name']}» в ответе mefi, "
+                f"лидов: {mismatch['lead_count']}, сохранён в raw. Проверьте, не контакт ли это, "
+                "и добавьте в raw_known_keys или raw_strip config/status-mapping.yaml.",
+            )
+        else:
+            await notify_ops(
+                deps.ops,
+                f"Незнакомое кастомное поле лида {mismatch['field_id']} "
+                f"«{mismatch['expected_name']}» в ответе mefi, лидов: {mismatch['lead_count']}, "
+                "в raw не записано. Добавьте field_id в raw_custom_fields "
+                "config/status-mapping.yaml: в drop, если это свободный текст о клиенте, "
+                "иначе в keep.",
+            )
     if won_mismatch_ids:
         await notify_ops(
             deps.ops,

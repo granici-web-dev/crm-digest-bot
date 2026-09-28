@@ -111,10 +111,27 @@ class CustomFields(StrictConfigModel):
     showroom: CustomFieldRef
     ofertat: OfertatField
     data_revenire: CustomFieldRef
-    revenire_notes: list[CustomFieldRef]
-    informatii: CustomFieldRef
-    mesaj: CustomFieldRef
     utm: list[CustomFieldRef]
+
+
+class RawCustomFields(StrictConfigModel):
+    keep: frozenset[int]
+    drop: list[CustomFieldRef]
+
+    @model_validator(mode="after")
+    def kept_and_dropped_are_disjoint(self) -> Self:
+        both = sorted(self.keep & self.drop_field_ids)
+        if both:
+            raise ValueError(f"raw_custom_fields: field_id {both} и в keep, и в drop")
+        return self
+
+    @property
+    def drop_field_ids(self) -> frozenset[int]:
+        return frozenset(field.field_id for field in self.drop)
+
+    @property
+    def known_field_ids(self) -> frozenset[int]:
+        return self.keep | self.drop_field_ids
 
 
 class WorkingHours(StrictConfigModel):
@@ -143,13 +160,24 @@ class ClientSettings(StrictConfigModel):
     showroom: CustomFieldRef
     contracts_count_from: date
     raw_known_keys: frozenset[str]
+    raw_known_nested_keys: dict[str, frozenset[str]]
     raw_strip: list[str]
+    raw_custom_fields: RawCustomFields
 
     @model_validator(mode="after")
     def stripped_keys_are_known(self) -> Self:
         unknown = sorted({path.split(".")[0] for path in self.raw_strip} - self.raw_known_keys)
         if unknown:
             raise ValueError(f"clients.raw_strip {unknown} нет в clients.raw_known_keys")
+        return self
+
+    @model_validator(mode="after")
+    def nested_keys_belong_to_known_keys(self) -> Self:
+        unknown = sorted(self.raw_known_nested_keys.keys() - self.raw_known_keys)
+        if unknown:
+            raise ValueError(
+                f"clients.raw_known_nested_keys {unknown} нет в clients.raw_known_keys"
+            )
         return self
 
 
@@ -195,6 +223,7 @@ class StatusMapping(StrictConfigModel):
     time: TimeSettings
     raw_strip: list[str]
     raw_known_keys: frozenset[str]
+    raw_custom_fields: RawCustomFields
     clients: ClientSettings
     snapshot: SnapshotSettings
 

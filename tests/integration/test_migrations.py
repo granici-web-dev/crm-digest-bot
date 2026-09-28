@@ -114,3 +114,71 @@ def test_success_started_before_window_end_becomes_preview(
     command.upgrade(alembic_config(database_url), "head")
 
     assert asyncio.run(execute_statements(database_url, [])) == ["success", "preview", "failed"]
+
+
+async def fetch_values(database_url: str, query: str) -> list[object]:
+    engine = create_async_engine(database_url)
+    async with engine.connect() as connection:
+        values = list((await connection.execute(text(query))).scalars())
+    await engine.dispose()
+    return values
+
+
+def test_stored_raw_keeps_only_whitelisted_custom_fields(
+    postgres_container: PostgresContainer,
+) -> None:
+    server_url = postgres_container.get_connection_url(driver="asyncpg")
+    database_url = (
+        make_url(server_url).set(database="raw_whitelist").render_as_string(hide_password=False)
+    )
+    asyncio.run(recreate_database(server_url, "raw_whitelist"))
+    command.upgrade(alembic_config(database_url), "0006")
+    lead_raw = (
+        '{"id": 1, "custom_fields": ['
+        '{"field_id": 14, "name": "Showroom", "value": "Cluj"}, '
+        '{"field_id": 7, "name": "Informatii", "value": "sunati +40711111111"}, '
+        '{"field_id": 51, "name": "Mesaj", "value": "+40711111111"}, '
+        '{"field_id": 20, "name": "Ofertat", "value": "✅DA"}]}'
+    )
+    client_raw = (
+        '{"id": 2, "custom_fields": ['
+        '{"field_id": 13, "name": "Informatii", "value": "+40711111111"}, '
+        '{"field_id": 15, "name": "Showroom", "value": "Cluj"}]}'
+    )
+    asyncio.run(
+        execute_statements(
+            database_url,
+            [
+                "INSERT INTO lead_snapshots (tenant_id, snapshot_date, lead_id, category, "
+                "created_at, raw) VALUES "
+                f"('sofabelle', '2026-09-27', 1, 'ACTIVE', '2026-09-27 12:00:00+03', '{lead_raw}'),"
+                "('sofabelle', '2026-09-27', 3, 'ACTIVE', '2026-09-27 12:00:00+03', "
+                """'{"id": 3, "custom_fields": "+40711111111"}'),"""
+                "('sofabelle', '2026-09-27', 4, 'ACTIVE', '2026-09-27 12:00:00+03', "
+                """'{"id": 4, "custom_fields": null}')""",
+                "INSERT INTO client_snapshots (tenant_id, snapshot_date, client_id, created_at, "
+                f"raw) VALUES ('sofabelle', '2026-09-27', 2, '2026-09-27 12:00:00+03', "
+                f"'{client_raw}')",
+            ],
+        )
+    )
+
+    command.upgrade(alembic_config(database_url), "head")
+
+    lead_fields = asyncio.run(
+        fetch_values(
+            database_url, "SELECT raw -> 'custom_fields' FROM lead_snapshots ORDER BY lead_id"
+        )
+    )
+    client_fields = asyncio.run(
+        fetch_values(database_url, "SELECT raw -> 'custom_fields' FROM client_snapshots")
+    )
+    assert lead_fields == [
+        [
+            {"field_id": 14, "name": "Showroom", "value": "Cluj"},
+            {"field_id": 20, "name": "Ofertat", "value": "✅DA"},
+        ],
+        None,
+        None,
+    ]
+    assert client_fields == [[{"field_id": 15, "name": "Showroom", "value": "Cluj"}]]
