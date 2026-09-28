@@ -182,3 +182,52 @@ def test_stored_raw_keeps_only_whitelisted_custom_fields(
         None,
     ]
     assert client_fields == [[{"field_id": 15, "name": "Showroom", "value": "Cluj"}]]
+
+
+def test_stored_lead_raw_keeps_only_known_keys_without_detailed_reason(
+    postgres_container: PostgresContainer,
+) -> None:
+    server_url = postgres_container.get_connection_url(driver="asyncpg")
+    database_url = (
+        make_url(server_url).set(database="raw_known_keys").render_as_string(hide_password=False)
+    )
+    asyncio.run(recreate_database(server_url, "raw_known_keys"))
+    command.upgrade(alembic_config(database_url), "0007")
+    unknown_key_raw = '{"id": 1, "whatsapp_number": "+40711111111", "source": {"id": 6}}'
+    elimination_raw = (
+        '{"id": 2, "elimination": {"type": "lost", "reason": {"id": 3, "name": "BUGET"}, '
+        '"detailed_reason": "sunati +40711111111", "marked_at": "2026-09-23T09:00:00Z"}}'
+    )
+    asyncio.run(
+        execute_statements(
+            database_url,
+            [
+                "INSERT INTO lead_snapshots (tenant_id, snapshot_date, lead_id, category, "
+                "created_at, raw) VALUES "
+                "('sofabelle', '2026-09-27', 1, 'ACTIVE', '2026-09-27 12:00:00+03', "
+                f"'{unknown_key_raw}'), "
+                "('sofabelle', '2026-09-27', 2, 'LOST', '2026-09-27 12:00:00+03', "
+                f"'{elimination_raw}'), "
+                "('sofabelle', '2026-09-27', 3, 'ACTIVE', '2026-09-27 12:00:00+03', "
+                """'{"id": 3, "status": {"id": 16}}')""",
+            ],
+        )
+    )
+
+    command.upgrade(alembic_config(database_url), "head")
+
+    stored_raw = asyncio.run(
+        fetch_values(database_url, "SELECT raw FROM lead_snapshots ORDER BY lead_id")
+    )
+    assert stored_raw == [
+        {"id": 1, "source": {"id": 6}},
+        {
+            "id": 2,
+            "elimination": {
+                "type": "lost",
+                "reason": {"id": 3, "name": "BUGET"},
+                "marked_at": "2026-09-23T09:00:00Z",
+            },
+        },
+        {"id": 3, "status": {"id": 16}},
+    ]
