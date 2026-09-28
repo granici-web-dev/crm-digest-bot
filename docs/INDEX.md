@@ -15,6 +15,7 @@
 | `docs/mefi-api-notes.md` | Проверенные факты mefi API, лимиты, реальные id | Клиент mefi, снапшот |
 | `docs/mefi-clients-notes.md` | clients API: поля, нет ссылки на лид, счёт по месяцам и state, связь с `converted_at`, вывод про Contract Cantitate | Источник клиентов, счёт контрактов |
 | `docs/mefi-api-reference/` | Документация mefi из соседнего проекта | Только если в notes нет ответа, по одному файлу |
+| `docs/mefi-api-reference/clients-read.md` | Документация mefi `clients:read` от вендора (28.09.2026): search, профиль, контакты, заметки, лимиты | Только если в `mefi-clients-notes.md` нет ответа |
 | `docs/mefi-session-notes.md` | Источник B: endpoints таблиц mefi, разбор ячеек, связи сущностей, риск входа | Этап 2, синк Oferte/Contracte/Facturi |
 | `config/status-mapping.yaml` | Статусы → категории, кастомные поля, источники | Категоризация |
 | `config/modules.yaml` | Реестр модулей отчётов и источников | Модули, `/settings`, планировщик |
