@@ -11,6 +11,7 @@ from digest.metrics.monthly import (
     month_window,
     monthly_funnel,
     monthly_loss_reasons,
+    monthly_repeat_clients,
     monthly_scr,
     monthly_trend,
 )
@@ -146,5 +147,15 @@ def loss_reasons_trend_report(lead_frame: pd.DataFrame, context: ReportContext) 
             reason_labels=loss_reason_labels(context.config),
             month_name=labels.month_name(losses.month),
             previous_month_name=labels.month_name(losses.previous_month),
+        )
+    )
+
+
+def repeat_clients_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
+    return ModuleResult(
+        render(
+            "repeat_clients",
+            repeat_clients=monthly_repeat_clients(lead_frame, context.report_date, context.config),
+            without_showroom=WITHOUT_SHOWROOM,
         )
     )

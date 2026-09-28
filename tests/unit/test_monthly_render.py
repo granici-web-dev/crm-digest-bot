@@ -16,7 +16,7 @@ from digest.reports.modules import IMPLEMENTED_MODULES
 from factories import BUCHAREST, make_lead_links, make_snapshot_row
 
 MONTH_END = date(2026, 9, 30)
-MONTHLY_MODULES = ("m2", "m3", "m4", "m5", "m8", "m19")
+MONTHLY_MODULES = ("m2", "m3", "m4", "m5", "m8", "m11", "m19")
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 # Синтетические данные клиента: кадр их не несёт, тест подкладывает их, чтобы проверить, что
 # ни текст, ни вложение не берут лишних колонок.
@@ -55,6 +55,7 @@ def month_frame(app_config: AppConfig) -> pd.DataFrame:
             status_name="Clienți",
             ofertat=True,
             converted_at=at(date(2026, 9, 20), 12),
+            contact_phone_key="phone-returning",
         ),
         lead(11, at(september, 15), showroom="Cluj", assigned_to_id=10, ofertat=True),
         lead(
@@ -104,6 +105,7 @@ def month_frame(app_config: AppConfig) -> pd.DataFrame:
             category="WON",
             status_name="Clienți",
             converted_at=at(date(2026, 7, 7), 12),
+            contact_phone_key="phone-returning",
         ),
     ]
     return prepare_lead_frame(rows, app_config).assign(**CLIENT_DATA)
@@ -275,6 +277,7 @@ def test_monthly_workbook_sheets_and_filename(app_config: AppConfig) -> None:
         "Funnel showroom",
         "Motive pierdere",
         "Lead-uri luna",
+        "Clienți luna",
     ]
 
 
@@ -396,3 +399,46 @@ def test_monthly_lead_ids_link_to_the_mefi_lead_card(app_config: AppConfig) -> N
         and cell.hyperlink.target == f"https://bellesofa.meficrm.com/admin/leads/index/{cell.value}"
         for cell in id_cells
     )
+
+
+def test_repeat_clients_text_notes_clients_without_conversion_date(
+    app_config: AppConfig,
+) -> None:
+    leads = prepare_lead_frame(
+        [
+            lead(1, at(date(2026, 9, 2), 12), category="WON", status_name="Clienți"),
+            lead(
+                2,
+                at(date(2026, 9, 3), 12),
+                category="WON",
+                status_name="Clienți",
+                showroom=None,
+                converted_at=at(date(2026, 9, 4), 12),
+            ),
+        ],
+        app_config,
+    )
+
+    text = IMPLEMENTED_MODULES["m11"](leads, context(app_config)).text
+
+    assert "Clienți care revin</b>: 0 din 1 (0,0%)" in text
+    assert "(fără showroom): 0 din 1 (0,0%)" in text
+    assert "1 lead-uri Clienți fără dată de conversie nu sunt incluse." in text
+
+
+def test_monthly_workbook_client_sheet_matches_repeat_clients(app_config: AppConfig) -> None:
+    _, book = workbook(app_config)
+    rows = sheet_rows(book, "Clienți luna")
+
+    assert rows[0] == (
+        "ID",
+        "Creat",
+        "Zi conversie",
+        "Showroom",
+        "Sursa",
+        "Status",
+        "Ofertat",
+        "Consilier",
+        "Revine",
+    )
+    assert [(row[0], row[2], row[8]) for row in rows[1:]] == [("10", datetime(2026, 9, 20), "DA")]

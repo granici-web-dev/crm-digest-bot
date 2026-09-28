@@ -1,0 +1,9 @@
+{% macro counts(repeat_counts) %}{{ repeat_counts.repeat }} din {{ repeat_counts.clients }} ({{ repeat_counts.share | percent1 }}){% endmacro %}
+<b>Clienți care revin</b>: {{ counts(repeat_clients.company) }}
+{% for showroom, showroom_counts in repeat_clients.by_showroom.items() if showroom_counts.clients %}
+{{ showroom or without_showroom }}: {{ counts(showroom_counts) }}
+{% endfor %}
+<i>După telefon sau e-mail; clienții dinainte de mefi (înainte de 2026) nu sunt vizibili, procentul e subestimat în primele luni.</i>
+{% if repeat_clients.won_without_converted_at %}
+<i>{{ repeat_clients.won_without_converted_at }} lead-uri Clienți fără dată de conversie nu sunt incluse.</i>
+{% endif %}

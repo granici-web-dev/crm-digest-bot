@@ -30,6 +30,11 @@
 {% macro sheet_showroom_source() %}Showroom × sursă{% endmacro %}
 {% macro sheet_leads() %}Lead-uri{% endmacro %}
 {% macro sheet_visits() %}Vizite{% endmacro %}
+{% macro sheet_month_clients() %}Clienți luna{% endmacro %}
+{% macro column_contract_day() %}Zi conversie{% endmacro %}
+{% macro column_repeat() %}Revine{% endmacro %}
+{% macro repeat_yes() %}DA{% endmacro %}
+{% macro repeat_no() %}NU{% endmacro %}
 {% macro day_showroom_title(week_range, sources) %}Sumar {{ week_range }} (fără Sursa={{ sources }}): lead-uri pe zile lucrătoare × showroom{% endmacro %}
 {% macro working_hours_rule(hours) %}Regulă: ore de lucru {{ hours }}. Lead-urile din acest interval se numără în ziua curentă; cele din afara lui trec în următoarea zi calendaristică (consilierii le preiau doar în orele de lucru).{% endmacro %}
 {% macro day_showroom_source_title(week_range, sources) %}Detaliere pe zile {{ week_range }} (fără Sursa={{ sources }}): showroom × sursă, cu total după fiecare zi{% endmacro %}

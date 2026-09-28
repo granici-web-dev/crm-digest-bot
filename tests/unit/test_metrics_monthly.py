@@ -11,11 +11,14 @@ from digest.metrics.frame import prepare_lead_frame
 from digest.metrics.kpi import Period
 from digest.metrics.monthly import (
     BELOW_ALL_LEVELS,
+    RepeatClientCounts,
     ScrRow,
     month_window,
+    monthly_client_rows,
     monthly_funnel,
     monthly_lead_rows,
     monthly_loss_reasons,
+    monthly_repeat_clients,
     monthly_scr,
     monthly_trend,
     scr_level,
@@ -264,3 +267,150 @@ def test_monthly_lead_rows_are_company_leads_with_local_created_day(
     assert list(rows["lead_id"]) == [1, 2, 5]
     assert list(rows["day"]) == [date(2026, 8, 31), date(2026, 9, 15), date(2026, 9, 20)]
     assert len(rows) == monthly_funnel(leads, SEPTEMBER_END, app_config).company.leads
+
+
+def client(
+    lead_id: int, converted_at: datetime | None, phone: str | None, **overrides: Any
+) -> dict[str, Any]:
+    return lead(
+        lead_id,
+        overrides.pop("created_at", at(date(2026, 1, 5), 12)),
+        category="WON",
+        status_name="Clienți",
+        converted_at=converted_at,
+        contact_phone_key=phone,
+        **overrides,
+    )
+
+
+def test_repeat_client_matches_earlier_client_by_phone_or_email(app_config: AppConfig) -> None:
+    leads = frame(
+        app_config,
+        client(1, at(date(2026, 3, 10), 12), "phone-a"),
+        client(2, at(date(2026, 4, 10), 12), None, contact_email_key="email-b"),
+        client(3, at(date(2026, 9, 10), 12), "phone-a"),
+        client(4, at(date(2026, 9, 11), 12), "phone-other", contact_email_key="email-b"),
+        client(5, at(date(2026, 9, 12), 12), "phone-new"),
+    )
+
+    repeat_clients = monthly_repeat_clients(leads, SEPTEMBER_END, app_config)
+
+    assert repeat_clients.company == RepeatClientCounts(clients=3, repeat=2)
+    assert repeat_clients.company.share == pytest.approx(2 / 3)
+
+
+def test_first_purchase_is_not_repeat_even_if_client_bought_again_later(
+    app_config: AppConfig,
+) -> None:
+    leads = frame(
+        app_config,
+        client(1, at(date(2026, 9, 10), 12), "phone-a"),
+        client(2, at(date(2026, 10, 10), 12), "phone-a"),
+    )
+
+    assert monthly_repeat_clients(leads, SEPTEMBER_END, app_config).company == (
+        RepeatClientCounts(clients=1, repeat=0)
+    )
+
+
+def test_match_with_lead_that_is_not_won_does_not_count(app_config: AppConfig) -> None:
+    leads = frame(
+        app_config,
+        lead(1, at(date(2026, 3, 10), 12), contact_phone_key="phone-a"),
+        lost(2, at(date(2026, 4, 10), 12), "BUGET", contact_phone_key="phone-a"),
+        # converted_at без категории WON: статус сменили после конверсии, это не клиент.
+        lead(
+            3,
+            at(date(2026, 5, 10), 12),
+            converted_at=at(date(2026, 5, 11), 12),
+            contact_phone_key="phone-a",
+        ),
+        client(4, at(date(2026, 9, 10), 12), "phone-a"),
+    )
+
+    assert monthly_repeat_clients(leads, SEPTEMBER_END, app_config).company == (
+        RepeatClientCounts(clients=1, repeat=0)
+    )
+
+
+def test_clients_converted_at_same_moment_do_not_repeat_each_other(
+    app_config: AppConfig,
+) -> None:
+    same_moment = at(date(2026, 9, 10), 12)
+    leads = frame(
+        app_config,
+        client(1, same_moment, "phone-a"),
+        client(2, same_moment, "phone-a"),
+        client(3, at(date(2026, 9, 10), 12, 0, 1), "phone-a"),
+    )
+
+    assert monthly_repeat_clients(leads, SEPTEMBER_END, app_config).company == (
+        RepeatClientCounts(clients=3, repeat=1)
+    )
+
+
+def test_repeat_clients_by_showroom_of_month_lead(app_config: AppConfig) -> None:
+    leads = frame(
+        app_config,
+        client(1, at(date(2026, 3, 10), 12), "phone-a", showroom="Cluj"),
+        client(2, at(date(2026, 9, 10), 12), "phone-a", showroom="București"),
+        client(3, at(date(2026, 9, 11), 12), "phone-b", showroom="Cluj"),
+        client(4, at(date(2026, 9, 12), 12), "phone-c", showroom=None),
+    )
+
+    by_showroom = monthly_repeat_clients(leads, SEPTEMBER_END, app_config).by_showroom
+
+    assert by_showroom == {
+        "Brașov": RepeatClientCounts(clients=0, repeat=0),
+        "București": RepeatClientCounts(clients=1, repeat=1),
+        "Cluj": RepeatClientCounts(clients=1, repeat=0),
+        None: RepeatClientCounts(clients=1, repeat=0),
+    }
+    assert by_showroom["Brașov"].share is None
+
+
+def test_won_without_converted_at_is_counted_apart_and_never_matched(
+    app_config: AppConfig,
+) -> None:
+    leads = frame(
+        app_config,
+        client(1, None, "phone-a"),
+        client(2, None, "phone-b"),
+        client(3, at(date(2026, 9, 10), 12), "phone-a"),
+    )
+
+    repeat_clients = monthly_repeat_clients(leads, SEPTEMBER_END, app_config)
+
+    assert repeat_clients.company == RepeatClientCounts(clients=1, repeat=0)
+    assert repeat_clients.won_without_converted_at == 2
+
+
+def test_month_clients_follow_month_window_by_converted_at(app_config: AppConfig) -> None:
+    leads = frame(
+        app_config,
+        client(1, at(date(2026, 8, 31), 19), "phone-a"),
+        client(2, at(SEPTEMBER_END, 18, 59), "phone-b"),
+        client(3, at(SEPTEMBER_END, 19), "phone-c"),
+    )
+
+    repeat_clients = monthly_repeat_clients(leads, SEPTEMBER_END, app_config)
+
+    assert repeat_clients.company == RepeatClientCounts(clients=2, repeat=0)
+    assert repeat_clients.company.share == 0
+
+
+def test_monthly_client_rows_are_month_clients_with_repeat_mark(app_config: AppConfig) -> None:
+    leads = frame(
+        app_config,
+        client(1, at(date(2026, 3, 10), 12), "phone-a"),
+        client(2, at(date(2026, 9, 20), 12), "phone-a", created_at=at(date(2026, 7, 1), 12)),
+        client(3, at(date(2026, 9, 2), 22), "phone-b"),
+    )
+
+    rows = monthly_client_rows(leads, SEPTEMBER_END, app_config)
+
+    assert tuple(rows.columns) == (*LEAD_ROW_COLUMNS, "is_repeat")
+    assert list(rows["lead_id"]) == [3, 2]
+    assert list(rows["day"]) == [date(2026, 9, 2), date(2026, 9, 20)]
+    assert list(rows["is_repeat"]) == [False, True]
+    assert len(rows) == monthly_repeat_clients(leads, SEPTEMBER_END, app_config).company.clients

@@ -67,7 +67,7 @@ monthly:          # календарный месяц, отправка 1-го �
   m8:  { name: loss_reasons_trend, label: "Motive de pierdere, evoluție",    sources: [A],    enabled: true }
   m9:  { name: cohort_conversion, label: "Conversie de cohortă",     sources: [A],    enabled: false }
   m10: { name: contracts_avg_value, label: "Contracte și valoare medie",   sources: [B],    enabled: false }
-  m11: { name: repeat_clients, label: "Clienți repetitivi",        sources: [A],    enabled: false }
+  m11: { name: repeat_clients, label: "Clienți care revin",        sources: [A],    enabled: true }
   m12: { name: cpo_cac_by_channel, label: "CPO și CAC pe canal",    sources: [A, D], enabled: false }
   m13: { name: ad_return, label: "Randamentul reclamei",             sources: [B, D], enabled: false }
   m14: { name: cash_margin, label: "Încasări, avansuri, marjă",           sources: [B, G], enabled: false }

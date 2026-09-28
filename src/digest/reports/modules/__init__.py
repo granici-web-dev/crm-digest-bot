@@ -14,6 +14,7 @@ from digest.reports.modules.monthly import (
     funnel_by_showroom_report,
     loss_reasons_trend_report,
     manager_cockpit_report,
+    repeat_clients_report,
     scr_with_targets_report,
     trend_6m_report,
 )
@@ -48,5 +49,6 @@ IMPLEMENTED_MODULES: dict[str, ReportModuleFunction] = {
     "m4": scr_with_targets_report,
     "m5": manager_cockpit_report,
     "m8": loss_reasons_trend_report,
+    "m11": repeat_clients_report,
     "m19": monthly_excel_attachment_report,
 }

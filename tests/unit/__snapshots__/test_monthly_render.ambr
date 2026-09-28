@@ -1,6 +1,13 @@
 # serializer version: 1
+# name: test_monthly_module_text[m11]
+  '''
+  <b>Clienți care revin</b>: 1 din 1 (100,0%)
+  Brașov: 1 din 1 (100,0%)
+  <i>După telefon sau e-mail; clienții dinainte de mefi (înainte de 2026) nu sunt vizibili, procentul e subestimat în primele luni.</i>
+  '''
+# ---
 # name: test_monthly_module_text[m19]
-  '📎 sofabelle_2026-09.xlsx: KPI consilieri, pâlnia pe showroom, motive de pierdere, lista lead-urilor lunii'
+  '📎 sofabelle_2026-09.xlsx: KPI consilieri, pâlnia pe showroom, motive de pierdere, lista lead-urilor lunii, clienții lunii'
 # ---
 # name: test_monthly_module_text[m2]
   '''

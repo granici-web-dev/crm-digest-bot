@@ -8,6 +8,7 @@ from digest.config import KPI_NAMES
 from digest.metrics.kpi import kpis_from
 from digest.metrics.monthly import (
     month_window,
+    monthly_client_rows,
     monthly_funnel,
     monthly_lead_rows,
     monthly_loss_reasons,
@@ -21,7 +22,7 @@ from digest.reports.modules.monthly import (
     target_labels,
 )
 from digest.reports.modules.weekly import showroom_label
-from digest.reports.modules.weekly_excel import LEAD_SHEET_COLUMNS, write_lead_sheet
+from digest.reports.modules.weekly_excel import LEAD_SHEET_COLUMNS, sheet_text, write_lead_sheet
 from digest.reports.render import render
 
 COUNT_HEADERS = (
@@ -207,6 +208,20 @@ def monthly_workbook(lead_frame: pd.DataFrame, context: ReportContext) -> bytes:
         0,
         len(LEAD_SHEET_COLUMNS) + 1,
         f"Luna: lead-uri create {window.start:%d.%m.%Y %H:%M} → {window.end:%d.%m.%Y %H:%M}",
+    )
+    client_rows = monthly_client_rows(lead_frame, context.report_date, context.config)
+    write_lead_sheet(
+        workbook,
+        sheet_text("sheet_month_clients"),
+        sheet_text("column_contract_day"),
+        client_rows.assign(
+            is_repeat=client_rows["is_repeat"].map(
+                {True: sheet_text("repeat_yes"), False: sheet_text("repeat_no")}
+            )
+        ),
+        context.config,
+        context.lead_links,
+        (("is_repeat", sheet_text("column_repeat")),),
     )
     workbook.close()
     return output.getvalue()

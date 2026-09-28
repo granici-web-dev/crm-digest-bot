@@ -43,7 +43,9 @@ def write_table(worksheet: Any, first_row: int, table: list[TableRow]) -> None:
         worksheet.write_row(first_row + offset, 0, row)
 
 
-def lead_sheet_cells(rows: pd.DataFrame, config: AppConfig) -> pd.DataFrame:
+def lead_sheet_cells(
+    rows: pd.DataFrame, config: AppConfig, extra_columns: tuple[str, ...] = ()
+) -> pd.DataFrame:
     known_manager_ids = {manager.id for manager in config.managers.managers}
     ofertat_field = config.status_mapping.custom_fields.ofertat
     assigned_to_id = rows["assigned_to_id"]
@@ -59,7 +61,7 @@ def lead_sheet_cells(rows: pd.DataFrame, config: AppConfig) -> pd.DataFrame:
         ofertat=ofertat,
         consultant=consultant,
     )
-    return cells[[name for name, _ in LEAD_SHEET_COLUMNS]]
+    return cells[[*(name for name, _ in LEAD_SHEET_COLUMNS), *extra_columns]]
 
 
 def write_lead_sheet(
@@ -69,16 +71,19 @@ def write_lead_sheet(
     rows: pd.DataFrame,
     config: AppConfig,
     lead_links: LeadLinks,
+    extra_columns: tuple[tuple[str, str], ...] = (),
 ) -> None:
     worksheet = workbook.add_worksheet(name)
     cell_formats = {
         "created_at": workbook.add_format({"num_format": "yyyy-mm-dd hh:mm"}),
         "day": workbook.add_format({"num_format": "yyyy-mm-dd"}),
     }
-    headers = {**dict(LEAD_SHEET_COLUMNS), "day": day_header}
+    columns = (*LEAD_SHEET_COLUMNS, *extra_columns)
+    headers = {**dict(columns), "day": day_header}
     worksheet.write_row(0, 0, list(headers.values()))
-    for row_index, row in enumerate(lead_sheet_cells(rows, config).to_dict("records"), start=1):
-        for column_index, (column, _) in enumerate(LEAD_SHEET_COLUMNS):
+    cells = lead_sheet_cells(rows, config, tuple(name for name, _ in extra_columns))
+    for row_index, row in enumerate(cells.to_dict("records"), start=1):
+        for column_index, (column, _) in enumerate(columns):
             value = row[column]
             if column == "lead_id":
                 # Инвариант 7: столбец id во вложении разрешён; ссылка открывает лид в mefi.
@@ -90,7 +95,7 @@ def write_lead_sheet(
                 worksheet.write_datetime(row_index, column_index, value, cell_formats[column])
             else:
                 worksheet.write(row_index, column_index, None if pd.isna(value) else value)
-    worksheet.set_column(0, len(LEAD_SHEET_COLUMNS) - 1, LEAD_SHEET_COLUMN_WIDTH)
+    worksheet.set_column(0, len(columns) - 1, LEAD_SHEET_COLUMN_WIDTH)
 
 
 def sheet_text(macro_name: str, **values: Any) -> str:
