@@ -36,7 +36,7 @@ uv run python -m digest snapshot
 uv run python -m digest report daily --date YYYY-MM-DD --dry-run
 ```
 
-`snapshot` всегда снимает состояние mefi за сегодня по Бухаресту; строки Vizita, Oferta и Contract появятся в отчёте со второго дня подряд. `--dry-run` отправляет только в `TELEGRAM_TEST_CHAT_ID`.
+`snapshot` всегда снимает состояние mefi за сегодня по Бухаресту; строки Vizita, Oferta и Contract появятся в отчёте со второго дня подряд. До 19:00 (`time.daily_window_end`) снапшот пишется со статусом `preview`: отчёты и чат его не читают, а плановый снапшот в 19:00 его замещает (строки за дату удаляются, прогон получает `superseded`). Для отчёта за сегодня снимать после 19:00. `--dry-run` отправляет только в `TELEGRAM_TEST_CHAT_ID`.
 
 Полный процесс `app` (планировщик и `/settings`) принимает апдейты long polling; с токеном бота, который уже опрашивает сервер, второй экземпляр получит `TelegramConflictError` и будет отнимать у сервера нажатия меню. Локально `run_app` запускать только со своим тестовым ботом; команды `snapshot` и `report` апдейты не читают.
 

@@ -73,3 +73,44 @@ def test_alembic_upgrade_uses_only_database_url(
 
     differences, _tenant_ids = asyncio.run(schema_state(fresh_database_url))
     assert differences == []
+
+
+async def execute_statements(database_url: str, statements: list[str]) -> list[str]:
+    engine = create_async_engine(database_url)
+    async with engine.begin() as connection:
+        for statement in statements:
+            await connection.execute(text(statement))
+        statuses = list(
+            (
+                await connection.execute(text("SELECT status FROM snapshot_runs ORDER BY id"))
+            ).scalars()
+        )
+    await engine.dispose()
+    return statuses
+
+
+def test_success_started_before_window_end_becomes_preview(
+    postgres_container: PostgresContainer,
+) -> None:
+    server_url = postgres_container.get_connection_url(driver="asyncpg")
+    database_url = (
+        make_url(server_url).set(database="preview_check").render_as_string(hide_password=False)
+    )
+    asyncio.run(recreate_database(server_url, "preview_check"))
+    command.upgrade(alembic_config(database_url), "0005")
+    asyncio.run(
+        execute_statements(
+            database_url,
+            [
+                "INSERT INTO snapshot_runs (tenant_id, snapshot_date, attempt, status, started_at) "
+                "VALUES "
+                "('sofabelle', '2026-09-27', 1, 'success', '2026-09-27 19:00:00+03'), "
+                "('sofabelle', '2026-09-28', 1, 'success', '2026-09-28 12:06:41+03'), "
+                "('sofabelle', '2026-09-26', 1, 'failed', '2026-09-26 12:00:00+03')"
+            ],
+        )
+    )
+
+    command.upgrade(alembic_config(database_url), "head")
+
+    assert asyncio.run(execute_statements(database_url, [])) == ["success", "preview", "failed"]

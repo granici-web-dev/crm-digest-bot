@@ -4,12 +4,12 @@ import time
 from collections import defaultdict
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 import httpx
 from pydantic import JsonValue, SecretStr, ValidationError
-from sqlalchemy import func, insert, or_, select, update
+from sqlalchemy import delete, func, insert, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from digest.config import (
@@ -35,6 +35,9 @@ from digest.mefi.models import MefiClientRecord, MefiCustomField, MefiLead
 logger = logging.getLogger(__name__)
 
 BUCHAREST = ZoneInfo("Europe/Bucharest")
+
+# preview: снапшот, снятый до конца ежедневного окна. Отчёты и чат читают только success.
+SnapshotRunStatus = Literal["success", "preview"]
 
 
 @dataclass(frozen=True)
@@ -90,6 +93,7 @@ class ClientsSnapshotIncomplete(Exception):
 @dataclass(frozen=True)
 class SnapshotOutcome:
     run_id: int
+    status: SnapshotRunStatus
     # Текст для служебного бота: сбой клиентов, незнакомые ключи, битый шоурум клиента.
     clients_alert: str | None
 
@@ -594,7 +598,12 @@ async def run_daily_snapshot(
     tenant_id: str,
     now: datetime,
 ) -> SnapshotOutcome:
-    snapshot_date = now.astimezone(BUCHAREST).date()
+    local_now = now.astimezone(BUCHAREST)
+    snapshot_date = local_now.date()
+    # Снапшот до конца окна не видит его хвост: окно d1 закончилось бы на времени запуска.
+    run_status: SnapshotRunStatus = (
+        "success" if local_now.time() >= status_mapping.time.daily_window_end else "preview"
+    )
     this_date_runs = (snapshot_runs.c.tenant_id == tenant_id) & (
         snapshot_runs.c.snapshot_date == snapshot_date
     )
@@ -617,10 +626,11 @@ async def run_daily_snapshot(
             extra={"snapshot_date": snapshot_date.isoformat(), "run_id": success_run.id},
         )
         if success_run.clients_status == "success":
-            return SnapshotOutcome(success_run.id, None)
+            return SnapshotOutcome(success_run.id, "success", None)
         # Лиды уже есть, клиенты в прошлой попытке упали: повтор догружает только клиентов.
         return SnapshotOutcome(
             success_run.id,
+            "success",
             await snapshot_clients(
                 engine,
                 sources.clients_client,
@@ -632,10 +642,13 @@ async def run_daily_snapshot(
             ),
         )
 
-    await snapshot_leads(engine, sources, status_mapping, tenant_id, snapshot_date, run_id)
-    # Сбой клиентов не валит снапшот лидов (инвариант 6): лиды уже закоммичены как success.
+    await snapshot_leads(
+        engine, sources, status_mapping, tenant_id, snapshot_date, run_id, run_status
+    )
+    # Сбой клиентов не валит снапшот лидов (инвариант 6): лиды уже закоммичены.
     return SnapshotOutcome(
         run_id,
+        run_status,
         await snapshot_clients(
             engine,
             sources.clients_client,
@@ -677,6 +690,30 @@ async def start_snapshot_run(
     return run_id
 
 
+async def supersede_previews(
+    connection: AsyncConnection, tenant_id: str, snapshot_date: date
+) -> None:
+    # Строки снапшотов ключуются датой, а не прогоном: превью уходит целиком в транзакции
+    # нового прогона и возвращается, если тот откатится. success за дату здесь не бывает:
+    # run_daily_snapshot начинает прогон только без него, а два success запрещает индекс.
+    for snapshot_table in (lead_snapshots, client_snapshots):
+        await connection.execute(
+            delete(snapshot_table).where(
+                snapshot_table.c.tenant_id == tenant_id,
+                snapshot_table.c.snapshot_date == snapshot_date,
+            )
+        )
+    await connection.execute(
+        update(snapshot_runs)
+        .where(
+            snapshot_runs.c.tenant_id == tenant_id,
+            snapshot_runs.c.snapshot_date == snapshot_date,
+            snapshot_runs.c.status == "preview",
+        )
+        .values(status="superseded")
+    )
+
+
 async def snapshot_leads(
     engine: AsyncEngine,
     sources: SnapshotSources,
@@ -684,12 +721,15 @@ async def snapshot_leads(
     tenant_id: str,
     snapshot_date: date,
     run_id: int,
+    run_status: SnapshotRunStatus,
 ) -> None:
     started_at = time.monotonic()
     this_run = snapshot_runs.c.id == run_id
     try:
         dump = await sources.leads_client.search_all_leads()
         async with engine.begin() as connection:
+            await connection.execute(snapshot_run_lock(tenant_id, snapshot_date))
+            await supersede_previews(connection, tenant_id, snapshot_date)
             counters = await write_snapshot(
                 connection,
                 dump,
@@ -705,7 +745,7 @@ async def snapshot_leads(
                 update(snapshot_runs)
                 .where(this_run)
                 .values(
-                    status="success",
+                    status=run_status,
                     finished_at=func.clock_timestamp(),
                     error=None,
                     duration_ms=round((time.monotonic() - started_at) * 1000),

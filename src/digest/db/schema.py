@@ -33,7 +33,7 @@ metadata = MetaData(
 )
 
 LEAD_CATEGORIES = ("WON", "ACTIVE", "ACTIVE_FOLLOWUP", "LOST", "PARTNERSHIP", "UNMAPPED")
-SNAPSHOT_RUN_STATUSES = ("running", "success", "failed")
+SNAPSHOT_RUN_STATUSES = ("running", "success", "failed", "preview", "superseded")
 CLIENTS_SNAPSHOT_STATUSES = ("success", "failed")
 ChatQuestionStatus = Literal[
     "answered",

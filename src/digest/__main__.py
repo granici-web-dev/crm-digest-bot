@@ -78,7 +78,13 @@ async def run_manual_snapshot(app_settings: Settings) -> int:
         await http_client.aclose()
         await clients_http_client.aclose()
         await engine.dispose()
-    print(f"snapshot_run {outcome.run_id}")
+    print(f"snapshot_run {outcome.run_id} {outcome.status}")
+    if outcome.status == "preview":
+        window_end = config.status_mapping.time.daily_window_end
+        print(
+            f"До {window_end:%H:%M} снапшот пишется как preview: отчёты и чат его не читают, "
+            f"снапшот дня снимет плановая джоба в {window_end:%H:%M}."
+        )
     if outcome.clients_alert is not None:
         print(outcome.clients_alert)
     return 0

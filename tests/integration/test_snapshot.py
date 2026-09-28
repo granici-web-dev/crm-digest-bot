@@ -13,6 +13,7 @@ from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.config import AppConfig
+from digest.db.lead_frame import SnapshotMissingError, load_lead_frame
 from digest.db.schema import client_snapshots, lead_snapshots, snapshot_runs
 from digest.mefi.client import (
     MefiClient,
@@ -28,6 +29,7 @@ from digest.snapshot import (
 )
 from factories import (
     TEST_CONTACT_HASH_KEY,
+    FakeClientsSearch,
     make_client,
     make_lead,
     make_search_page,
@@ -593,3 +595,80 @@ async def test_unknown_client_key_is_not_stored_and_alerted(
     assert "1900101000000" not in outcome.clients_alert
     (row,) = await client_snapshot_rows(engine)
     assert "cnp" not in row.raw
+
+
+SEPTEMBER_24_NOON = datetime(2026, 9, 24, 12, 8, tzinfo=BUCHAREST)
+
+
+async def test_snapshot_before_window_end_is_preview_invisible_to_reports(
+    engine: AsyncEngine,
+    mefi_client: MefiClient,
+    mefi_mock: respx.MockRouter,
+    app_config: AppConfig,
+) -> None:
+    mefi_returns(mefi_mock, [make_lead(id=1), make_lead(id=2)])
+    mefi_returns_clients(mefi_mock, [make_client(id=10)])
+
+    outcome = await snapshot_with_clients(engine, mefi_client, app_config, SEPTEMBER_24_NOON)
+
+    run = await run_row(engine, outcome.run_id)
+    assert (outcome.status, run.status, run.clients_status) == ("preview", "preview", "success")
+    assert await snapshot_lead_ids(engine, date(2026, 9, 24)) == [1, 2]
+    with pytest.raises(SnapshotMissingError):
+        await load_lead_frame(engine, "sofabelle", date(2026, 9, 24), app_config)
+
+
+async def test_day_snapshot_replaces_preview_of_same_date(
+    engine: AsyncEngine,
+    mefi_client: MefiClient,
+    mefi_mock: respx.MockRouter,
+    app_config: AppConfig,
+) -> None:
+    mefi_mock.post(SEARCH_URL).mock(
+        side_effect=[
+            httpx.Response(200, json=make_search_page([make_lead(id=1), make_lead(id=2)])),
+            httpx.Response(200, json=make_search_page([make_lead(id=1), make_lead(id=3)])),
+        ]
+    )
+    fake_clients = FakeClientsSearch([make_client(id=10)])
+    mefi_mock.post(CLIENTS_SEARCH_URL).mock(side_effect=fake_clients)
+    preview = await snapshot_with_clients(engine, mefi_client, app_config, SEPTEMBER_24_NOON)
+    fake_clients.clients = [make_client(id=11)]
+
+    day = await snapshot_with_clients(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
+
+    assert (await run_row(engine, preview.run_id)).status == "superseded"
+    day_run = await run_row(engine, day.run_id)
+    assert (day.status, day_run.status, day_run.attempt, day_run.clients_status) == (
+        "success",
+        "success",
+        2,
+        "success",
+    )
+    assert await snapshot_lead_ids(engine, date(2026, 9, 24)) == [1, 3]
+    assert [row.client_id for row in await client_snapshot_rows(engine)] == [11]
+    frame = await load_lead_frame(engine, "sofabelle", date(2026, 9, 24), app_config)
+    assert sorted(frame["lead_id"]) == [1, 3]
+
+
+async def test_failed_day_snapshot_keeps_preview_untouched(
+    engine: AsyncEngine,
+    mefi_client: MefiClient,
+    mefi_mock: respx.MockRouter,
+    app_config: AppConfig,
+) -> None:
+    mefi_mock.post(SEARCH_URL).mock(
+        side_effect=[
+            httpx.Response(200, json=make_search_page([make_lead(id=1), make_lead(id=2)])),
+            httpx.Response(200, json=make_search_page([make_lead(id=1)], total=20)),
+        ]
+    )
+    mefi_returns_clients(mefi_mock, [make_client(id=10)])
+    preview = await snapshot_with_clients(engine, mefi_client, app_config, SEPTEMBER_24_NOON)
+
+    with pytest.raises(SnapshotIncomplete):
+        await snapshot_with_clients(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
+
+    assert (await run_row(engine, preview.run_id)).status == "preview"
+    assert await snapshot_lead_ids(engine, date(2026, 9, 24)) == [1, 2]
+    assert [row.client_id for row in await client_snapshot_rows(engine)] == [10]
