@@ -19,6 +19,7 @@ from digest.db.lead_frame import (
     SnapshotMissingError,
     load_lead_frame,
     previous_success_snapshot_date,
+    success_snapshot_dates,
 )
 from digest.db.schema import (
     lead_snapshots,
@@ -50,6 +51,7 @@ logger = logging.getLogger(__name__)
 # краха лучше, чем отчёт, которого нет до ручного UPDATE (shape 2026-09-25-delivery, вопрос 3).
 STALE_RUNNING_AFTER = timedelta(minutes=30)
 WEEK_OVER_WEEK_MODULE_ID = "w8"
+IRRELEVANT_BY_CAMPAIGN_MODULE_ID = "w6"
 CLIENTS_SOURCE: SourceCode = "I"
 
 ReportRunOutcome = Literal["success", "partial", "failed", "already_sent", "in_progress"]
@@ -406,6 +408,27 @@ async def snapshot_if_successful(deps: ReportDeps, snapshot_date: date) -> Previ
     return PreviousSnapshot(snapshot_date, lead_frame)
 
 
+async def previous_week_snapshot(
+    deps: ReportDeps,
+    week_ago: PreviousSnapshot | None,
+    snapshot_date: date,
+    lead_frame: pd.DataFrame,
+) -> PreviousSnapshot | None:
+    # Правило закрытого периода чата (period_snapshot_date): снапшот воскресенья прошлой недели,
+    # нет его, первый успешный после, но не позже снапшота отчёта (догоняющий прогон за старую
+    # дату не смотрит в будущее). w6 подписывает подмену.
+    if week_ago is not None:
+        return week_ago
+    week_end = snapshot_date - timedelta(days=DAYS_IN_WEEK)
+    dates = await success_snapshot_dates(deps.engine, deps.tenant_id)
+    substitute = min((day for day in dates if week_end <= day <= snapshot_date), default=None)
+    if substitute is None:
+        return None
+    if substitute == snapshot_date:
+        return PreviousSnapshot(snapshot_date, lead_frame)
+    return await snapshot_if_successful(deps, substitute)
+
+
 async def build_report(
     deps: ReportDeps, level: ReportLevel, period: Period, snapshot_date: date, late: bool
 ) -> BuiltReport | None:
@@ -455,10 +478,16 @@ async def build_report(
     )
     # w8 сравнивает оферты только со снапшотом ровно за прошлое воскресенье: более старый покрыл
     # бы больше недели. Кадр нужен только w8, без него лишняя загрузка полного снапшота.
-    runs_week_over_week = any(module_id == WEEK_OVER_WEEK_MODULE_ID for module_id, _ in modules)
+    module_ids = {module_id for module_id, _ in modules}
+    runs_week_over_week = WEEK_OVER_WEEK_MODULE_ID in module_ids
     week_ago = (
         await snapshot_if_successful(deps, snapshot_date - timedelta(days=DAYS_IN_WEEK))
         if runs_week_over_week
+        else None
+    )
+    previous_week = (
+        await previous_week_snapshot(deps, week_ago, snapshot_date, lead_frame)
+        if IRRELEVANT_BY_CAMPAIGN_MODULE_ID in module_ids
         else None
     )
     # Кадр клиентов нужен только модулям с источником I (clients:read), сейчас это d1.
@@ -472,7 +501,14 @@ async def build_report(
         else None
     )
     context = ReportContext(
-        snapshot_date, previous, week_ago, clients, deps.config, deps.tenant_id, deps.lead_links
+        snapshot_date,
+        previous,
+        week_ago,
+        previous_week,
+        clients,
+        deps.config,
+        deps.tenant_id,
+        deps.lead_links,
     )
     blocks: list[ModuleBlock] = []
     photos: list[ReportPhoto] = []

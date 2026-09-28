@@ -16,7 +16,7 @@ from digest.reports.modules import IMPLEMENTED_MODULES
 from factories import BUCHAREST, make_lead_links, make_snapshot_row
 
 MONTH_END = date(2026, 9, 30)
-MONTHLY_MODULES = ("m2", "m3", "m4", "m5", "m8", "m11", "m19")
+MONTHLY_MODULES = ("m2", "m3", "m4", "m5", "m7", "m8", "m11", "m19")
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 # Синтетические данные клиента: кадр их не несёт, тест подкладывает их, чтобы проверить, что
 # ни текст, ни вложение не берут лишних колонок.
@@ -114,6 +114,7 @@ def month_frame(app_config: AppConfig) -> pd.DataFrame:
 def context(app_config: AppConfig) -> ReportContext:
     return ReportContext(
         MONTH_END,
+        None,
         None,
         None,
         None,
@@ -487,3 +488,23 @@ def test_client_sheet_names_repeat_client_source_as_reason(app_config: AppConfig
         ("1", "DA", "Client Fidel"),
         ("2", "NU", None),
     ]
+
+
+def test_source_conversion_text_with_other_without_source_and_campaigns(
+    app_config: AppConfig, snapshot: SnapshotAssertion
+) -> None:
+    september = at(date(2026, 9, 10), 12)
+    campaign = "BZA_Cluj_Website_Leads <03> & co"
+    rows = [
+        *(lead(lead_id, september, utm_campanie=campaign) for lead_id in range(1, 6)),
+        *(lead(lead_id, september) for lead_id in range(6, 10)),
+        lead(10, september, category="WON", status_name="Clienți", ofertat=True),
+        lead(11, september, source_name="Telefon", utm_campanie="Rar"),
+        lead(12, september, source_name="FacebookMessanger"),
+        lead(13, september, source_name=None, category="LOST", loss_reason="IRELEVANT"),
+    ]
+
+    text = IMPLEMENTED_MODULES["m7"](prepare_lead_frame(rows, app_config), context(app_config)).text
+
+    assert "BZA_Cluj_Website_Leads &lt;03&gt; &amp; co" in text
+    assert text == snapshot

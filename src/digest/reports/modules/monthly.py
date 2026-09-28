@@ -5,6 +5,7 @@ from typing import Any
 import pandas as pd
 
 from digest.config import KPI_NAMES, AppConfig
+from digest.metrics.breakdown import BreakdownRow, LeadBreakdown
 from digest.metrics.cockpit import manager_cockpit_table
 from digest.metrics.monthly import (
     BELOW_ALL_LEVELS,
@@ -13,15 +14,27 @@ from digest.metrics.monthly import (
     monthly_loss_reasons,
     monthly_repeat_clients,
     monthly_scr,
+    monthly_source_conversion,
     monthly_trend,
 )
 from digest.reports.charts import chart_labels, funnel_chart, trend_chart
 from digest.reports.context import ModuleResult, ReportContext, ReportPhoto
 from digest.reports.modules.weekly import WITHOUT_SHOWROOM
-from digest.reports.render import render, target_label, text
+from digest.reports.render import (
+    RO_MONTHS,
+    percent,
+    percent_one_decimal,
+    render,
+    target_label,
+    text,
+)
 
 # m5 в Telegram: девять KPI не помещаются в одну строку <code> на телефоне.
 COCKPIT_KPI_LINES = (KPI_NAMES[:5], KPI_NAMES[5:])
+# m7: ширина колонки имени в <code>; имя длиннее идёт отдельной строкой над цифрами, иначе
+# таблица не помещается в ширину телефона.
+BREAKDOWN_LABEL_WIDTH = 14
+BREAKDOWN_NUMBER_WIDTHS = (4, 5, 4, 3, 4, 5)
 
 
 def month_file_suffix(report_date: date) -> str:
@@ -159,5 +172,70 @@ def repeat_clients_report(lead_frame: pd.DataFrame, context: ReportContext) -> M
             without_showroom=WITHOUT_SHOWROOM,
             repeat_by_contact=text("repeat_by_contact"),
             repeat_sources=", ".join(context.config.status_mapping.sources.repeat_client),
+        )
+    )
+
+
+def breakdown_line(label: str, cells: tuple[str, ...]) -> list[str]:
+    numbers = " ".join(
+        cell.rjust(width) for cell, width in zip(cells, BREAKDOWN_NUMBER_WIDTHS, strict=True)
+    )
+    if len(label) > BREAKDOWN_LABEL_WIDTH:
+        return [label, f"{'':{BREAKDOWN_LABEL_WIDTH}} {numbers}"]
+    return [f"{label:{BREAKDOWN_LABEL_WIDTH}} {numbers}"]
+
+
+def breakdown_row_lines(label: str, row: BreakdownRow) -> list[str]:
+    counts, kpis = row.counts, row.kpis
+    cells = (
+        str(counts.leads),
+        str(counts.useful),
+        str(counts.offers),
+        str(counts.clienti),
+        percent(kpis.irr),
+        percent_one_decimal(kpis.scr),
+    )
+    return breakdown_line(label, cells)
+
+
+def breakdown_lines(
+    breakdown: LeadBreakdown,
+    first_header: str,
+    other_label: str,
+    without_key_label: str | None,
+) -> list[str]:
+    lines = breakdown_line(first_header, ("Lead", "Utile", "Of.", "Cl.", "IRR", "SCR"))
+    for row in breakdown.rows:
+        assert row.key is not None
+        lines += breakdown_row_lines(row.key, row)
+    if breakdown.other is not None:
+        lines += breakdown_row_lines(
+            f"{other_label} ({len(breakdown.other_keys)})", breakdown.other
+        )
+    if without_key_label is not None and breakdown.without_key is not None:
+        lines += breakdown_row_lines(without_key_label, breakdown.without_key)
+    return lines
+
+
+def scr_by_source_campaign_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
+    conversion = monthly_source_conversion(lead_frame, context.report_date, context.config)
+    labels = chart_labels()
+    source_lines = breakdown_lines(
+        conversion.by_source,
+        "Sursă",
+        "Alte surse",
+        context.config.status_mapping.without_source_label,
+    )
+    source_lines += breakdown_row_lines("Total", conversion.by_source.total)
+    return ModuleResult(
+        render(
+            "scr_by_source_campaign",
+            conversion=conversion,
+            month_label=f"{RO_MONTHS[conversion.month.month - 1]} {conversion.month:%Y}",
+            source_lines=source_lines,
+            campaign_lines=breakdown_lines(
+                conversion.by_campaign, "Campanie", "Alte campanii", None
+            ),
+            clienti_note=labels.clienti_note,
         )
     )

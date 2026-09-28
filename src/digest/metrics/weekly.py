@@ -5,8 +5,18 @@ from datetime import date, time, timedelta
 import pandas as pd
 
 from digest.config import AppConfig, TimeSettings
+from digest.metrics.breakdown import BreakdownColumn, lead_counts_by_column
+from digest.metrics.cockpit import meets_target
 from digest.metrics.daily import PreviousSnapshot, daily_window, transition_flags
-from digest.metrics.kpi import Kpis, LeadCounts, Period, kpis_from, lead_counts, ratio
+from digest.metrics.kpi import (
+    Kpis,
+    LeadCounts,
+    Period,
+    add_counts,
+    kpis_from,
+    lead_counts,
+    ratio,
+)
 
 DAYS_IN_WEEK = 7
 # Строки лидов недели для вложения: только эти колонки, без имени, телефона, e-mail и заметок
@@ -105,6 +115,27 @@ class WeekOverWeek:
     contracts: int
     contracts_previous: int
     offers: int | None
+
+
+@dataclass(frozen=True)
+class IrrelevantRow:
+    key: str
+    leads: int
+    irr_leads: int
+    irr: float | None
+    # None: снапшота прошлой недели нет или у ключа на прошлой неделе не было лидов.
+    irr_previous: float | None
+    meets_target: bool | None
+
+
+@dataclass(frozen=True)
+class WeeklyIrrelevant:
+    by_campaign: tuple[IrrelevantRow, ...]
+    by_source: tuple[IrrelevantRow, ...]
+    total_irr: float | None
+    total_irr_previous: float | None
+    # Снапшот, по которому посчитана прошлая неделя; None: снапшота нет.
+    previous_snapshot_date: date | None
 
 
 def week_days(report_date: date) -> tuple[date, ...]:
@@ -332,3 +363,78 @@ def weekly_showroom_visit_rows(
     lead_frame: pd.DataFrame, report_date: date, config: AppConfig
 ) -> pd.DataFrame:
     return lead_rows(weekly_showroom_visit_leads(lead_frame, report_date, config))
+
+
+def irrelevant_rows(
+    current: dict[str | None, LeadCounts],
+    previous: dict[str | None, LeadCounts] | None,
+    min_leads: int,
+    top_rows: int,
+    config: AppConfig,
+) -> tuple[IrrelevantRow, ...]:
+    # Пустой источник или кампания в рейтинг не входят: по ним нечего менять, но их лиды в итоге
+    # (docs/kpi-definitions.md, «Разбивка по источникам и кампаниям», w6).
+    target = config.kpi.targets["irr"]
+    rows = []
+    for key, counts in current.items():
+        if key is None or counts.leads < min_leads:
+            continue
+        irr = kpis_from(counts).irr
+        previous_counts = None if previous is None else previous.get(key)
+        rows.append(
+            IrrelevantRow(
+                key=key,
+                leads=counts.leads,
+                irr_leads=counts.irr_leads,
+                irr=irr,
+                irr_previous=None if previous_counts is None else kpis_from(previous_counts).irr,
+                meets_target=meets_target(irr, config.kpi.target_value("irr"), target.direction),
+            )
+        )
+    rows.sort(key=lambda row: (-(row.irr or 0), -row.irr_leads, row.key))
+    return tuple(rows[:top_rows])
+
+
+def weekly_irrelevant(
+    lead_frame: pd.DataFrame,
+    previous_week: PreviousSnapshot | None,
+    report_date: date,
+    config: AppConfig,
+) -> WeeklyIrrelevant:
+    # Та же когорта, что w3: итог IRR равен IRR воронки недели. Прошлая неделя по снапшоту её
+    # воскресенья, а не по текущему: IRELEVANT ставят с задержкой, и по сегодняшнему снапшоту
+    # прошлая неделя выглядела бы хуже текущей (docs/kpi-definitions.md, «Разбивка по источникам
+    # и кампаниям», w6). Снапшота за воскресенье нет: раннер передаёт первый более поздний.
+    time_settings = config.status_mapping.time
+    params = config.modules.irr_by_campaign_params
+    window = weekly_window(report_date, time_settings)
+    previous_window = weekly_window(report_date - timedelta(days=DAYS_IN_WEEK), time_settings)
+
+    def counts_by(column: BreakdownColumn) -> dict[str | None, LeadCounts]:
+        return lead_counts_by_column(lead_frame, column, window, report_date, config)
+
+    def previous_counts_by(column: BreakdownColumn) -> dict[str | None, LeadCounts] | None:
+        if previous_week is None:
+            return None
+        return lead_counts_by_column(
+            previous_week.frame, column, previous_window, previous_week.snapshot_date, config
+        )
+
+    by_source, previous_by_source = counts_by("source_name"), previous_counts_by("source_name")
+    return WeeklyIrrelevant(
+        by_campaign=irrelevant_rows(
+            counts_by("utm_campanie"),
+            previous_counts_by("utm_campanie"),
+            params.min_campaign_leads,
+            params.top_rows,
+            config,
+        ),
+        by_source=irrelevant_rows(
+            by_source, previous_by_source, params.min_source_leads, params.top_rows, config
+        ),
+        total_irr=kpis_from(add_counts(by_source.values())).irr,
+        total_irr_previous=None
+        if previous_by_source is None
+        else kpis_from(add_counts(previous_by_source.values())).irr,
+        previous_snapshot_date=None if previous_week is None else previous_week.snapshot_date,
+    )

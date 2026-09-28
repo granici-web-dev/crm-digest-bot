@@ -22,6 +22,7 @@ from digest.metrics.monthly import (
     monthly_loss_reasons,
     monthly_repeat_clients,
     monthly_scr,
+    monthly_source_conversion,
     monthly_trend,
     scr_level,
     trend_months,
@@ -453,3 +454,37 @@ def test_repeat_client_source_without_converted_at_is_not_a_month_client(
 
     assert repeat_clients.company == RepeatClientCounts(clients=0, repeat=0)
     assert repeat_clients.won_without_converted_at == 1
+
+
+def test_campaign_share_counts_only_leads_with_campaign(app_config: AppConfig) -> None:
+    in_september = at(date(2026, 9, 10), 12)
+    lead_frame = frame(
+        app_config,
+        lead(1, in_september, utm_campanie="BZA_Cluj_Website_Leads 03"),
+        lead(2, in_september, utm_campanie="BZA_Cluj_Website_Leads 03"),
+        lead(3, in_september, source_name="Showroom"),
+        lead(4, in_september, source_name=None),
+        lead(5, at(date(2026, 8, 10), 12), utm_campanie="BZA_Cluj_Website_Leads 03"),
+    )
+
+    conversion = monthly_source_conversion(lead_frame, SEPTEMBER_END, app_config)
+
+    assert (conversion.leads_with_campaign, conversion.leads_total) == (2, 4)
+    assert conversion.campaign_share == 0.5
+    assert (
+        conversion.by_source.total.counts
+        == monthly_funnel(lead_frame, SEPTEMBER_END, app_config).company
+    )
+    assert conversion.by_source.without_key is not None
+    assert conversion.by_source.without_key.counts.leads == 1
+
+
+def test_month_without_campaigns_has_zero_share(app_config: AppConfig) -> None:
+    lead_frame = frame(app_config, lead(1, at(date(2026, 9, 10), 12)))
+
+    conversion = monthly_source_conversion(lead_frame, SEPTEMBER_END, app_config)
+
+    assert conversion.leads_with_campaign == 0
+    assert conversion.campaign_share == 0
+    assert conversion.by_campaign.rows == ()
+    assert conversion.by_campaign.other is None

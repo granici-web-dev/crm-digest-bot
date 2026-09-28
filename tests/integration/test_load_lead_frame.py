@@ -68,7 +68,7 @@ async def test_loaded_frame_matches_frame_prepared_from_rows(
 ) -> None:
     rows = [
         # created_by_id приходит из raw.created_by.id, у лида 2 его нет (лид из API).
-        make_snapshot_row(lead_id=1, created_by_id=8),
+        make_snapshot_row(lead_id=1, created_by_id=8, utm_campanie="BZA_Cluj_Website_Leads 03"),
         make_snapshot_row(
             lead_id=2,
             ofertat=None,
@@ -84,6 +84,41 @@ async def test_loaded_frame_matches_frame_prepared_from_rows(
     lead_frame = await load_lead_frame(engine, "sofabelle", SNAPSHOT_DATE, app_config)
 
     pd.testing.assert_frame_equal(lead_frame, prepare_lead_frame(rows, app_config))
+
+
+async def test_utm_campanie_is_read_from_raw_by_field_id(
+    engine: AsyncEngine, app_config: AppConfig
+) -> None:
+    other_utm_field = {"field_id": 38, "name": "UTM_Source", "type": "input", "value": "facebook"}
+    with_campaign = lead_snapshots_row(make_snapshot_row(lead_id=1, utm_campanie="BZA_Cluj <03>"))
+    with_campaign["raw"]["custom_fields"].insert(0, other_utm_field)
+    only_other_field = lead_snapshots_row(make_snapshot_row(lead_id=2))
+    only_other_field["raw"]["custom_fields"] = [other_utm_field]
+    await store(engine, [stored_raw(with_campaign), stored_raw(only_other_field)])
+
+    lead_frame = await load_lead_frame(engine, "sofabelle", SNAPSHOT_DATE, app_config)
+
+    assert lead_frame["utm_campanie"].iloc[0] == "BZA_Cluj <03>"
+    assert pd.isna(lead_frame["utm_campanie"].iloc[1])
+
+
+@pytest.mark.parametrize("value", ["", "   ", None])
+async def test_blank_campaign_is_null(
+    engine: AsyncEngine, app_config: AppConfig, value: str | None
+) -> None:
+    row = lead_snapshots_row(make_snapshot_row(lead_id=1))
+    row["raw"]["custom_fields"] = [
+        {"field_id": 39, "name": "UTM_Campanie", "type": "input", "value": value}
+    ]
+    await store(engine, [stored_raw(row)])
+
+    lead_frame = await load_lead_frame(engine, "sofabelle", SNAPSHOT_DATE, app_config)
+
+    assert lead_frame["utm_campanie"].isna().all()
+
+
+def stored_raw(snapshot_row: dict[str, Any]) -> dict[str, Any]:
+    return {"tenant_id": "sofabelle", "snapshot_date": SNAPSHOT_DATE, **snapshot_row}
 
 
 @pytest.mark.parametrize(

@@ -34,7 +34,9 @@ weekly:           # пн–вс, отправка в понедельник; в�
   w3:  { name: weekly_funnel, label: "Pâlnia săptămânii",             sources: [A], enabled: true }
   w4:  { name: loss_reasons, label: "Motive de pierdere",              sources: [A], enabled: true }
   w5:  { name: speed_to_lead, label: "Viteza primului contact",             sources: [A], enabled: false }
-  w6:  { name: irr_by_campaign, label: "Campanii cu irelevanți",           sources: [A], enabled: false }
+  # Пороги по живому снапшоту 28.09.2026 (docs/shapes/2026-09-28-sources.md): 10 лидов в неделю
+  # оставляют Showroom, Site, WhatsApp, иногда Telefon и Mail; кампаний с 5 лидами в неделю обычно одна.
+  w6:  { name: irr_by_campaign, label: "Campanii cu irelevanți",           sources: [A], enabled: true, params: { min_source_leads: 10, min_campaign_leads: 5, top_rows: 3 } }
   w7:  { name: missed_calls_no_lead, label: "Apeluri pierdute fără lead",      sources: [C], enabled: false }
   w8:  { name: week_over_week, label: "Față de săptămâna trecută",            sources: [A], enabled: true }
   w9:  { name: cost_per_lead_by_channel, label: "Cost per lead pe canal",  sources: [A, D], enabled: false }
@@ -63,7 +65,9 @@ monthly:          # календарный месяц, отправка 1-го �
   m5:  { name: manager_cockpit, label: "Manager Cockpit",       sources: [A],    enabled: true }
   # Баллы и SPI предварительные (ADR-002): включить можно только при kpi.yaml status: calibrated.
   m6:  { name: spi_ranking, label: "Clasament SPI",           sources: [A],    enabled: false, requires_kpi_status: calibrated }
-  m7:  { name: scr_by_source_campaign, label: "Conversie pe sursă", sources: [A],   enabled: false }
+  # 10 лидов в месяц сворачивают в «Alte surse» Colaborare, Recomandare, Meta ADS, Client Fidel и прочие
+  # единичные источники (снапшот 28.09.2026).
+  m7:  { name: scr_by_source_campaign, label: "Conversie pe sursă", sources: [A],   enabled: true, params: { min_source_leads: 10, min_campaign_leads: 5 } }
   m8:  { name: loss_reasons_trend, label: "Motive de pierdere, evoluție",    sources: [A],    enabled: true }
   m9:  { name: cohort_conversion, label: "Conversie de cohortă",     sources: [A],    enabled: false }
   m10: { name: contracts_avg_value, label: "Contracte și valoare medie",   sources: [B],    enabled: false }

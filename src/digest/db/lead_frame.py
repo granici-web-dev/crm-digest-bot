@@ -1,7 +1,8 @@
 from datetime import date
 
 import pandas as pd
-from sqlalchemy import Integer, func, select
+from sqlalchemy import Integer, func, literal_column, select
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.config import AppConfig
@@ -20,10 +21,24 @@ async def load_lead_frame(
     created_by_id = (
         lead_snapshots.c.raw["created_by"]["id"].astext.cast(Integer).label("created_by_id")
     )
+    # UTM_Campanie тоже только в raw: кастомное поле из белого списка raw_custom_fields.keep,
+    # ищется по field_id. Пустая строка в mefi значит «кампании нет», как отсутствие поля.
+    campaign_value = func.jsonb_path_query_first(
+        lead_snapshots.c.raw,
+        literal_column("'$.custom_fields[*] ? (@.field_id == $field_id).value'::jsonpath"),
+        func.jsonb_build_object(
+            "field_id", config.status_mapping.custom_fields.utm_campanie.field_id
+        ),
+        type_=JSONB,
+    )
+    utm_campanie = func.nullif(
+        func.btrim(campaign_value.op("#>>")(literal_column("'{}'::text[]"))), ""
+    ).label("utm_campanie")
+    raw_columns = {"created_by_id": created_by_id, "utm_campanie": utm_campanie}
     query = (
         select(
             *(
-                created_by_id if column == "created_by_id" else lead_snapshots.c[column]
+                raw_columns[column] if column in raw_columns else lead_snapshots.c[column]
                 for column in LEAD_FRAME_COLUMNS
             )
         )

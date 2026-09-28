@@ -196,6 +196,8 @@ sources:
 showrooms: ["Brașov", "București", "Cluj"]
 # Название тенанта в шапке отчётов и в блоках d1 («Sofabelle Brașov»).
 tenant_display_name: "Sofabelle"
+# Подпись лидов без источника в отчётах (w1, w12, m7, w6) и ответах чата.
+without_source_label: "Fără sursă"
 
 # Ссылки на карточку лида в веб-интерфейсе mefi: хост из MEFI_BASE_URL, путь отсюда.
 # limit: сколько ссылок в блоке отчёта или в ответе чата, остальное «și încă N» (инвариант 7).

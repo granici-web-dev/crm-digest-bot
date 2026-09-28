@@ -972,3 +972,20 @@ async def test_failed_backup_check_is_reported_to_ops(harness: Harness, tmp_path
     await report_job(harness.deps, "daily", tmp_path)
 
     assert "Проверка бэкапа упала: FileNotFoundError." in harness.ops_texts
+
+
+@pytest.mark.parametrize(
+    ("stored_offset_days", "expected_offset_days"),
+    [(-7, -7), (-6, -6), (-8, 0), (1, 0)],
+    ids=["sunday", "first_later", "only_older_uses_report_snapshot", "never_after_report"],
+)
+async def test_w6_gets_previous_sunday_or_first_later_snapshot(
+    harness: Harness, stored_offset_days: int, expected_offset_days: int
+) -> None:
+    [context] = await weekly_contexts(
+        harness, "w6", WEEK_SUNDAY + timedelta(days=stored_offset_days)
+    )
+
+    assert context.previous_week is not None
+    assert context.previous_week.snapshot_date == WEEK_SUNDAY + timedelta(days=expected_offset_days)
+    assert context.week_ago is None

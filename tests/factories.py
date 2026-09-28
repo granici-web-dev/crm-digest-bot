@@ -205,6 +205,7 @@ def etalon_lead_rows(etalon: dict[str, Any], status_mapping: StatusMapping) -> l
                 loss_reason=category.loss_reason,
                 status_name=lead["status"],
                 source_name=lead["source"],
+                utm_campanie=lead["utm_campaign"],
                 showroom=lead["showroom"],
                 ofertat=None if lead["ofertat"] is None else ofertat_values[lead["ofertat"]],
                 data_revenire=date.fromisoformat(lead["data_revenire"])
@@ -236,6 +237,7 @@ def make_snapshot_row(**overrides: Any) -> dict[str, Any]:
         "loss_reason": None,
         "status_name": "IN PROCES",
         "source_name": "Site",
+        "utm_campanie": None,
         "showroom": "București",
         "ofertat": False,
         "data_revenire": None,
@@ -255,9 +257,27 @@ def make_snapshot_row(**overrides: Any) -> dict[str, Any]:
     return row
 
 
+UTM_CAMPANIE_FIELD_ID = 39
+
+
 def lead_snapshots_row(row: dict[str, Any]) -> dict[str, Any]:
-    # created_by_id в кадре читается из raw (digest.db.lead_frame), колонки в lead_snapshots нет.
-    columns = {name: value for name, value in row.items() if name != "created_by_id"}
+    # created_by_id и utm_campanie в кадре читаются из raw (digest.db.lead_frame), колонок в
+    # lead_snapshots нет.
+    columns = {
+        name: value for name, value in row.items() if name not in {"created_by_id", "utm_campanie"}
+    }
+    raw: dict[str, Any] = {}
     created_by_id = row.get("created_by_id")
-    raw = {} if created_by_id is None else {"created_by": {"id": created_by_id}}
+    if created_by_id is not None:
+        raw["created_by"] = {"id": created_by_id}
+    utm_campanie = row.get("utm_campanie")
+    if utm_campanie is not None:
+        raw["custom_fields"] = [
+            {
+                "field_id": UTM_CAMPANIE_FIELD_ID,
+                "name": "UTM_Campanie",
+                "type": "input",
+                "value": utm_campanie,
+            }
+        ]
     return {"raw": raw, **columns}

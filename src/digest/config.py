@@ -114,11 +114,24 @@ class OfertatField(CustomFieldRef):
     ofertat_no: str
 
 
+UTM_CAMPANIE = "UTM_Campanie"
+
+
 class CustomFields(StrictConfigModel):
     showroom: CustomFieldRef
     ofertat: OfertatField
     data_revenire: CustomFieldRef
     utm: list[CustomFieldRef]
+
+    @model_validator(mode="after")
+    def utm_has_campaign(self) -> Self:
+        if not any(field.name == UTM_CAMPANIE for field in self.utm):
+            raise ValueError(f"custom_fields.utm: нет поля {UTM_CAMPANIE}, m7 и w6 без него пусты")
+        return self
+
+    @property
+    def utm_campanie(self) -> CustomFieldRef:
+        return next(field for field in self.utm if field.name == UTM_CAMPANIE)
 
 
 class RawCustomFields(StrictConfigModel):
@@ -257,6 +270,7 @@ class StatusMapping(StrictConfigModel):
     sources: SourceGroups
     showrooms: list[str]
     tenant_display_name: str
+    without_source_label: str
     lead_links: LeadLinkSettings
     time: TimeSettings
     raw_strip: list[str]
@@ -344,6 +358,17 @@ class AnomalyParams(StrictConfigModel):
     irelevant_spike_min: PositiveInt
 
 
+class ScrBySourceCampaignParams(StrictConfigModel):
+    min_source_leads: PositiveInt
+    min_campaign_leads: PositiveInt
+
+
+class IrrByCampaignParams(StrictConfigModel):
+    min_source_leads: PositiveInt
+    min_campaign_leads: PositiveInt
+    top_rows: PositiveInt
+
+
 class ScrLevel(StrictConfigModel):
     threshold: str
     label: str
@@ -404,6 +429,8 @@ class ModuleRegistry(StrictConfigModel):
     _untouched_leads_params: UntouchedLeadsParams = PrivateAttr()
     _anomaly_params: AnomalyParams = PrivateAttr()
     _scr_levels_params: ScrLevelsParams = PrivateAttr()
+    _scr_by_source_campaign_params: ScrBySourceCampaignParams = PrivateAttr()
+    _irr_by_campaign_params: IrrByCampaignParams = PrivateAttr()
 
     @property
     def untouched_leads_params(self) -> UntouchedLeadsParams:
@@ -416,6 +443,14 @@ class ModuleRegistry(StrictConfigModel):
     @property
     def scr_levels_params(self) -> ScrLevelsParams:
         return self._scr_levels_params
+
+    @property
+    def scr_by_source_campaign_params(self) -> ScrBySourceCampaignParams:
+        return self._scr_by_source_campaign_params
+
+    @property
+    def irr_by_campaign_params(self) -> IrrByCampaignParams:
+        return self._irr_by_campaign_params
 
     def module_named(self, name: str) -> tuple[str, ReportModule]:
         for module_id, module in self.all_modules.items():
@@ -473,6 +508,10 @@ class ModuleRegistry(StrictConfigModel):
         self._untouched_leads_params = self.parsed_params("untouched_leads", UntouchedLeadsParams)
         self._anomaly_params = self.parsed_params("anomalies", AnomalyParams)
         self._scr_levels_params = self.parsed_params("scr_with_targets", ScrLevelsParams)
+        self._scr_by_source_campaign_params = self.parsed_params(
+            "scr_by_source_campaign", ScrBySourceCampaignParams
+        )
+        self._irr_by_campaign_params = self.parsed_params("irr_by_campaign", IrrByCampaignParams)
         return self
 
 

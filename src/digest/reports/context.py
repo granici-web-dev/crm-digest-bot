@@ -12,7 +12,10 @@ from digest.reports.lead_links import LeadLinks
 class ReportContext:
     report_date: date
     previous: PreviousSnapshot | None
+    # Снапшот ровно за прошлое воскресенье, для оферт w8.
     week_ago: PreviousSnapshot | None
+    # Снапшот прошлой недели для w6: воскресенье или первый более поздний, дата в нём.
+    previous_week: PreviousSnapshot | None
     # Клиенты mefi за report_date; None: снапшота клиентов нет или ни один модуль их не читает.
     clients: pd.DataFrame | None
     config: AppConfig

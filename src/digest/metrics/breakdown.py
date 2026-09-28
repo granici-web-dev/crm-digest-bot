@@ -1,0 +1,88 @@
+from dataclasses import dataclass
+from datetime import date
+from typing import Literal, get_args
+
+import pandas as pd
+
+from digest.config import AppConfig
+from digest.metrics.kpi import (
+    COUNT_NAMES,
+    Kpis,
+    LeadCounts,
+    Period,
+    add_counts,
+    count_flags,
+    counts_from_sums,
+    kpis_from,
+)
+
+BreakdownColumn = Literal["source_name", "utm_campanie"]
+BREAKDOWN_COLUMNS: tuple[BreakdownColumn, ...] = get_args(BreakdownColumn)
+
+
+@dataclass(frozen=True)
+class BreakdownRow:
+    # Значение как в mefi; None: пусто, свёрнутые строки или итог.
+    key: str | None
+    counts: LeadCounts
+    kpis: Kpis
+
+
+@dataclass(frozen=True)
+class LeadBreakdown:
+    # Ключи с leads >= min_leads, по убыванию лидов, при равенстве по имени.
+    rows: tuple[BreakdownRow, ...]
+    other: BreakdownRow | None
+    other_keys: tuple[str, ...]
+    # Лиды без значения не сворачиваются в other: это вопрос заполнения поля в mefi.
+    without_key: BreakdownRow | None
+    total: BreakdownRow
+
+
+def breakdown_row(key: str | None, counts: LeadCounts) -> BreakdownRow:
+    return BreakdownRow(key, counts, kpis_from(counts))
+
+
+def lead_counts_by_column(
+    lead_frame: pd.DataFrame,
+    column: BreakdownColumn,
+    period: Period,
+    analysis_date: date,
+    config: AppConfig,
+) -> dict[str | None, LeadCounts]:
+    # Те же флаги, что у lead_counts (docs/kpi-definitions.md, «Разбивка по источникам и
+    # кампаниям»): сумма по ключам равна счётчикам компании на том же окне по построению.
+    flags = count_flags(lead_frame, period, analysis_date, config)
+    keys = lead_frame.loc[flags.index, column]
+    sums = flags[list(COUNT_NAMES)].groupby(keys, dropna=False).sum()
+    return {
+        None if pd.isna(key) else str(key): counts_from_sums(row)
+        for key, row in zip(sums.index.tolist(), sums.to_dict("records"), strict=True)
+    }
+
+
+def lead_breakdown(
+    lead_frame: pd.DataFrame,
+    column: BreakdownColumn,
+    period: Period,
+    analysis_date: date,
+    config: AppConfig,
+    min_leads: int,
+) -> LeadBreakdown:
+    counts_by_key = lead_counts_by_column(lead_frame, column, period, analysis_date, config)
+    named = {key: counts for key, counts in counts_by_key.items() if key is not None}
+    kept = sorted(
+        (key for key, counts in named.items() if counts.leads >= min_leads),
+        key=lambda key: (-named[key].leads, key),
+    )
+    collapsed = tuple(sorted(key for key, counts in named.items() if counts.leads < min_leads))
+    without_key = counts_by_key.get(None)
+    return LeadBreakdown(
+        rows=tuple(breakdown_row(key, named[key]) for key in kept),
+        other=breakdown_row(None, add_counts(named[key] for key in collapsed))
+        if collapsed
+        else None,
+        other_keys=collapsed,
+        without_key=None if without_key is None else breakdown_row(None, without_key),
+        total=breakdown_row(None, add_counts(counts_by_key.values())),
+    )

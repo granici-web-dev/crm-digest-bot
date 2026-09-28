@@ -1,4 +1,12 @@
 # serializer version: 1
+# name: test_irr_by_campaign_text_notes_substituted_previous_week_snapshot
+  '''
+  <b>Irelevante pe campanie și sursă</b> · total 20% (săpt. trecută 20%), țintă ≤20,0%
+  Campanii (min. 5 lead-uri): „BZA &lt;03&gt;” 0% (0 din 5) ✓, săpt. trecută 0%
+  Surse (min. 10 lead-uri): Site 30% (3 din 10) ✗, săpt. trecută 30%
+  <i>Săpt. trecută: Date din snapshotul din 22.09.2026 (nu există snapshot pentru 20.09.2026)</i>
+  '''
+# ---
 # name: test_weekly_module_text[w12]
   '📎 sofabelle_sapt39_2026.xlsx: zi × showroom, showroom × sursă, lista lead-urilor și a vizitelor'
 # ---
@@ -50,6 +58,13 @@
   '''
   <b>Închise în săptămână: 2</b> (inclusiv lead-uri create anterior): Nu a răspuns 1 · Buget 1
   Cluj 2: Nu a răspuns 1 · Buget 1
+  '''
+# ---
+# name: test_weekly_module_text[w6]
+  '''
+  <b>Irelevante pe campanie și sursă</b> · total 0% (săpt. trecută 0%), țintă ≤20,0%
+  Campanii (min. 5 lead-uri): nicio campanie cu cel puțin 5 lead-uri
+  Surse (min. 10 lead-uri): nicio sursă cu cel puțin 10 lead-uri
   '''
 # ---
 # name: test_weekly_module_text[w8]

@@ -76,6 +76,17 @@
   <code>SC — · PFR — · ACR — · IRR —</code>
   '''
 # ---
+# name: test_monthly_module_text[m7]
+  '''
+  <b>Conversie pe sursă · septembrie 2026</b>
+  <code>Sursă          Lead Utile  Of. Cl.  IRR   SCR
+  Site             13    12    3   1   8%  8,3%
+  Total            13    12    3   1   8%  8,3%</code>
+  <b>Pe campanie (UTM_Campanie)</b>: 0 din 13 lead-uri au campanie (0%)
+  Nicio campanie UTM în această lună
+  <i>IRR = irelevante / lead-uri, SCR = clienți / lead-uri utile. Clienți: din lead-urile lunii, status la data raportului</i>
+  '''
+# ---
 # name: test_monthly_module_text[m8]
   '''
   <b>Motive de pierdere: Sep față de Aug</b>
@@ -83,5 +94,22 @@
   Buget 1 · 50% (Aug 1) (=)
   Irelevant 1 · 50% (Aug 0) (—)
   Nu a răspuns 0 · 0% (Aug 1) (−100%)
+  '''
+# ---
+# name: test_source_conversion_text_with_other_without_source_and_campaigns
+  '''
+  <b>Conversie pe sursă · septembrie 2026</b>
+  <code>Sursă          Lead Utile  Of. Cl.  IRR   SCR
+  Site             10    10    1   1   0% 10,0%
+  Alte surse (2)    2     2    0   0   0%  0,0%
+  Fără sursă        1     0    0   0 100%     —
+  Total            13    12    1   1   8%  8,3%</code>
+  <b>Pe campanie (UTM_Campanie)</b>: 6 din 13 lead-uri au campanie (46%)
+  <code>Campanie       Lead Utile  Of. Cl.  IRR   SCR
+  BZA_Cluj_Website_Leads &lt;03&gt; &amp; co
+                    5     5    0   0   0%  0,0%
+  Alte campanii (1)
+                    1     1    0   0   0%  0,0%</code>
+  <i>IRR = irelevante / lead-uri, SCR = clienți / lead-uri utile. Clienți: din lead-urile lunii, status la data raportului</i>
   '''
 # ---

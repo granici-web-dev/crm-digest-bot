@@ -16,6 +16,7 @@ from digest.metrics.weekly import (
     relative_change,
     week_over_week,
     weekly_funnel,
+    weekly_irrelevant,
     weekly_lead_rows,
     weekly_lead_tables,
     weekly_loss_reasons,
@@ -428,3 +429,74 @@ def test_converted_count_by_showroom_sums_to_converted_count(app_config: AppConf
     }
     assert by_showroom == expected
     assert sum(by_showroom.values()) == converted_count(lead_frame, window) == 4
+
+
+def irrelevant(lead_id: int, created_at: datetime, **overrides: Any) -> dict[str, Any]:
+    return lost(lead_id, created_at, "IRELEVANT", **overrides)
+
+
+def site_leads(first_id: int, count: int, day: date, **overrides: Any) -> list[dict[str, Any]]:
+    return [lead(first_id + offset, at(day, 12), **overrides) for offset in range(count)]
+
+
+def test_weekly_irrelevant_total_equals_weekly_funnel_irr(app_config: AppConfig) -> None:
+    lead_frame = frame(
+        app_config,
+        *site_leads(1, 3, SUNDAY),
+        irrelevant(10, at(SUNDAY, 12), source_name=None),
+        irrelevant(11, at(MONDAY, 12), source_name="Showroom"),
+    )
+
+    result = weekly_irrelevant(lead_frame, None, SUNDAY, app_config)
+
+    assert result.total_irr == weekly_funnel(lead_frame, SUNDAY, app_config).kpis.irr == 0.4
+
+
+def test_weekly_irrelevant_ranks_by_irr_above_min_leads(app_config: AppConfig) -> None:
+    lead_frame = frame(
+        app_config,
+        *site_leads(1, 8, SUNDAY),
+        *[irrelevant(100 + offset, at(SUNDAY, 12)) for offset in range(2)],
+        *site_leads(200, 7, SUNDAY, source_name="Telefon"),
+        *[irrelevant(300 + offset, at(SUNDAY, 12), source_name="Telefon") for offset in range(3)],
+        *[irrelevant(400 + offset, at(SUNDAY, 12), source_name="Mail") for offset in range(9)],
+        *[irrelevant(500 + offset, at(SUNDAY, 12), source_name=None) for offset in range(12)],
+    )
+
+    result = weekly_irrelevant(lead_frame, None, SUNDAY, app_config)
+
+    assert [(row.key, row.leads, row.irr_leads) for row in result.by_source] == [
+        ("Telefon", 10, 3),
+        ("Site", 10, 2),
+    ]
+    assert [row.meets_target for row in result.by_source] == [False, True]
+    assert result.by_campaign == ()
+
+
+def test_weekly_irrelevant_previous_week_uses_week_ago_snapshot(app_config: AppConfig) -> None:
+    previous_sunday = SUNDAY - timedelta(days=7)
+    last_week = site_leads(1, 10, previous_sunday)
+    current = site_leads(100, 10, SUNDAY)
+    # Лид прошлой недели стал IRELEVANT только после её воскресенья.
+    today_rows = [*last_week[1:], irrelevant(1, at(previous_sunday, 12)), *current]
+
+    result = weekly_irrelevant(
+        frame(app_config, *today_rows),
+        PreviousSnapshot(previous_sunday, frame(app_config, *last_week)),
+        SUNDAY,
+        app_config,
+    )
+
+    assert result.total_irr_previous == 0
+    assert result.by_source[0].irr_previous == 0
+    assert result.previous_snapshot_date == previous_sunday
+
+
+def test_weekly_irrelevant_without_week_ago_has_no_previous(app_config: AppConfig) -> None:
+    lead_frame = frame(app_config, *site_leads(1, 10, SUNDAY))
+
+    result = weekly_irrelevant(lead_frame, None, SUNDAY, app_config)
+
+    assert result.total_irr_previous is None
+    assert result.by_source[0].irr_previous is None
+    assert result.previous_snapshot_date is None

@@ -1,4 +1,4 @@
-from collections.abc import Hashable, Mapping
+from collections.abc import Hashable, Iterable, Mapping
 from dataclasses import dataclass, fields
 from datetime import date, datetime
 from typing import Any
@@ -96,6 +96,14 @@ def count_flags(
 
 def counts_from_sums(sums: Mapping[Hashable, Any]) -> LeadCounts:
     return LeadCounts(**{name: int(sums[name]) for name in COUNT_NAMES})
+
+
+def add_counts(counts: Iterable[LeadCounts]) -> LeadCounts:
+    summed = dict.fromkeys(COUNT_NAMES, 0)
+    for lead_counts_part in counts:
+        for name in COUNT_NAMES:
+            summed[name] += getattr(lead_counts_part, name)
+    return LeadCounts(**summed)
 
 
 def sum_counts(flags: pd.DataFrame) -> LeadCounts:

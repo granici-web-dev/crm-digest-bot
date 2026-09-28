@@ -294,6 +294,20 @@ def expected_by_showroom(leads: list[dict[str, Any]], analysis_date: date) -> li
     ]
 
 
+def expected_by_field(
+    leads: list[dict[str, Any]], field: str, analysis_date: date
+) -> list[dict[str, Any]]:
+    # m7 and w6 breakdowns; a list with a null key for leads without a value, as by showroom.
+    keys = sorted({lead[field] for lead in leads}, key=lambda key: (key is None, key))
+    return [
+        {
+            "key": key,
+            **expected_for([lead for lead in leads if lead[field] == key], analysis_date),
+        }
+        for key in keys
+    ]
+
+
 def leaked_pii(payload: Any, pii: set[str], dump: str) -> list[str]:
     leaks: list[str] = []
 
@@ -351,6 +365,8 @@ def main() -> None:
         # Whole company, unassigned leads included, and per Showroom field with null for none.
         "expected_company": expected_for(leads, analysis_day),
         "expected_by_showroom": expected_by_showroom(leads, analysis_day),
+        "expected_by_source": expected_by_field(leads, "source", analysis_day),
+        "expected_by_utm_campaign": expected_by_field(leads, "utm_campaign", analysis_day),
         # SB KPi.xlsx 03_KPI_Agenti as-is, including the AC defect (ACR = 0 everywhere).
         # Comparison only; tests assert against expected_by_agent.
         "excel_reference": excel_reference,

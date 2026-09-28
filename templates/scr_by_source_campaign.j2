@@ -1,0 +1,9 @@
+<b>Conversie pe sursă · {{ month_label }}</b>
+<code>{{ source_lines | join("\n") }}</code>
+<b>Pe campanie (UTM_Campanie)</b>: {{ conversion.leads_with_campaign }} din {{ conversion.leads_total }} lead-uri au campanie ({{ conversion.campaign_share | percent }})
+{% if conversion.leads_with_campaign %}
+<code>{{ campaign_lines | join("\n") }}</code>
+{% else %}
+Nicio campanie UTM în această lună
+{% endif %}
+<i>IRR = irelevante / lead-uri, SCR = clienți / lead-uri utile. {{ clienti_note }}</i>

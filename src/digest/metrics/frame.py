@@ -10,6 +10,7 @@ LEAD_FRAME_COLUMNS = (
     "loss_reason",
     "status_name",
     "source_name",
+    "utm_campanie",
     "showroom",
     "ofertat",
     "data_revenire",

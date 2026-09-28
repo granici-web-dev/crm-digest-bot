@@ -5074,6 +5074,374 @@
       }
     }
   ],
+  "expected_by_source": [
+    {
+      "key": "Arhirtect",
+      "counts": {
+        "leads": 1,
+        "irr_leads": 0,
+        "useful": 1,
+        "clienti": 1,
+        "offers": 0,
+        "nar": 0,
+        "buget": 0,
+        "pnp": 0,
+        "showroom_visits": 0,
+        "clienti_from_showroom": 0,
+        "active_offers_14": 0,
+        "unmapped": 0
+      },
+      "kpi": {
+        "scr": 1.0,
+        "l2o": 0.0,
+        "o2c": null,
+        "cdr": 1.0,
+        "plr": 0.0,
+        "sc": null,
+        "pfr": 0.0,
+        "acr": 0.0,
+        "irr": 0.0
+      }
+    },
+    {
+      "key": "Client Fidel",
+      "counts": {
+        "leads": 1,
+        "irr_leads": 0,
+        "useful": 1,
+        "clienti": 0,
+        "offers": 1,
+        "nar": 0,
+        "buget": 0,
+        "pnp": 0,
+        "showroom_visits": 0,
+        "clienti_from_showroom": 0,
+        "active_offers_14": 0,
+        "unmapped": 0
+      },
+      "kpi": {
+        "scr": 0.0,
+        "l2o": 1.0,
+        "o2c": 0.0,
+        "cdr": 1.0,
+        "plr": 0.0,
+        "sc": null,
+        "pfr": 0.0,
+        "acr": 0.0,
+        "irr": 0.0
+      }
+    },
+    {
+      "key": "Colaborare",
+      "counts": {
+        "leads": 3,
+        "irr_leads": 0,
+        "useful": 3,
+        "clienti": 1,
+        "offers": 3,
+        "nar": 0,
+        "buget": 0,
+        "pnp": 0,
+        "showroom_visits": 0,
+        "clienti_from_showroom": 0,
+        "active_offers_14": 0,
+        "unmapped": 0
+      },
+      "kpi": {
+        "scr": 0.3333333333333333,
+        "l2o": 1.0,
+        "o2c": 0.3333333333333333,
+        "cdr": 1.0,
+        "plr": 0.0,
+        "sc": null,
+        "pfr": 0.0,
+        "acr": 0.0,
+        "irr": 0.0
+      }
+    },
+    {
+      "key": "Mail",
+      "counts": {
+        "leads": 12,
+        "irr_leads": 7,
+        "useful": 5,
+        "clienti": 0,
+        "offers": 0,
+        "nar": 2,
+        "buget": 0,
+        "pnp": 0,
+        "showroom_visits": 0,
+        "clienti_from_showroom": 0,
+        "active_offers_14": 0,
+        "unmapped": 0
+      },
+      "kpi": {
+        "scr": 0.0,
+        "l2o": 0.0,
+        "o2c": null,
+        "cdr": 0.8333333333333334,
+        "plr": 0.0,
+        "sc": null,
+        "pfr": 0.0,
+        "acr": 0.0,
+        "irr": 0.5833333333333334
+      }
+    },
+    {
+      "key": "Meta ADS",
+      "counts": {
+        "leads": 2,
+        "irr_leads": 0,
+        "useful": 2,
+        "clienti": 0,
+        "offers": 2,
+        "nar": 0,
+        "buget": 1,
+        "pnp": 0,
+        "showroom_visits": 0,
+        "clienti_from_showroom": 0,
+        "active_offers_14": 0,
+        "unmapped": 0
+      },
+      "kpi": {
+        "scr": 0.0,
+        "l2o": 1.0,
+        "o2c": 0.0,
+        "cdr": 1.0,
+        "plr": 0.5,
+        "sc": null,
+        "pfr": 0.0,
+        "acr": 0.0,
+        "irr": 0.0
+      }
+    },
+    {
+      "key": "Recomandare",
+      "counts": {
+        "leads": 1,
+        "irr_leads": 0,
+        "useful": 1,
+        "clienti": 0,
+        "offers": 0,
+        "nar": 0,
+        "buget": 0,
+        "pnp": 0,
+        "showroom_visits": 0,
+        "clienti_from_showroom": 0,
+        "active_offers_14": 0,
+        "unmapped": 0
+      },
+      "kpi": {
+        "scr": 0.0,
+        "l2o": 0.0,
+        "o2c": null,
+        "cdr": 1.0,
+        "plr": 0.0,
+        "sc": null,
+        "pfr": 0.0,
+        "acr": 0.0,
+        "irr": 0.0
+      }
+    },
+    {
+      "key": "Showroom",
+      "counts": {
+        "leads": 125,
+        "irr_leads": 23,
+        "useful": 102,
+        "clienti": 8,
+        "offers": 50,
+        "nar": 9,
+        "buget": 21,
+        "pnp": 16,
+        "showroom_visits": 125,
+        "clienti_from_showroom": 8,
+        "active_offers_14": 0,
+        "unmapped": 0
+      },
+      "kpi": {
+        "scr": 0.0784313725490196,
+        "l2o": 0.49019607843137253,
+        "o2c": 0.16,
+        "cdr": 0.928,
+        "plr": 0.22580645161290322,
+        "sc": 0.064,
+        "pfr": 0.1568627450980392,
+        "acr": 0.0,
+        "irr": 0.184
+      }
+    },
+    {
+      "key": "Site",
+      "counts": {
+        "leads": 57,
+        "irr_leads": 10,
+        "useful": 47,
+        "clienti": 0,
+        "offers": 13,
+        "nar": 19,
+        "buget": 11,
+        "pnp": 2,
+        "showroom_visits": 0,
+        "clienti_from_showroom": 0,
+        "active_offers_14": 0,
+        "unmapped": 0
+      },
+      "kpi": {
+        "scr": 0.0,
+        "l2o": 0.2765957446808511,
+        "o2c": 0.0,
+        "cdr": 0.6666666666666666,
+        "plr": 0.39285714285714285,
+        "sc": null,
+        "pfr": 0.0425531914893617,
+        "acr": 0.0,
+        "irr": 0.17543859649122806
+      }
+    },
+    {
+      "key": "Telefon",
+      "counts": {
+        "leads": 62,
+        "irr_leads": 23,
+        "useful": 39,
+        "clienti": 4,
+        "offers": 8,
+        "nar": 3,
+        "buget": 11,
+        "pnp": 7,
+        "showroom_visits": 0,
+        "clienti_from_showroom": 0,
+        "active_offers_14": 0,
+        "unmapped": 0
+      },
+      "kpi": {
+        "scr": 0.10256410256410256,
+        "l2o": 0.20512820512820512,
+        "o2c": 0.5,
+        "cdr": 0.9516129032258065,
+        "plr": 0.3055555555555556,
+        "sc": null,
+        "pfr": 0.1794871794871795,
+        "acr": 0.0,
+        "irr": 0.3709677419354839
+      }
+    },
+    {
+      "key": "WhatsApp",
+      "counts": {
+        "leads": 37,
+        "irr_leads": 3,
+        "useful": 34,
+        "clienti": 0,
+        "offers": 13,
+        "nar": 11,
+        "buget": 12,
+        "pnp": 8,
+        "showroom_visits": 0,
+        "clienti_from_showroom": 0,
+        "active_offers_14": 0,
+        "unmapped": 0
+      },
+      "kpi": {
+        "scr": 0.0,
+        "l2o": 0.38235294117647056,
+        "o2c": 0.0,
+        "cdr": 0.7027027027027027,
+        "plr": 0.5217391304347826,
+        "sc": null,
+        "pfr": 0.23529411764705882,
+        "acr": 0.0,
+        "irr": 0.08108108108108109
+      }
+    }
+  ],
+  "expected_by_utm_campaign": [
+    {
+      "key": "SMM_insta_prof",
+      "counts": {
+        "leads": 1,
+        "irr_leads": 0,
+        "useful": 1,
+        "clienti": 0,
+        "offers": 1,
+        "nar": 0,
+        "buget": 1,
+        "pnp": 0,
+        "showroom_visits": 0,
+        "clienti_from_showroom": 0,
+        "active_offers_14": 0,
+        "unmapped": 0
+      },
+      "kpi": {
+        "scr": 0.0,
+        "l2o": 1.0,
+        "o2c": 0.0,
+        "cdr": 1.0,
+        "plr": 1.0,
+        "sc": null,
+        "pfr": 0.0,
+        "acr": 0.0,
+        "irr": 0.0
+      }
+    },
+    {
+      "key": "paid",
+      "counts": {
+        "leads": 29,
+        "irr_leads": 6,
+        "useful": 23,
+        "clienti": 0,
+        "offers": 6,
+        "nar": 11,
+        "buget": 4,
+        "pnp": 0,
+        "showroom_visits": 0,
+        "clienti_from_showroom": 0,
+        "active_offers_14": 0,
+        "unmapped": 0
+      },
+      "kpi": {
+        "scr": 0.0,
+        "l2o": 0.2608695652173913,
+        "o2c": 0.0,
+        "cdr": 0.6206896551724138,
+        "plr": 0.3333333333333333,
+        "sc": null,
+        "pfr": 0.0,
+        "acr": 0.0,
+        "irr": 0.20689655172413793
+      }
+    },
+    {
+      "key": null,
+      "counts": {
+        "leads": 271,
+        "irr_leads": 60,
+        "useful": 211,
+        "clienti": 14,
+        "offers": 83,
+        "nar": 33,
+        "buget": 51,
+        "pnp": 33,
+        "showroom_visits": 125,
+        "clienti_from_showroom": 8,
+        "active_offers_14": 0,
+        "unmapped": 0
+      },
+      "kpi": {
+        "scr": 0.06635071090047394,
+        "l2o": 0.3933649289099526,
+        "o2c": 0.1686746987951807,
+        "cdr": 0.8782287822878229,
+        "plr": 0.28651685393258425,
+        "sc": 0.064,
+        "pfr": 0.15639810426540285,
+        "acr": 0.0,
+        "irr": 0.22140221402214022
+      }
+    }
+  ],
   "excel_reference": {
     "Raileanu Leon": {
       "showroom": "București",

@@ -73,7 +73,7 @@ def test_level_menu_greys_out_unavailable_modules_with_reason(app_config: AppCon
     assert button_for(keyboard, "m6")[0] == (
         "▫️ m6 · Clasament SPI · nu e disponibil: KPI necalibrat"
     )
-    assert button_for(keyboard, "m7")[0] == "▫️ m7 · Conversie pe sursă · în lucru"
+    assert button_for(keyboard, "m9")[0] == "▫️ m9 · Conversie de cohortă · în lucru"
 
 
 def test_unavailable_reason_lists_all_disconnected_sources(app_config: AppConfig) -> None:

@@ -274,9 +274,9 @@ Prim contact: mediană 1h 40min · 23% din lead-uri > 4h · cel mai lent: Cluj 3
 
 Тег: now
 
-**RO:** Pe UTM_Campaign.
+**RO:** Pe UTM_Campanie și pe sursă: cele mai mari ponderi de irelevanți ale săptămânii, față de săptămâna trecută și de țintă.
 
-**RU:** По UTM_Campaign.
+**RU:** По UTM_Campanie и по источнику: самые высокие доли нерелевантных за неделю, к прошлой неделе и к цели.
 
 Пример RO:
 
@@ -522,9 +522,9 @@ SCR 11,2% · CDR 91% · PLR 22% · SC 24% · PFR 8% · ACR 18% · L2O 52% · O2C
 
 Тег: now
 
-**RO:** 
+**RO:** Pentru fiecare sursă: lead-uri, utile, oferte, clienți, IRR și SCR pentru lead-urile lunii. Sursele mici sunt grupate în «Alte surse». Separat, aceleași cifre pe UTM_Campanie și câte lead-uri au campanie.
 
-**RU:** 
+**RU:** По каждому источнику: лиды, полезные, оферты, клиенты, IRR и SCR по лидам месяца. Мелкие источники свёрнуты в «Alte surse». Отдельно те же цифры по UTM_Campanie и сколько лидов с кампанией.
 
 Пример RO:
 

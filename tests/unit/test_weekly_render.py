@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from io import BytesIO
 from typing import Any
@@ -24,7 +25,7 @@ from factories import BUCHAREST, make_lead_links, make_snapshot_row, raw_reposit
 
 SUNDAY = date(2026, 9, 27)
 MONDAY = date(2026, 9, 21)
-WEEKLY_TEXT_MODULES = ("w1", "w2", "w3", "w4", "w8", "w12")
+WEEKLY_TEXT_MODULES = ("w1", "w2", "w3", "w4", "w6", "w8", "w12")
 
 
 def at(day: date, hour: int) -> datetime:
@@ -79,6 +80,7 @@ def context(app_config: AppConfig, lead_frame: pd.DataFrame) -> ReportContext:
     return ReportContext(
         SUNDAY,
         None,
+        week_ago,
         week_ago,
         None,
         app_config,
@@ -201,3 +203,46 @@ def test_funnel_and_week_over_week_numbers_on_render_path(app_config: AppConfig)
 )
 def test_signed_percent_one_decimal(value: float, expected: str) -> None:
     assert signed_percent_one_decimal(value) == expected
+
+
+def irrelevant_week_frame(app_config: AppConfig, day: date) -> pd.DataFrame:
+    rows = [
+        *(lead(lead_id, at(day, 12)) for lead_id in range(1, 8)),
+        *(
+            lead(lead_id, at(day, 12), category="LOST", loss_reason="IRELEVANT")
+            for lead_id in range(8, 11)
+        ),
+        *(
+            lead(lead_id, at(day, 12), source_name="Telefon", utm_campanie="BZA <03>")
+            for lead_id in range(11, 16)
+        ),
+    ]
+    return prepare_lead_frame(rows, app_config)
+
+
+def test_irr_by_campaign_text_notes_substituted_previous_week_snapshot(
+    app_config: AppConfig, snapshot: SnapshotAssertion
+) -> None:
+    lead_frame = irrelevant_week_frame(app_config, SUNDAY)
+    substitute_date = SUNDAY - timedelta(days=5)
+    previous = PreviousSnapshot(
+        substitute_date, irrelevant_week_frame(app_config, SUNDAY - timedelta(days=7))
+    )
+    report_context = replace(context(app_config, lead_frame), previous_week=previous)
+
+    text = IMPLEMENTED_MODULES["w6"](lead_frame, report_context).text
+
+    assert "nu există snapshot pentru 20.09.2026" in text
+    assert "BZA &lt;03&gt;" in text
+    assert text == snapshot
+
+
+def test_irr_by_campaign_without_previous_week_shows_dash(app_config: AppConfig) -> None:
+    lead_frame = irrelevant_week_frame(app_config, SUNDAY)
+    report_context = replace(context(app_config, lead_frame), previous_week=None)
+
+    text = IMPLEMENTED_MODULES["w6"](lead_frame, report_context).text
+
+    assert "total 20% (săpt. trecută —)" in text
+    assert "Site 30% (3 din 10) ✗, săpt. trecută —" in text
+    assert "Săpt. trecută:" not in text

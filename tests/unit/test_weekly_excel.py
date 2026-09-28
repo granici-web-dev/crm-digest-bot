@@ -49,7 +49,14 @@ def week_frame(app_config: AppConfig) -> pd.DataFrame:
 
 def workbook(app_config: AppConfig, tenant_id: str = "sofabelle") -> tuple[str, Workbook]:
     context = ReportContext(
-        SUNDAY, None, None, None, app_config, tenant_id, make_lead_links(app_config.status_mapping)
+        SUNDAY,
+        None,
+        None,
+        None,
+        None,
+        app_config,
+        tenant_id,
+        make_lead_links(app_config.status_mapping),
     )
     result = excel_attachment_report(week_frame(app_config), context)
     assert result.document is not None

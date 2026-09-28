@@ -5,6 +5,7 @@ from datetime import date, timedelta
 import pandas as pd
 
 from digest.config import AppConfig, TimeSettings
+from digest.metrics.breakdown import LeadBreakdown, lead_breakdown
 from digest.metrics.cockpit import meets_target
 from digest.metrics.daily import daily_window
 from digest.metrics.kpi import (
@@ -51,6 +52,27 @@ class MonthlyFunnel:
     def without_showroom(self) -> LeadCounts:
         # lead_counts_by_showroom всегда отдаёт ключ None последним.
         return self.by_showroom[None]
+
+
+@dataclass(frozen=True)
+class MonthlySourceConversion:
+    month: date
+    by_source: LeadBreakdown
+    # without_key в m7 не выводится: это лиды без кампании, их число дают leads_total и доля.
+    by_campaign: LeadBreakdown
+
+    @property
+    def leads_total(self) -> int:
+        return self.by_source.total.counts.leads
+
+    @property
+    def leads_with_campaign(self) -> int:
+        without_campaign = self.by_campaign.without_key
+        return self.leads_total - (0 if without_campaign is None else without_campaign.counts.leads)
+
+    @property
+    def campaign_share(self) -> float | None:
+        return ratio(self.leads_with_campaign, self.leads_total)
 
 
 @dataclass(frozen=True)
@@ -175,6 +197,24 @@ def monthly_funnel(lead_frame: pd.DataFrame, report_date: date, config: AppConfi
         first_day_of_month(report_date),
         lead_counts(lead_frame, window, report_date, config),
         lead_counts_by_showroom(lead_frame, window, report_date, config),
+    )
+
+
+def monthly_source_conversion(
+    lead_frame: pd.DataFrame, report_date: date, config: AppConfig
+) -> MonthlySourceConversion:
+    # Когорта лидов месяца на дату снапшота, та же, что воронка m2: итог m7 равен компании m2
+    # (docs/kpi-definitions.md, «Разбивка по источникам и кампаниям»).
+    window = month_window(report_date, config.status_mapping.time)
+    params = config.modules.scr_by_source_campaign_params
+    return MonthlySourceConversion(
+        first_day_of_month(report_date),
+        lead_breakdown(
+            lead_frame, "source_name", window, report_date, config, params.min_source_leads
+        ),
+        lead_breakdown(
+            lead_frame, "utm_campanie", window, report_date, config, params.min_campaign_leads
+        ),
     )
 
 
