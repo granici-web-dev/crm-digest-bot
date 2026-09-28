@@ -315,8 +315,9 @@ async def alert_snapshot_findings(
             await notify_ops(
                 deps.ops,
                 f"Незнакомый ключ лида «{mismatch['expected_name']}» в ответе mefi, "
-                f"лидов: {mismatch['lead_count']}, сохранён в raw. Проверьте, не контакт ли это, "
-                "и добавьте в raw_known_keys или raw_strip config/status-mapping.yaml.",
+                f"лидов: {mismatch['lead_count']}, в raw не записан. Проверьте, не контакт ли это, "
+                "и добавьте в raw_known_keys config/status-mapping.yaml (свободный текст "
+                "о клиенте или контакт также в raw_strip).",
             )
         else:
             await notify_ops(

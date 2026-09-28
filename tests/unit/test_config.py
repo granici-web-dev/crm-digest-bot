@@ -131,6 +131,22 @@ def test_client_raw_strip_outside_known_keys_fails_config_load() -> None:
         StatusMapping.model_validate(raw_mapping)
 
 
+def test_lead_raw_strip_outside_known_keys_fails_config_load() -> None:
+    raw_mapping = repository_yaml("status-mapping.yaml")
+    raw_mapping["raw_strip"].append("passport.number")
+
+    with pytest.raises(ValidationError, match=r"raw_strip \['passport'\] нет в raw_known_keys"):
+        StatusMapping.model_validate(raw_mapping)
+
+
+def test_lead_nested_keys_outside_known_keys_fail_config_load() -> None:
+    raw_mapping = repository_yaml("status-mapping.yaml")
+    raw_mapping["raw_known_nested_keys"]["passport"] = ["number"]
+
+    with pytest.raises(ValidationError, match=r"raw_known_nested_keys \['passport'\]"):
+        StatusMapping.model_validate(raw_mapping)
+
+
 def test_threshold_outside_zero_to_one_fails_config_load() -> None:
     raw_kpi = repository_yaml("kpi.yaml")
     raw_kpi["thresholds"]["scr_elite"] = 10

@@ -309,6 +309,15 @@ def lead_to_snapshot_row(
         fields_by_id, custom_fields.data_revenire
     )
     category = categorize(lead.status.name if lead.status else None, status_mapping)
+    known_raw, unknown_keys = keep_known_nested_keys(
+        {
+            key: value
+            for key, value in parsed_lead.raw.items()
+            if key in status_mapping.raw_known_keys
+        },
+        status_mapping.raw_known_nested_keys,
+    )
+    unknown_keys |= parsed_lead.raw.keys() - status_mapping.raw_known_keys
     row = {
         "tenant_id": tenant_id,
         "snapshot_date": snapshot_date,
@@ -328,7 +337,7 @@ def lead_to_snapshot_row(
         "last_contact_at": lead.last_contact_at,
         "converted_at": lead.converted_at,
         "raw": keep_custom_fields(
-            strip_contacts(parsed_lead.raw, status_mapping.raw_strip),
+            strip_contacts(known_raw, status_mapping.raw_strip),
             status_mapping.raw_custom_fields.keep,
         ),
         # Сами phone и email вырезаны raw_strip: для правил визита d1 хватает равенства ключей.
@@ -345,8 +354,7 @@ def lead_to_snapshot_row(
         for field in lead.invalid_shape_fields
     )
     problems.extend(
-        CustomFieldProblem(None, key, "unknown_raw_key", None)
-        for key in sorted(parsed_lead.raw.keys() - status_mapping.raw_known_keys)
+        CustomFieldProblem(None, key, "unknown_raw_key", None) for key in sorted(unknown_keys)
     )
     known_field_ids = status_mapping.raw_custom_fields.known_field_ids
     problems.extend(

@@ -209,6 +209,42 @@ def test_unknown_top_level_key_is_recorded_without_value(app_config: AppConfig) 
 
     assert problems == [CustomFieldProblem(None, "whatsapp_number", "unknown_raw_key", None)]
     assert row["lead_id"] == 1001
+    assert "whatsapp_number" not in row["raw"]
+
+
+def test_elimination_is_kept_without_detailed_reason(app_config: AppConfig) -> None:
+    elimination = {
+        "type": "lost",
+        "reason": {"id": 3, "name": "BUGET"},
+        "detailed_reason": "NOTA_CLIENT_TEST",
+        "marked_at": "2026-09-23T09:00:00Z",
+        "marked_by": {"id": 8, "name": "Roibu Valeria"},
+    }
+    parsed, _ = parse_leads([make_lead(elimination=elimination)])
+
+    row, problems = lead_to_snapshot_row(
+        parsed[0], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping, CONTACT_SECRET
+    )
+
+    assert problems == []
+    assert row["raw"]["elimination"] == {
+        key: value for key, value in elimination.items() if key != "detailed_reason"
+    }
+
+
+def test_unknown_elimination_key_is_recorded_and_not_stored(app_config: AppConfig) -> None:
+    parsed, _ = parse_leads(
+        [make_lead(elimination={"type": "lost", "client_comment": "NOTA_CLIENT_TEST"})]
+    )
+
+    row, problems = lead_to_snapshot_row(
+        parsed[0], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping, CONTACT_SECRET
+    )
+
+    assert problems == [
+        CustomFieldProblem(None, "elimination.client_comment", "unknown_raw_key", None)
+    ]
+    assert row["raw"]["elimination"] == {"type": "lost"}
 
 
 def test_lead_without_is_duplicate_is_kept_with_null(app_config: AppConfig) -> None:

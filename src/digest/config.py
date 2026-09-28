@@ -240,11 +240,26 @@ class StatusMapping(StrictConfigModel):
     time: TimeSettings
     raw_strip: list[str]
     raw_known_keys: frozenset[str]
+    raw_known_nested_keys: dict[str, frozenset[str]]
     raw_custom_fields: RawCustomFields
     clients: ClientSettings
     snapshot: SnapshotSettings
 
     _category_by_status: dict[str, LeadCategory] = PrivateAttr()
+
+    @model_validator(mode="after")
+    def stripped_keys_are_known(self) -> Self:
+        unknown = sorted({path.split(".")[0] for path in self.raw_strip} - self.raw_known_keys)
+        if unknown:
+            raise ValueError(f"raw_strip {unknown} нет в raw_known_keys")
+        return self
+
+    @model_validator(mode="after")
+    def nested_keys_belong_to_known_keys(self) -> Self:
+        unknown = sorted(self.raw_known_nested_keys.keys() - self.raw_known_keys)
+        if unknown:
+            raise ValueError(f"raw_known_nested_keys {unknown} нет в raw_known_keys")
+        return self
 
     @model_validator(mode="after")
     def each_status_belongs_to_one_category(self) -> Self:

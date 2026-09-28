@@ -358,9 +358,9 @@ async def test_unknown_raw_key_is_alerted(harness: Harness) -> None:
 
     raw_key_alerts = [alert for alert in harness.ops_texts if "Незнакомый ключ" in alert]
     assert raw_key_alerts == [
-        "Незнакомый ключ лида «whatsapp_number» в ответе mefi, лидов: 2, сохранён в raw. "
-        "Проверьте, не контакт ли это, и добавьте в raw_known_keys или raw_strip "
-        "config/status-mapping.yaml."
+        "Незнакомый ключ лида «whatsapp_number» в ответе mefi, лидов: 2, в raw не записан. "
+        "Проверьте, не контакт ли это, и добавьте в raw_known_keys config/status-mapping.yaml "
+        "(свободный текст о клиенте или контакт также в raw_strip)."
     ]
     # Только имя ключа и число: значение поля и id лидов в алерт не попадают.
     assert not any("POATE" in alert for alert in harness.ops_texts)
