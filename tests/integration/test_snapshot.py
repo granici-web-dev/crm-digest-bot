@@ -1,6 +1,6 @@
 import asyncio
 import json
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Callable, Coroutine, Iterator
 from datetime import UTC, date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -24,6 +24,7 @@ from digest.mefi.client import (
 from digest.snapshot import (
     SnapshotIncomplete,
     SnapshotOutcome,
+    SnapshotRunSuperseded,
     SnapshotSources,
     run_daily_snapshot,
 )
@@ -672,3 +673,111 @@ async def test_failed_day_snapshot_keeps_preview_untouched(
     assert (await run_row(engine, preview.run_id)).status == "preview"
     assert await snapshot_lead_ids(engine, date(2026, 9, 24)) == [1, 2]
     assert [row.client_id for row in await client_snapshot_rows(engine)] == [10]
+
+
+SEPTEMBER_24_BEFORE_WINDOW_END = datetime(2026, 9, 24, 18, 59, tzinfo=BUCHAREST)
+MefiHandler = Callable[[httpx.Request], Coroutine[None, None, httpx.Response]]
+
+
+def paced_mefi_client(http_client: httpx.AsyncClient) -> MefiClient:
+    return MefiClient(http_client, pacer=RequestPacer(1.2, sleep=no_wait))
+
+
+def mock_mefi(leads: list[dict[str, Any]], clients: list[dict[str, Any]]) -> MefiHandler:
+    clients_search = FakeClientsSearch(clients)
+
+    async def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/leads/search"):
+            return httpx.Response(200, json=make_search_page(leads))
+        return clients_search(request)
+
+    return handle
+
+
+def held_until(
+    handler: MefiHandler, path_suffix: str, requested: asyncio.Event, release: asyncio.Event
+) -> MefiHandler:
+    async def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith(path_suffix):
+            requested.set()
+            await release.wait()
+        return await handler(request)
+
+    return handle
+
+
+async def run_preview_overtaken_by_day_snapshot(
+    engine: AsyncEngine, app_config: AppConfig, held_path_suffix: str
+) -> tuple[asyncio.Task[SnapshotOutcome], SnapshotOutcome]:
+    preview_requested, day_done = asyncio.Event(), asyncio.Event()
+    preview_mefi = held_until(
+        mock_mefi([make_lead(id=1), make_lead(id=2)], [make_client(id=10)]),
+        held_path_suffix,
+        preview_requested,
+        day_done,
+    )
+    day_mefi = mock_mefi([make_lead(id=1), make_lead(id=3)], [make_client(id=11)])
+    async with (
+        httpx.AsyncClient(
+            base_url=BASE_URL, transport=httpx.MockTransport(preview_mefi)
+        ) as preview_http,
+        httpx.AsyncClient(base_url=BASE_URL, transport=httpx.MockTransport(day_mefi)) as day_http,
+    ):
+        preview_task = asyncio.create_task(
+            snapshot_with_clients(
+                engine, paced_mefi_client(preview_http), app_config, SEPTEMBER_24_BEFORE_WINDOW_END
+            )
+        )
+        await preview_requested.wait()
+        day = await snapshot_with_clients(
+            engine, paced_mefi_client(day_http), app_config, SEPTEMBER_24_EVENING
+        )
+        day_done.set()
+        await asyncio.wait([preview_task])
+    return preview_task, day
+
+
+async def assert_day_snapshot_intact(
+    engine: AsyncEngine, app_config: AppConfig, day: SnapshotOutcome
+) -> None:
+    day_run = await run_row(engine, day.run_id)
+    assert (day_run.status, day_run.clients_status) == ("success", "success")
+    assert await snapshot_lead_ids(engine, date(2026, 9, 24)) == [1, 3]
+    assert [row.client_id for row in await client_snapshot_rows(engine)] == [11]
+    frame = await load_lead_frame(engine, "sofabelle", date(2026, 9, 24), app_config)
+    assert sorted(frame["lead_id"]) == [1, 3]
+
+
+async def test_preview_leads_finishing_after_day_snapshot_do_not_overwrite_it(
+    engine: AsyncEngine, app_config: AppConfig
+) -> None:
+    preview_task, day = await run_preview_overtaken_by_day_snapshot(
+        engine, app_config, "/leads/search"
+    )
+
+    with pytest.raises(SnapshotRunSuperseded):
+        preview_task.result()
+    await assert_day_snapshot_intact(engine, app_config, day)
+    async with engine.connect() as connection:
+        preview_run = (
+            await connection.execute(select(snapshot_runs).where(snapshot_runs.c.attempt == 1))
+        ).one()
+    assert (preview_run.status, preview_run.error, preview_run.leads_written) == (
+        "failed",
+        "superseded",
+        None,
+    )
+
+
+async def test_preview_clients_finishing_after_day_snapshot_are_not_written(
+    engine: AsyncEngine, app_config: AppConfig
+) -> None:
+    preview_task, day = await run_preview_overtaken_by_day_snapshot(
+        engine, app_config, "/clients/search"
+    )
+
+    preview = preview_task.result()
+    assert preview.clients_alert is None
+    preview_run = await run_row(engine, preview.run_id)
+    assert (preview_run.status, preview_run.clients_status) == ("superseded", None)
+    await assert_day_snapshot_intact(engine, app_config, day)

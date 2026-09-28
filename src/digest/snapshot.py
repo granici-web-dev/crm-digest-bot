@@ -35,9 +35,11 @@ from digest.mefi.models import MefiClientRecord, MefiCustomField, MefiLead
 logger = logging.getLogger(__name__)
 
 BUCHAREST = ZoneInfo("Europe/Bucharest")
+ALERT_ID_LIMIT = 10
 
 # preview: снапшот, снятый до конца ежедневного окна. Отчёты и чат читают только success.
 SnapshotRunStatus = Literal["success", "preview"]
+SNAPSHOT_RUN_STATUSES: tuple[SnapshotRunStatus, ...] = ("success", "preview")
 
 
 @dataclass(frozen=True)
@@ -84,10 +86,27 @@ class ClientsCounters:
     clients_unknown_keys: list[str]
 
 
+@dataclass(frozen=True)
+class SkippedClient:
+    client_id: int | None
+    reason: str
+
+
+@dataclass(frozen=True)
+class ClientsFindings:
+    showroom_problem_client_ids: list[int]
+    skipped_clients: list[SkippedClient]
+
+
 class ClientsSnapshotIncomplete(Exception):
-    def __init__(self, reason: str, counters: ClientsCounters) -> None:
+    def __init__(self, reason: str, counters: ClientsCounters, findings: ClientsFindings) -> None:
         super().__init__(reason)
         self.counters = counters
+        self.findings = findings
+
+
+class SnapshotRunSuperseded(Exception):
+    pass
 
 
 @dataclass(frozen=True)
@@ -131,7 +150,8 @@ def describe_error(error: BaseException) -> str:
         MefiRateLimitExceeded
         | MefiSearchUnsuccessful
         | SnapshotIncomplete
-        | ClientsSnapshotIncomplete,
+        | ClientsSnapshotIncomplete
+        | SnapshotRunSuperseded,
     ):
         return f"{error_type}: {error}"
     return error_type
@@ -397,15 +417,21 @@ def completeness_failure(
 
 def parse_clients(
     raw_clients: list[dict[str, Any]],
-) -> tuple[list[tuple[MefiClientRecord, dict[str, Any]]], int]:
+) -> tuple[list[tuple[MefiClientRecord, dict[str, Any]]], list[SkippedClient]]:
     parsed: list[tuple[MefiClientRecord, dict[str, Any]]] = []
-    skipped_count = 0
+    skipped: list[SkippedClient] = []
     for raw in raw_clients:
         try:
             parsed.append((MefiClientRecord.model_validate(raw), raw))
-        except ValidationError:
-            skipped_count += 1
-    return parsed, skipped_count
+        except ValidationError as error:
+            raw_id = raw.get("id")
+            skipped.append(
+                SkippedClient(
+                    client_id=raw_id if isinstance(raw_id, int) else None,
+                    reason=validation_reason(error),
+                )
+            )
+    return parsed, skipped
 
 
 def client_to_snapshot_row(
@@ -437,8 +463,8 @@ async def write_client_snapshot(
     tenant_id: str,
     snapshot_date: date,
     client_settings: ClientSettings,
-) -> tuple[ClientsCounters, list[int]]:
-    parsed_clients, skipped_count = parse_clients(dump.clients)
+) -> tuple[ClientsCounters, ClientsFindings]:
+    parsed_clients, skipped_clients = parse_clients(dump.clients)
     rows: list[dict[str, Any]] = []
     showroom_problem_client_ids: list[int] = []
     unknown_keys: set[str] = set()
@@ -455,10 +481,10 @@ async def write_client_snapshot(
     counters = ClientsCounters(
         clients_api_total=dump.api_total,
         clients_written=len(rows),
-        clients_skipped=skipped_count,
+        clients_skipped=len(skipped_clients),
         clients_unknown_keys=sorted(unknown_keys),
     )
-    return counters, sorted(showroom_problem_client_ids)
+    return counters, ClientsFindings(sorted(showroom_problem_client_ids), skipped_clients)
 
 
 def clients_completeness_failure(
@@ -482,8 +508,10 @@ def clients_alert_text(
     snapshot_date: date,
     error: str | None,
     unknown_keys: list[str],
-    showroom_problem_client_ids: list[int],
+    findings: ClientsFindings,
 ) -> str | None:
+    showroom_problem_client_ids = findings.showroom_problem_client_ids
+    skipped_clients = findings.skipped_clients
     lines = []
     if error is not None:
         lines.append(
@@ -499,8 +527,20 @@ def clients_alert_text(
     if showroom_problem_client_ids:
         lines.append(
             f"Клиенты mefi без читаемого Showroom: {len(showroom_problem_client_ids)}, "
-            f"id {', '.join(map(str, showroom_problem_client_ids[:10]))}. "
+            f"id {', '.join(map(str, showroom_problem_client_ids[:ALERT_ID_LIMIT]))}. "
             "В d1 они в строке «Fără showroom»."
+        )
+    if skipped_clients:
+        # Пропущенный клиент это недосчитанный контракт: id и причина нужны, чтобы найти его в mefi.
+        shown = [
+            f"id {'?' if skipped.client_id is None else skipped.client_id}: {skipped.reason}"
+            for skipped in skipped_clients[:ALERT_ID_LIMIT]
+        ]
+        if len(skipped_clients) > ALERT_ID_LIMIT:
+            shown.append(f"и ещё {len(skipped_clients) - ALERT_ID_LIMIT}")
+        lines.append(
+            f"Клиенты mefi пропущены из-за битой формы: {len(skipped_clients)} "
+            f"({'; '.join(shown)}). В Contract Cantitate они не посчитаны."
         )
     return "\n".join(lines) or None
 
@@ -529,17 +569,20 @@ async def snapshot_clients(
         async with engine.begin() as connection:
             # Два параллельных повтора за дату не должны писать клиентов дважды.
             await connection.execute(snapshot_run_lock(tenant_id, snapshot_date))
-            clients_status = await connection.scalar(
-                select(snapshot_runs.c.clients_status).where(this_run)
-            )
-            if clients_status == "success":
+            run = (
+                await connection.execute(
+                    select(snapshot_runs.c.status, snapshot_runs.c.clients_status).where(this_run)
+                )
+            ).one()
+            # Превью, которое вытеснил прогон 19:00, клиентов уже не пишет: строки даты его.
+            if run.clients_status == "success" or run.status not in SNAPSHOT_RUN_STATUSES:
                 return None
-            counters, showroom_problem_client_ids = await write_client_snapshot(
+            counters, findings = await write_client_snapshot(
                 connection, dump, tenant_id, snapshot_date, client_settings
             )
             failure = clients_completeness_failure(counters, thresholds)
             if failure is not None:
-                raise ClientsSnapshotIncomplete(failure, counters)
+                raise ClientsSnapshotIncomplete(failure, counters, findings)
             await connection.execute(
                 update(snapshot_runs)
                 .where(this_run)
@@ -569,7 +612,14 @@ async def snapshot_clients(
         )
         if not isinstance(error, Exception):
             raise
-        return clients_alert_text(snapshot_date, describe_error(error), [], [])
+        return clients_alert_text(
+            snapshot_date,
+            describe_error(error),
+            [],
+            error.findings
+            if isinstance(error, ClientsSnapshotIncomplete)
+            else ClientsFindings([], []),
+        )
     logger.info(
         "clients snapshot done",
         extra={
@@ -579,9 +629,7 @@ async def snapshot_clients(
             "clients_skipped": counters.clients_skipped,
         },
     )
-    return clients_alert_text(
-        snapshot_date, None, counters.clients_unknown_keys, showroom_problem_client_ids
-    )
+    return clients_alert_text(snapshot_date, None, counters.clients_unknown_keys, findings)
 
 
 @dataclass(frozen=True)
@@ -690,12 +738,34 @@ async def start_snapshot_run(
     return run_id
 
 
+async def ensure_run_still_current(
+    connection: AsyncConnection, tenant_id: str, snapshot_date: date, run_id: int
+) -> None:
+    # Выгрузка идёт без блокировки: превью, начатое в 18:59, может закончить её после прогона
+    # 19:00. Тот при старте погасил running превью, и превью не должно тронуть строки success.
+    run_status = await connection.scalar(
+        select(snapshot_runs.c.status).where(snapshot_runs.c.id == run_id)
+    )
+    success_run_id = await connection.scalar(
+        select(snapshot_runs.c.id).where(
+            snapshot_runs.c.tenant_id == tenant_id,
+            snapshot_runs.c.snapshot_date == snapshot_date,
+            snapshot_runs.c.status == "success",
+        )
+    )
+    if run_status != "running" or success_run_id is not None:
+        raise SnapshotRunSuperseded(
+            f"прогон {run_id} за {snapshot_date:%d.%m.%Y} вытеснен более поздним прогоном, "
+            "его выгрузка не записана"
+        )
+
+
 async def supersede_previews(
     connection: AsyncConnection, tenant_id: str, snapshot_date: date
 ) -> None:
     # Строки снапшотов ключуются датой, а не прогоном: превью уходит целиком в транзакции
-    # нового прогона и возвращается, если тот откатится. success за дату здесь не бывает:
-    # run_daily_snapshot начинает прогон только без него, а два success запрещает индекс.
+    # нового прогона и возвращается, если тот откатится. Что за дату нет success,
+    # проверил ensure_run_still_current под той же блокировкой.
     for snapshot_table in (lead_snapshots, client_snapshots):
         await connection.execute(
             delete(snapshot_table).where(
@@ -724,11 +794,13 @@ async def snapshot_leads(
     run_status: SnapshotRunStatus,
 ) -> None:
     started_at = time.monotonic()
-    this_run = snapshot_runs.c.id == run_id
+    # Строку, которую уже погасил более поздний прогон, не трогаем ни успехом, ни сбоем.
+    this_running_run = (snapshot_runs.c.id == run_id) & (snapshot_runs.c.status == "running")
     try:
         dump = await sources.leads_client.search_all_leads()
         async with engine.begin() as connection:
             await connection.execute(snapshot_run_lock(tenant_id, snapshot_date))
+            await ensure_run_still_current(connection, tenant_id, snapshot_date, run_id)
             await supersede_previews(connection, tenant_id, snapshot_date)
             counters = await write_snapshot(
                 connection,
@@ -743,7 +815,7 @@ async def snapshot_leads(
                 raise SnapshotIncomplete(failure, counters)
             await connection.execute(
                 update(snapshot_runs)
-                .where(this_run)
+                .where(this_running_run)
                 .values(
                     status=run_status,
                     finished_at=func.clock_timestamp(),
@@ -757,7 +829,7 @@ async def snapshot_leads(
         async with engine.begin() as connection:
             await connection.execute(
                 update(snapshot_runs)
-                .where(this_run)
+                .where(this_running_run)
                 .values(
                     status="failed",
                     finished_at=func.clock_timestamp(),

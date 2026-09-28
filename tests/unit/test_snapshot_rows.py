@@ -3,10 +3,13 @@ from datetime import date
 from digest.config import AppConfig, LeadCategory
 from digest.snapshot import (
     ClientsCounters,
+    ClientsFindings,
     CustomFieldProblem,
+    SkippedClient,
     SnapshotCounters,
     categorize,
     client_to_snapshot_row,
+    clients_alert_text,
     clients_completeness_failure,
     completeness_failure,
     lead_to_snapshot_row,
@@ -292,13 +295,13 @@ def test_client_row_keeps_only_known_keys_without_personal_data(app_config: AppC
         },
         passport_scan="https://example.test/scan.pdf",
     )
-    parsed, skipped_count = parse_clients([raw])
+    parsed, skipped = parse_clients([raw])
 
     row, problem = client_to_snapshot_row(
         parsed[0][0], parsed[0][1], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping.clients
     )
 
-    assert (skipped_count, problem) == (0, None)
+    assert (skipped, problem) == ([], None)
     assert (row["client_id"], row["showroom"], row["state"], row["source_name"]) == (
         2001,
         "București",
@@ -337,13 +340,13 @@ def test_client_showroom_name_mismatch_nulls_value(app_config: AppConfig) -> Non
     assert problem == CustomFieldProblem(15, "Showroom", "name_mismatch", "Oras")
 
 
-def test_client_without_created_at_is_skipped() -> None:
+def test_client_without_created_at_is_skipped_with_id_and_reason() -> None:
     broken = make_client()
     del broken["created_at"]
 
-    parsed, skipped_count = parse_clients([broken, make_client(id=2002, source="Showroom")])
+    parsed, skipped = parse_clients([broken, make_client(id=2002, source="Showroom")])
 
-    assert skipped_count == 1
+    assert skipped == [SkippedClient(2001, "created_at: missing")]
     assert [client.id for client, _ in parsed] == [2002]
     assert parsed[0][0].source is None
 
@@ -357,4 +360,17 @@ def test_clients_short_of_api_total_beyond_threshold_is_incomplete(app_config: A
     )
     assert clients_completeness_failure(ClientsCounters(800, 0, 0, []), thresholds) == (
         "записано 0 клиентов из 800"
+    )
+
+
+def test_skipped_clients_alert_names_ten_ids_with_reasons_and_counts_the_rest() -> None:
+    skipped = [SkippedClient(client_id, "created_at: missing") for client_id in range(1, 13)]
+    skipped.append(SkippedClient(None, "id: missing"))
+
+    alert = clients_alert_text(date(2026, 9, 24), None, [], ClientsFindings([], skipped))
+
+    assert alert == (
+        "Клиенты mefi пропущены из-за битой формы: 13 ("
+        + "; ".join(f"id {client_id}: created_at: missing" for client_id in range(1, 11))
+        + "; и ещё 3). В Contract Cantitate они не посчитаны."
     )
