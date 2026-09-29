@@ -5,12 +5,24 @@ from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from digest.acceptance.chat_eval import (
+    answer_text_lines,
+    eval_table_lines,
+    load_golden_cases,
+    memoized_frame_loader,
+    run_chat_eval,
+    summarize,
+    with_dependencies,
+)
 from digest.acceptance.privacy import audit_lines, audit_privacy
-from digest.app import create_report_deps, run_app, seed_defaults
+from digest.app import create_anthropic_client, create_report_deps, run_app, seed_defaults
+from digest.chat.tools import ToolData
 from digest.config import AppConfig, load_app_config
 from digest.db.engine import create_database_engine
+from digest.db.lead_frame import load_lead_frame, success_snapshot_dates
 from digest.delivery.ops import OpsChannel, notify_ops
 from digest.delivery.telegram import create_bot
 from digest.log_format import configure_logging
@@ -23,6 +35,7 @@ from digest.settings import Settings
 from digest.snapshot import SnapshotSources, describe_error, run_daily_snapshot
 
 CONFIG_DIR = Path(__file__).resolve().parents[2] / "config"
+GOLDEN_FILE = Path(__file__).resolve().parents[2] / "tests" / "eval" / "chat-golden.yaml"
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +60,14 @@ def parse_arguments(argv: list[str] | None) -> argparse.Namespace:
         "--end", type=date.fromisoformat, help="последний день, по умолчанию сегодня"
     )
     privacy.add_argument("--out", type=Path, help="записать таблицу и итог в файл")
+    evaluation = commands.add_parser("eval", help="эталонные прогоны приёмки")
+    eval_targets = evaluation.add_subparsers(dest="target", required=True)
+    chat = eval_targets.add_parser(
+        "chat", help="эталонный набор вопросов чата через живой Anthropic API (M6)"
+    )
+    chat.add_argument("--file", type=Path, default=GOLDEN_FILE)
+    chat.add_argument("--only", help="id вопросов через запятую; уточнения тянут свой вопрос")
+    chat.add_argument("--out", type=Path, help="записать таблицу и итог в файл, без ответов")
     return parser.parse_args(argv)
 
 
@@ -151,6 +172,44 @@ async def run_manual_snapshot(app_settings: Settings) -> int:
     return 0
 
 
+async def run_chat_eval_command(
+    app_settings: Settings, golden_file: Path, only: str | None, out: Path | None
+) -> int:
+    client = create_anthropic_client(app_settings)
+    if client is None:
+        print("ANTHROPIC_API_KEY не задан: eval chat ходит в живой Anthropic API.")
+        return 2
+    cases = load_golden_cases(golden_file)
+    if only:
+        cases = with_dependencies(cases, set(only.split(",")))
+    config = load_app_config(CONFIG_DIR)
+    engine = create_database_engine(app_settings.database_url.get_secret_value())
+    reader = create_report_reader(engine, config, app_settings)
+
+    async def load_frame(snapshot_date: date) -> pd.DataFrame:
+        return await load_lead_frame(engine, app_settings.tenant_id, snapshot_date, config)
+
+    # Telegram, ops и chat_questions не трогаем: прогон не должен попасть в журнал чата (V4).
+    try:
+        data = ToolData(
+            datetime.now(ZoneInfo(config.status_mapping.time.timezone)).date(),
+            await success_snapshot_dates(engine, app_settings.tenant_id),
+            memoized_frame_loader(load_frame),
+            config,
+            reader.lead_links,
+        )
+        results = await run_chat_eval(cases, client, app_settings.anthropic_model, data)
+    finally:
+        await client.close()
+        await engine.dispose()
+    summary = summarize(results, app_settings.anthropic_model)
+    table = eval_table_lines(results, summary)
+    print_and_save(table, out)
+    for line in answer_text_lines(results):
+        print(line)
+    return 0 if summary.meets_gate else 1
+
+
 async def run_service(app_settings: Settings) -> int:
     config = load_app_config(CONFIG_DIR)
     engine = create_database_engine(app_settings.database_url.get_secret_value())
@@ -171,6 +230,10 @@ def main(argv: list[str] | None = None) -> int:
         )
     if arguments.command == "snapshot":
         return asyncio.run(run_manual_snapshot(app_settings))
+    if arguments.command == "eval":
+        return asyncio.run(
+            run_chat_eval_command(app_settings, arguments.file, arguments.only, arguments.out)
+        )
     if arguments.command == "audit":
         return asyncio.run(
             run_privacy_audit(app_settings, arguments.days, arguments.end, arguments.out)

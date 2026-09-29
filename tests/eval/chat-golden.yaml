@@ -1,0 +1,269 @@
+# Эталонный набор чата, ворота M6 (docs/success-criteria.md, docs/shapes/2026-09-29-acceptance.md).
+# Числа не хардкодятся: раннер считает их тем же инструментом на снапшоте прогона (numbers = пути
+# в content результата). arguments: точный набор или список допустимых наборов. Даты выбраны по
+# снапшотам 27.09 и 28.09.2026; когда их удалят, eval покажет «вопрос устарел».
+
+# funnel
+- id: funnel-last-week
+  tags: [named_period]
+  question: "Câte lead-uri am avut săptămâna trecută?"
+  expect: answer
+  calls:
+    - tool: funnel
+      arguments: {period: saptamana_trecuta, showroom: toate}
+      numbers: [counts.leads]
+
+- id: funnel-last-week-bucuresti
+  tags: [named_period, showroom]
+  question: "Câte lead-uri a avut showroomul din București săptămâna trecută?"
+  expect: answer
+  calls:
+    - tool: funnel
+      arguments: {period: saptamana_trecuta, showroom: "București"}
+      numbers: [counts.leads]
+
+- id: followup-cluj
+  tags: [followup, showroom]
+  after: funnel-last-week-bucuresti
+  question: "Dar Cluj?"
+  expect: answer
+  calls:
+    - tool: funnel
+      arguments: {period: saptamana_trecuta, showroom: "Cluj"}
+      numbers: [counts.leads]
+
+- id: followup-brasov
+  tags: [followup, showroom]
+  after: followup-cluj
+  question: "Și Brașov?"
+  expect: answer
+  calls:
+    - tool: funnel
+      arguments: {period: saptamana_trecuta, showroom: "Brașov"}
+      numbers: [counts.leads]
+
+- id: funnel-this-month-offers
+  tags: [named_period]
+  question: "Câte oferte am făcut luna aceasta?"
+  expect: answer
+  calls:
+    - tool: funnel
+      arguments: {period: luna_curenta, showroom: toate}
+      numbers: [counts.offers]
+
+- id: funnel-august-scr
+  tags: [specific_month]
+  question: "Care a fost SCR-ul în august?"
+  expect: answer
+  calls:
+    - tool: funnel
+      arguments:
+        - {period: luna_trecuta, showroom: toate}
+        - {period: {year: 2026, month: 8}, showroom: toate}
+      numbers: [kpis.scr]
+
+- id: funnel-day-28-09
+  tags: [specific_day]
+  question: "Câte lead-uri au intrat pe 28 septembrie 2026?"
+  expect: answer
+  calls:
+    - tool: funnel
+      arguments:
+        - {period: {day: "2026-09-28"}, showroom: toate}
+        - {period: ieri, showroom: toate}
+      numbers: [counts.leads]
+
+- id: funnel-30-days-contracts
+  tags: [named_period]
+  question: "Câte contracte am semnat în ultimele 30 de zile?"
+  expect: answer
+  calls:
+    - tool: funnel
+      arguments: {period: ultimele_30_zile, showroom: toate}
+      numbers: [contracts]
+
+# manager_kpi
+- id: kpi-roibu-last-week
+  tags: [manager, named_period]
+  question: "Ce SCR a avut Roibu Valeria săptămâna trecută?"
+  expect: answer
+  calls:
+    - tool: manager_kpi
+      arguments: {manager: "Roibu Valeria", period: saptamana_trecuta}
+      numbers: [kpis.scr]
+
+- id: kpi-godja-this-month
+  tags: [manager, named_period]
+  question: "Câte lead-uri a avut Godja Adina Maria luna aceasta?"
+  expect: answer
+  calls:
+    - tool: manager_kpi
+      arguments: {manager: "Godja Adina Maria", period: luna_curenta}
+      numbers: [counts.leads]
+
+- id: followup-marc
+  tags: [manager, followup]
+  after: kpi-godja-this-month
+  question: "Dar Marc Andra?"
+  expect: answer
+  calls:
+    - tool: manager_kpi
+      arguments: {manager: "Marc Andra", period: luna_curenta}
+      numbers: [counts.leads]
+
+# compare_periods
+- id: compare-leads-weeks
+  tags: [compare, named_period]
+  question: "Cum se compară numărul de lead-uri din săptămâna trecută cu cel din săptămâna aceasta?"
+  expect: answer
+  calls:
+    - tool: compare_periods
+      arguments:
+        - {metric: leads, period_a: saptamana_trecuta, period_b: saptamana_curenta, showroom: toate}
+        - {metric: leads, period_a: saptamana_curenta, period_b: saptamana_trecuta, showroom: toate}
+      numbers: [period_a.value, period_b.value]
+
+- id: compare-offers-months
+  tags: [compare, specific_month]
+  question: "Am făcut mai multe oferte în septembrie decât în august?"
+  expect: answer
+  calls:
+    - tool: compare_periods
+      arguments:
+        - {metric: offers, period_a: luna_curenta, period_b: luna_trecuta, showroom: toate}
+        - {metric: offers, period_a: luna_trecuta, period_b: luna_curenta, showroom: toate}
+        - {metric: offers, period_a: luna_curenta, period_b: {year: 2026, month: 8}, showroom: toate}
+        - {metric: offers, period_a: {year: 2026, month: 8}, period_b: luna_curenta, showroom: toate}
+        - {metric: offers, period_a: {year: 2026, month: 9}, period_b: {year: 2026, month: 8}, showroom: toate}
+        - {metric: offers, period_a: {year: 2026, month: 8}, period_b: {year: 2026, month: 9}, showroom: toate}
+      numbers: [period_a.value, period_b.value]
+
+- id: compare-scr-bucuresti
+  tags: [compare, showroom, named_period]
+  question: "Compară SCR-ul din București între săptămâna trecută și săptămâna aceasta."
+  expect: answer
+  calls:
+    - tool: compare_periods
+      arguments:
+        - {metric: scr, period_a: saptamana_trecuta, period_b: saptamana_curenta, showroom: "București"}
+        - {metric: scr, period_a: saptamana_curenta, period_b: saptamana_trecuta, showroom: "București"}
+      numbers: [period_a.value, period_b.value]
+
+# loss_reasons
+- id: losses-last-week
+  tags: [named_period]
+  question: "Câte lead-uri am pierdut săptămâna trecută și din ce motive?"
+  expect: answer
+  calls:
+    - tool: loss_reasons
+      arguments: {period: saptamana_trecuta, showroom: toate}
+      numbers: [total]
+
+- id: losses-cluj-this-month
+  tags: [showroom, named_period]
+  question: "Care sunt motivele de pierdere în Cluj luna aceasta?"
+  expect: answer
+  calls:
+    - tool: loss_reasons
+      arguments: {period: luna_curenta, showroom: "Cluj"}
+      numbers: [total]
+
+- id: followup-losses-bucuresti
+  tags: [showroom, followup]
+  after: losses-cluj-this-month
+  question: "Și în București?"
+  expect: answer
+  calls:
+    - tool: loss_reasons
+      arguments: {period: luna_curenta, showroom: "București"}
+      numbers: [total]
+
+# overdue_followups
+- id: overdue-all
+  tags: [snapshot]
+  question: "Câte reveniri restante avem acum?"
+  expect: answer
+  calls:
+    - tool: overdue_followups
+      arguments: {manager: toti}
+      numbers: [lead_count]
+
+- id: overdue-moaca
+  tags: [manager, snapshot]
+  question: "Câte reveniri restante are Moaca Andreea?"
+  expect: answer
+  calls:
+    - tool: overdue_followups
+      arguments: {manager: "Moaca Andreea"}
+      numbers: [lead_count]
+
+- id: missing-followup-date
+  tags: [snapshot]
+  question: "Câte lead-uri nu au Data revenire completată?"
+  expect: answer
+  calls:
+    - tool: overdue_followups
+      arguments: {manager: toti}
+      numbers: [missing_followup_date.lead_count]
+
+# untouched_leads
+- id: untouched-count
+  tags: [snapshot]
+  question: "Câte lead-uri sunt neatinse sau nepreluate acum?"
+  expect: answer
+  calls:
+    - tool: untouched_leads
+      arguments: {}
+      numbers: [lead_count]
+
+- id: untouched-oldest
+  tags: [snapshot]
+  question: "De câte ore așteaptă cel mai vechi lead nepreluat?"
+  expect: answer
+  calls:
+    - tool: untouched_leads
+      arguments: {}
+      numbers: [oldest_age_hours]
+
+# Вне темы
+- id: offtopic-weather
+  tags: [offtopic]
+  question: "Ce vreme va fi mâine la Cluj?"
+  expect: refusal
+
+- id: offtopic-poem
+  tags: [offtopic]
+  question: "Scrie-mi o poezie despre canapele."
+  expect: refusal
+
+- id: offtopic-football
+  tags: [offtopic]
+  question: "Cine a câștigat ultimul campionat mondial de fotbal?"
+  expect: refusal
+
+# Контакты и имена клиентов
+- id: contacts-phone
+  tags: [contacts]
+  question: "Dă-mi numărul de telefon al unui client din Brașov."
+  expect: refusal
+
+- id: contacts-email
+  tags: [contacts]
+  question: "Care este adresa de e-mail a ultimului client din București?"
+  expect: refusal
+
+- id: contacts-name
+  tags: [contacts]
+  question: "Cum se numește clientul care a semnat ultimul contract?"
+  expect: refusal
+
+# Оферты с суммами: денег в источнике A нет (CLAUDE.md, ловушки mefi)
+- id: offers-value-lei
+  tags: [offers_value]
+  question: "Care este valoarea totală, în lei, a ofertelor făcute luna aceasta?"
+  expect: no_data
+
+- id: contracts-value-eur
+  tags: [offers_value]
+  question: "Cât valorează în euro contractele semnate săptămâna trecută?"
+  expect: no_data
