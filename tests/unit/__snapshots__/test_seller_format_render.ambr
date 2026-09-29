@@ -43,6 +43,8 @@
   Fără showroom: 1
   ———
   <b>TOTAL</b> · Leads 6 · Vizite 6 · Oferte 3 · Contracte 0
+  
+  <i>Revenirile în showroom nu sunt înregistrate în CRM și nu sunt incluse.</i>
   '''
 # ---
 # name: test_seller_format_without_previous_and_clients_snapshots_shows_dashes
@@ -89,6 +91,7 @@
   ———
   <b>TOTAL</b> · Leads 6 · Vizite 6 · Oferte — · Contracte —
   
+  <i>Revenirile în showroom nu sunt înregistrate în CRM și nu sunt incluse.</i>
   <i>Oferta și tranzițiile Designer/Colaboratori: lipsește snapshotul CRM de ieri, nu se pot calcula.</i>
   <i>Contract Cantitate: datele mefi clienți indisponibile.</i>
   '''

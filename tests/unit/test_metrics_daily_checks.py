@@ -214,6 +214,8 @@ def test_showroom_revenire_is_not_untouched(app_config: AppConfig) -> None:
             contact_phone_key=phone_key,
         ),
     ]
+    lead_frame = prepare_lead_frame(rows, app_config).set_index("lead_id")
+    assert lead_frame.loc[2, "is_showroom_revenire"]
 
     assert untouched(rows, app_config) == ()
 

@@ -21,6 +21,7 @@ Fără showroom: {{ counts.without_showroom_count }}
 ———
 <b>TOTAL</b> · Leads {{ counts.total.leads }} · Vizite {{ counts.total.showroom_visits }} · Oferte {{ counts.total.offers | dash }} · Contracte {{ counts.total.contracts | dash }}
 
+<i>Revenirile în showroom nu sunt înregistrate în CRM și nu sunt incluse.</i>
 {% if not counts.has_previous_snapshot %}
 <i>Oferta și tranzițiile Designer/Colaboratori: lipsește snapshotul CRM de ieri, nu se pot calcula.</i>
 {% endif %}

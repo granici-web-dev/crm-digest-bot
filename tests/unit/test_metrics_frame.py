@@ -53,12 +53,12 @@ def test_spam_and_irelevant_are_both_irrelevant(app_config: AppConfig) -> None:
     assert lead_frame["is_irelevant"].tolist() == [True, True, False]
 
 
-def test_showroom_visit_comes_from_source_name(app_config: AppConfig) -> None:
+def test_showroom_source_comes_from_source_name(app_config: AppConfig) -> None:
     rows = [make_snapshot_row(lead_id=1, source_name="Showroom"), make_snapshot_row(lead_id=2)]
 
     lead_frame = prepare_lead_frame(rows, app_config)
 
-    assert lead_frame["is_showroom_visit"].tolist() == [True, False]
+    assert lead_frame["is_showroom_source"].tolist() == [True, False]
 
 
 def test_timestamps_are_converted_to_bucharest(app_config: AppConfig) -> None:

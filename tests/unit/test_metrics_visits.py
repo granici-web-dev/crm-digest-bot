@@ -99,6 +99,19 @@ def test_revenire_boundary_is_start_of_own_daily_window(
     assert flags_of(frame, 2) == (True, is_revenire, not is_revenire)
 
 
+def test_same_contact_across_19_00_is_revenire(app_config: AppConfig) -> None:
+    # Лид в 18:59 и Showroom-лид в 19:01 с тем же телефоном: второй в следующем окне, это
+    # revenire, даже если это дубль одного прихода. Решение зафиксировано, вопрос П4 в
+    # docs/owner-questions.md.
+    frame = visit_flags(
+        app_config,
+        earlier(1, OWN_WINDOW_START - timedelta(minutes=1), contact_phone_key=PHONE_KEY),
+        visit(2, created_at=OWN_WINDOW_START + timedelta(minutes=1), contact_phone_key=PHONE_KEY),
+    )
+
+    assert flags_of(frame, 2) == (True, True, False)
+
+
 def test_partnership_showroom_lead_is_neither_visit_nor_revenire(app_config: AppConfig) -> None:
     frame = visit_flags(
         app_config,

@@ -116,7 +116,18 @@ def test_showroom_visits_text_counts_reveniri(
 
     result = IMPLEMENTED_MODULES["w2"](lead_frame, context(app_config, lead_frame))
 
+    assert "Reveniri: 2" in result.text
     assert result.text == snapshot
+
+
+def test_showroom_visits_text_hides_zero_reveniri(app_config: AppConfig) -> None:
+    # mefi не фиксирует повторный приход (ADR-007): ноль здесь значит «нет данных», а не
+    # «никто не вернулся», поэтому строки нет.
+    lead_frame = week_frame(app_config)
+
+    result = IMPLEMENTED_MODULES["w2"](lead_frame, context(app_config, lead_frame))
+
+    assert "Reveniri" not in result.text
 
 
 def test_day_showroom_table_matches_manual_report_layout(app_config: AppConfig) -> None:

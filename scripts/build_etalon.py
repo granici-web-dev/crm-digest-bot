@@ -16,8 +16,7 @@ import re
 import sys
 import unicodedata
 import warnings
-from collections import Counter
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -96,6 +95,8 @@ KNOWN_STATUSES = {
     "TIMP",
 }
 SOURCE_SHOWROOM = "Showroom"
+# Daily window 19:00 yesterday -> 19:00 today (CLAUDE.md, «Окна времени»).
+DAILY_WINDOW_END = time(19, 0)
 OFERTAT_YES = "✅DA"
 ACTIVE_OFFER_STALE_DAYS = 14
 # Doja Ovidiu has leads in the workbook but no mefi user (docs/PLAN.md, «Ждём извне»).
@@ -159,17 +160,30 @@ def contact_group(phone: Any, email: Any) -> set[str]:
     return keys
 
 
-def repeated_contact_showroom_leads(
-    leads: list[dict[str, Any]], contacts: dict[int, set[str]]
-) -> int:
-    # brief_counts treats every Showroom lead as a visit; that holds only while no Showroom
-    # lead shares a contact with another lead (no revenire, ADR-007).
-    occurrences = Counter(key for keys in contacts.values() for key in keys)
-    return sum(
-        lead["source"] == SOURCE_SHOWROOM
-        and any(occurrences[key] > 1 for key in contacts[lead["row"]])
-        for lead in leads
-    )
+def own_daily_window_start(created_at: str) -> datetime:
+    local = datetime.fromisoformat(created_at).astimezone(TZ)
+    window_day = local.date() + timedelta(days=local.time() >= DAILY_WINDOW_END)
+    return datetime.combine(window_day - timedelta(days=1), DAILY_WINDOW_END, tzinfo=TZ)
+
+
+def showroom_revenire_rows(leads: list[dict[str, Any]], contacts: dict[int, set[str]]) -> set[int]:
+    # Revenire by ADR-007: a non-partner Showroom lead whose contact is on another lead created
+    # before 19:00 that opens the Showroom lead's own daily window. Pairwise on purpose, so the
+    # oracle does not repeat the min-per-key approach of digest.metrics.visits.
+    dated = [lead for lead in leads if lead["created_at"] is not None]
+    revenire: set[int] = set()
+    for lead in dated:
+        if lead["source"] != SOURCE_SHOWROOM or lead["status"] in STATUSES_PARTNERSHIP:
+            continue
+        window_start = own_daily_window_start(lead["created_at"])
+        if any(
+            other["row"] != lead["row"]
+            and contacts[other["row"]] & contacts[lead["row"]]
+            and datetime.fromisoformat(other["created_at"]) < window_start
+            for other in dated
+        ):
+            revenire.add(lead["row"])
+    return revenire
 
 
 def read_leads(ws: Any) -> tuple[list[dict[str, Any]], set[str], dict[int, set[str]]]:
@@ -255,7 +269,9 @@ def is_stale_offer(lead: dict[str, Any], analysis_date: date) -> bool:
     return (analysis_date - contact_day).days > ACTIVE_OFFER_STALE_DAYS
 
 
-def brief_counts(leads: list[dict[str, Any]], analysis_date: date) -> dict[str, int]:
+def brief_counts(
+    leads: list[dict[str, Any]], analysis_date: date, revenire: set[int]
+) -> dict[str, int]:
     counts = dict.fromkeys(MANUAL_CHECK["counts"], 0)
     for lead in leads:
         status = lead["status"]
@@ -264,7 +280,7 @@ def brief_counts(leads: list[dict[str, Any]], analysis_date: date) -> dict[str, 
         clienti = status == STATUS_CLIENTI
         irelevant = status in STATUSES_IRELEVANT
         offer = lead["ofertat"] == OFERTAT_YES
-        showroom = lead["source"] == SOURCE_SHOWROOM
+        showroom = lead["source"] == SOURCE_SHOWROOM and lead["row"] not in revenire
         counts["leads"] += 1
         counts["irr_leads"] += irelevant
         counts["clienti"] += clienti
@@ -297,42 +313,48 @@ def brief_kpis(c: dict[str, int]) -> dict[str, float | None]:
 
 
 def expected_by_agent(
-    leads: list[dict[str, Any]], agents: list[str], analysis_date: date
+    leads: list[dict[str, Any]], agents: list[str], analysis_date: date, revenire: set[int]
 ) -> dict[str, dict[str, Any]]:
     expected: dict[str, dict[str, Any]] = {}
     for agent in agents:
         # 03_KPI_Agenti keys agents by TRIM(Desemnat); mefi keeps "Raileanu  Leon" with two spaces.
         own = [lead for lead in leads if collapse_spaces(lead["assigned_to"] or "") == agent]
-        expected[agent] = expected_for(own, analysis_date)
+        expected[agent] = expected_for(own, analysis_date, revenire)
     return expected
 
 
-def expected_for(leads: list[dict[str, Any]], analysis_date: date) -> dict[str, Any]:
-    counts = brief_counts(leads, analysis_date)
+def expected_for(
+    leads: list[dict[str, Any]], analysis_date: date, revenire: set[int]
+) -> dict[str, Any]:
+    counts = brief_counts(leads, analysis_date, revenire)
     return {"counts": counts, "kpi": brief_kpis(counts)}
 
 
-def expected_by_showroom(leads: list[dict[str, Any]], analysis_date: date) -> list[dict[str, Any]]:
+def expected_by_showroom(
+    leads: list[dict[str, Any]], analysis_date: date, revenire: set[int]
+) -> list[dict[str, Any]]:
     # A list, not a dict: leads without a showroom need a null key, which JSON objects lack.
     showrooms = sorted({lead["showroom"] for lead in leads}, key=lambda name: (name is None, name))
     return [
         {
             "showroom": showroom,
-            **expected_for([lead for lead in leads if lead["showroom"] == showroom], analysis_date),
+            **expected_for(
+                [lead for lead in leads if lead["showroom"] == showroom], analysis_date, revenire
+            ),
         }
         for showroom in showrooms
     ]
 
 
 def expected_by_field(
-    leads: list[dict[str, Any]], field: str, analysis_date: date
+    leads: list[dict[str, Any]], field: str, analysis_date: date, revenire: set[int]
 ) -> list[dict[str, Any]]:
     # m7 and w6 breakdowns; a list with a null key for leads without a value, as by showroom.
     keys = sorted({lead[field] for lead in leads}, key=lambda key: (key is None, key))
     return [
         {
             "key": key,
-            **expected_for([lead for lead in leads if lead[field] == key], analysis_date),
+            **expected_for([lead for lead in leads if lead[field] == key], analysis_date, revenire),
         }
         for key in keys
     ]
@@ -368,16 +390,11 @@ def main() -> None:
     wb = openpyxl.load_workbook(SOURCE, data_only=True, read_only=False)
 
     leads, pii, contacts = read_leads(wb[LEADS_SHEET])
-    repeated = repeated_contact_showroom_leads(leads, contacts)
-    if repeated:
-        sys.exit(
-            f"{repeated} Showroom lead(s) share a contact: revenire not modelled, "
-            "etalon not written"
-        )
+    revenire = showroom_revenire_rows(leads, contacts)
     analysis_date, thresholds = read_thresholds(wb[SETTINGS_SHEET])
     excel_reference = read_excel_reference(wb[KPI_SHEET])
     analysis_day = date.fromisoformat(analysis_date)
-    expected = expected_by_agent(leads, list(excel_reference), analysis_day)
+    expected = expected_by_agent(leads, list(excel_reference), analysis_day, revenire)
     checked = expected[MANUAL_CHECK["agent"]]["counts"]
     if checked != MANUAL_CHECK["counts"]:
         sys.exit(f"manual check drifted for {MANUAL_CHECK['agent']}, etalon not written")
@@ -399,10 +416,12 @@ def main() -> None:
         "managers": manager_ids_by_name(list(excel_reference)),
         "expected_by_agent": expected,
         # Whole company, unassigned leads included, and per Showroom field with null for none.
-        "expected_company": expected_for(leads, analysis_day),
-        "expected_by_showroom": expected_by_showroom(leads, analysis_day),
-        "expected_by_source": expected_by_field(leads, "source", analysis_day),
-        "expected_by_utm_campaign": expected_by_field(leads, "utm_campaign", analysis_day),
+        "expected_company": expected_for(leads, analysis_day, revenire),
+        "expected_by_showroom": expected_by_showroom(leads, analysis_day, revenire),
+        "expected_by_source": expected_by_field(leads, "source", analysis_day, revenire),
+        "expected_by_utm_campaign": expected_by_field(
+            leads, "utm_campaign", analysis_day, revenire
+        ),
         # SB KPi.xlsx 03_KPI_Agenti as-is, including the AC defect (ACR = 0 everywhere).
         # Comparison only; tests assert against expected_by_agent.
         "excel_reference": excel_reference,
@@ -416,8 +435,8 @@ def main() -> None:
 
     TARGET.write_text(dump + "\n", encoding="utf-8")
     print(
-        f"leads={len(leads)} thresholds={len(thresholds)} agents={len(expected)} "
-        f"pii_values_checked={len(pii)} -> {TARGET.relative_to(ROOT)}"
+        f"leads={len(leads)} revenire={len(revenire)} thresholds={len(thresholds)} "
+        f"agents={len(expected)} pii_values_checked={len(pii)} -> {TARGET.relative_to(ROOT)}"
     )
 
 

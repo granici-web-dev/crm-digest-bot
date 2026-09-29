@@ -28,8 +28,9 @@ def earliest_contact_created_at(lead_frame: pd.DataFrame) -> pd.Series:
 def showroom_visit_flags(lead_frame: pd.DataFrame, config: AppConfig) -> pd.DataFrame:
     # Одно правило визита для d1, w2, KPI и чата (ADR-007, docs/kpi-definitions.md, «Визит»).
     # Revenire считается от начала собственного ежедневного окна лида, а не периода отчёта:
-    # тогда неделя и месяц по построению равны сумме дней d1. Лид без ключей контакта
-    # (снапшоты до миграции 0005) revenire не бывает.
+    # тогда на одном снапшоте неделя, месяц и периоды чата (все из ежедневных окон) равны
+    # сумме дней d1 по построению. С уже отправленными d1 сумма может разойтись: каждый d1
+    # читал свой снапшот. Лид без ключей контакта (снапшоты до миграции 0005) revenire не бывает.
     time_settings = config.status_mapping.time
     is_showroom_source = lead_frame["source_name"].isin(
         config.status_mapping.sources.showroom_visit

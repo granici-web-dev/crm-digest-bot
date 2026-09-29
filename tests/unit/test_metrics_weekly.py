@@ -234,17 +234,17 @@ def visits_with_revenire_and_partner(app_config: AppConfig) -> pd.DataFrame:
 def test_weekly_visits_equal_sum_of_daily_visits(app_config: AppConfig) -> None:
     leads = visits_with_revenire_and_partner(app_config)
     time_settings = app_config.status_mapping.time
+    visits = weekly_showroom_visits(leads, SUNDAY, app_config)
+    daily_revenire = 0
 
-    daily_visits = sum(
-        int(
-            lead_row_flags(leads, daily_window(day, time_settings), app_config)[
-                "showroom_visits"
-            ].sum()
-        )
-        for day in week_days(SUNDAY)
-    )
+    for day in week_days(SUNDAY):
+        d1_rows = lead_row_flags(leads, daily_window(day, time_settings), app_config)
+        assert sum(visits.counts[day].values()) == int(d1_rows["showroom_visits"].sum()), day
+        # Revenire в d1 это часть строки Alte.
+        daily_revenire += int((d1_rows["leads_other"] & leads["is_showroom_revenire"]).sum())
 
-    assert weekly_showroom_visits(leads, SUNDAY, app_config).total == daily_visits == 2
+    assert visits.total == 2
+    assert weekly_showroom_revenire_count(leads, SUNDAY, app_config) == daily_revenire == 2
 
 
 def test_weekly_visits_exclude_partner_and_revenire(app_config: AppConfig) -> None:

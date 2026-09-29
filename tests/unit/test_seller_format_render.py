@@ -69,3 +69,16 @@ def test_seller_format_without_previous_and_clients_snapshots_shows_dashes(
         )
         == snapshot
     )
+
+
+def test_seller_format_notes_once_that_showroom_returns_are_not_in_crm() -> None:
+    counts = fixed_counts(has_previous_snapshot=True, has_clients_snapshot=True, without_showroom=0)
+
+    text = render(
+        "seller_format_report",
+        counts=counts,
+        report_date=REPORT_DATE,
+        tenant_display_name="Sofabelle",
+    )
+
+    assert text.count("Revenirile în showroom nu sunt înregistrate în CRM și nu sunt incluse.") == 1
