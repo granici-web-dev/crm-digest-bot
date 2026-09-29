@@ -24,6 +24,7 @@ from digest.reports.modules.seller_format import seller_format_report
 from digest.reports.modules.weekly import (
     irr_by_campaign_report,
     loss_reasons_report,
+    manager_touches_report,
     showroom_visits_report,
     week_over_week_report,
     weekly_funnel_report,
@@ -47,6 +48,7 @@ IMPLEMENTED_MODULES: dict[str, ReportModuleFunction] = {
     "w6": irr_by_campaign_report,
     "w8": week_over_week_report,
     "w12": excel_attachment_report,
+    "w14": manager_touches_report,
     "m2": funnel_by_showroom_report,
     "m3": trend_6m_report,
     "m4": scr_with_targets_report,

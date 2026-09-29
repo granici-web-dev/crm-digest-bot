@@ -7,6 +7,50 @@
   <i>Săpt. trecută: după snapshotul din 22.09 (lipsește cel din 20.09)</i>
   '''
 # ---
+# name: test_manager_touches_text
+  '''
+  📞 Atingeri consultanți: 4 (R1 2 · R2 1 · R3 1)
+  Nepreluate 1 (R1 1 · R2 0 · R3 0)
+  Dragoi Mihaela 2 (R1 1 · R2 1 · R3 0)
+  Raileanu  Leon 1 (R1 0 · R2 0 · R3 1)
+  Godja Adina Maria 0
+  Marc Andra 0
+  Moaca Andreea 0
+  Roibu Valeria 0
+  
+  Atingere = trecerea în Revenire N înregistrată în CRM, nu apelul în sine.
+  Fără snapshot CRM pentru 21.09, 22.09, 23.09, 24.09, 25.09, 26.09: atingerile din acele zile pot lipsi.
+  '''
+# ---
+# name: test_manager_touches_text_notes_first_covered_day
+  '''
+  📞 Atingeri consultanți: 4 (R1 2 · R2 1 · R3 1)
+  Nepreluate 1 (R1 1 · R2 0 · R3 0)
+  Dragoi Mihaela 2 (R1 1 · R2 1 · R3 0)
+  Raileanu  Leon 1 (R1 0 · R2 0 · R3 1)
+  Godja Adina Maria 0
+  Marc Andra 0
+  Moaca Andreea 0
+  Roibu Valeria 0
+  
+  Atingere = trecerea în Revenire N înregistrată în CRM, nu apelul în sine.
+  Atingeri numărate de la 26.09: nu există snapshot CRM mai vechi.
+  Fără snapshot CRM pentru 26.09: atingerile din acea zi pot lipsi.
+  '''
+# ---
+# name: test_manager_touches_text_without_touches
+  '''
+  📞 Atingeri consultanți: 0
+  Dragoi Mihaela 0
+  Godja Adina Maria 0
+  Marc Andra 0
+  Moaca Andreea 0
+  Raileanu  Leon 0
+  Roibu Valeria 0
+  
+  Atingere = trecerea în Revenire N înregistrată în CRM, nu apelul în sine.
+  '''
+# ---
 # name: test_showroom_visits_text_counts_reveniri
   '''
   <b>Vizite showroom: 1</b> (Brașov 1)

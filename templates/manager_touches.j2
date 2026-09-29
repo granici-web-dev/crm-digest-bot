@@ -1,0 +1,23 @@
+{% from "_names.j2" import manager %}
+{% macro levels(by_level) %}{% for count in by_level %}R{{ loop.index }} {{ count }}{% if not loop.last %} · {% endif %}{% endfor %}{% endmacro %}
+{% macro day_list(days) %}{% for day in days %}{{ day.strftime("%d.%m") }}{% if not loop.last %}, {% endif %}{% endfor %}{% endmacro %}
+{% if touches.covered_from is none %}
+Atingeri consultanți: fără date
+{% else %}
+📞 Atingeri consultanți: {{ touches.touch_count }}{% if touches.touch_count %} ({{ levels(touches.by_level) }}){% endif %}
+
+{% for group in touches.groups %}
+{{ manager(group.manager_name) }} {{ group.touch_count }}{% if group.touch_count %} ({{ levels(group.by_level) }}){% endif %}
+
+{% endfor %}
+
+Atingere = trecerea în Revenire N înregistrată în CRM, nu apelul în sine.
+{% if touches.covered_from > first_day %}
+Atingeri numărate de la {{ touches.covered_from.strftime("%d.%m") }}: nu există snapshot CRM mai vechi.
+{% endif %}
+{% if touches.days_without_snapshot | length == 1 %}
+Fără snapshot CRM pentru {{ day_list(touches.days_without_snapshot) }}: atingerile din acea zi pot lipsi.
+{% elif touches.days_without_snapshot %}
+Fără snapshot CRM pentru {{ day_list(touches.days_without_snapshot) }}: atingerile din acele zile pot lipsi.
+{% endif %}
+{% endif %}

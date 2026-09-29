@@ -4,11 +4,13 @@ from datetime import date, timedelta
 import pandas as pd
 
 from digest.config import AppConfig
+from digest.metrics.touches import manager_touches
 from digest.metrics.weekly import (
     DAYS_IN_WEEK,
     DayShowroomCounts,
     WeeklyLeadTables,
     relative_change,
+    week_days,
     week_over_week,
     weekly_funnel,
     weekly_irrelevant,
@@ -221,3 +223,9 @@ def irr_by_campaign_report(lead_frame: pd.DataFrame, context: ReportContext) -> 
             previous_sunday=context.report_date - timedelta(days=DAYS_IN_WEEK),
         )
     )
+
+
+def manager_touches_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
+    days = week_days(context.report_date)
+    touches = manager_touches(context.touch_snapshots, days, context.config)
+    return ModuleResult(render("manager_touches", touches=touches, first_day=days[0]))

@@ -82,6 +82,7 @@ def context(app_config: AppConfig, lead_frame: pd.DataFrame) -> ReportContext:
         None,
         week_ago,
         week_ago,
+        (),
         None,
         app_config,
         "sofabelle",
@@ -288,3 +289,86 @@ def test_irr_by_campaign_flattens_and_cuts_long_campaign(app_config: AppConfig) 
     text = IMPLEMENTED_MODULES["w6"](lead_frame, report_context).text
 
     assert "„BZA " + "x" * 35 + "…” 0,0% (0 din 5)" in text
+
+
+def followup_lead(lead_id: int, status_name: str, **overrides: Any) -> dict[str, Any]:
+    category = "ACTIVE_FOLLOWUP" if status_name.startswith("Revenire") else "ACTIVE"
+    return lead(
+        lead_id, at(date(2026, 9, 1), 11), category=category, status_name=status_name, **overrides
+    )
+
+
+def touches_text(app_config: AppConfig, snapshots: list[tuple[date, list[dict[str, Any]]]]) -> str:
+    chain = tuple(
+        PreviousSnapshot(day, prepare_lead_frame(rows, app_config)) for day, rows in snapshots
+    )
+    touch_context = replace(context(app_config, week_frame(app_config)), touch_snapshots=chain)
+    return IMPLEMENTED_MODULES["w14"](
+        chain[-1].frame if chain else week_frame(app_config), touch_context
+    ).text
+
+
+def touched_week(first: date) -> list[tuple[date, list[dict[str, Any]]]]:
+    before = [followup_lead(lead_id, "IN PROCES") for lead_id in (1, 2, 3, 4)] + [
+        followup_lead(5, "IN PROCES", assigned_to_id=7, assigned_to_name="Marketing Sofa")
+    ]
+    after = [
+        followup_lead(1, "Revenire 1", status_changed_at=at(date(2026, 9, 23), 12)),
+        followup_lead(2, "Revenire 2", status_changed_at=at(date(2026, 9, 24), 12)),
+        followup_lead(
+            3,
+            "Revenire 3",
+            status_changed_at=at(date(2026, 9, 26), 12),
+            assigned_to_id=13,
+            assigned_to_name="Raileanu  Leon",
+        ),
+        followup_lead(4, "IN PROCES"),
+        followup_lead(
+            5,
+            "Revenire 1",
+            status_changed_at=at(date(2026, 9, 25), 12),
+            assigned_to_id=7,
+            assigned_to_name="Marketing Sofa",
+        ),
+    ]
+    return [(first, before), (SUNDAY, after)]
+
+
+def test_manager_touches_text(app_config: AppConfig, snapshot: SnapshotAssertion) -> None:
+    text = touches_text(app_config, touched_week(date(2026, 9, 20)))
+
+    assert "📞 Atingeri consultanți: 4 (R1 2 · R2 1 · R3 1)" in text
+    assert "Nepreluate 1 (R1 1 · R2 0 · R3 0)" in text
+    assert "Dragoi Mihaela 2 (R1 1 · R2 1 · R3 0)" in text
+    assert "Marc Andra 0\n" in text
+    assert "Fără snapshot CRM pentru 21.09, 22.09, 23.09, 24.09, 25.09, 26.09" in text
+    assert text == snapshot
+
+
+def test_manager_touches_text_without_touches(
+    app_config: AppConfig, snapshot: SnapshotAssertion
+) -> None:
+    rows = [followup_lead(1, "IN PROCES")]
+    daily = [(SUNDAY - timedelta(days=offset), rows) for offset in range(7, -1, -1)]
+
+    text = touches_text(app_config, daily)
+
+    assert "📞 Atingeri consultanți: 0\n" in text
+    assert "Fără snapshot" not in text
+    assert text == snapshot
+
+
+def test_manager_touches_text_notes_first_covered_day(
+    app_config: AppConfig, snapshot: SnapshotAssertion
+) -> None:
+    text = touches_text(app_config, touched_week(date(2026, 9, 25)))
+
+    assert "Atingeri numărate de la 26.09: nu există snapshot CRM mai vechi." in text
+    assert "Fără snapshot CRM pentru 26.09: atingerile din acea zi pot lipsi." in text
+    assert text == snapshot
+
+
+def test_manager_touches_text_without_data(app_config: AppConfig) -> None:
+    text = touches_text(app_config, [(SUNDAY, [followup_lead(1, "Revenire 1")])])
+
+    assert text == "Atingeri consultanți: fără date"

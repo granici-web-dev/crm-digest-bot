@@ -249,6 +249,7 @@ def d3_result(config: AppConfig, data_revenire_problem: str | None = None) -> Mo
         None,
         None,
         None,
+        (),
         None,
         config,
         "sofabelle",

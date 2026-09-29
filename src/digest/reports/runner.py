@@ -38,7 +38,8 @@ from digest.metrics.chat_periods import first_snapshot_on_or_after
 from digest.metrics.daily import PreviousSnapshot
 from digest.metrics.frame import unknown_manager_ids
 from digest.metrics.kpi import Period
-from digest.metrics.weekly import DAYS_IN_WEEK
+from digest.metrics.touches import touch_snapshot_dates
+from digest.metrics.weekly import DAYS_IN_WEEK, week_days
 from digest.reports.context import ReportContext, ReportDocument, ReportPhoto
 from digest.reports.lead_links import LeadLinks
 from digest.reports.modules import ReportModuleFunction
@@ -53,6 +54,7 @@ logger = logging.getLogger(__name__)
 STALE_RUNNING_AFTER = timedelta(minutes=30)
 WEEK_OVER_WEEK_MODULE_ID = "w8"
 IRRELEVANT_BY_CAMPAIGN_MODULE_ID = "w6"
+TOUCHES_MODULE_ID = "w14"
 CLIENTS_SOURCE: SourceCode = "I"
 
 ReportRunOutcome = Literal["success", "partial", "failed", "already_sent", "in_progress"]
@@ -426,6 +428,26 @@ async def previous_week_snapshot(
     return await snapshot_if_successful(deps, substitute)
 
 
+async def touch_snapshot_chain(
+    deps: ReportDeps, snapshot_date: date, lead_frame: pd.DataFrame
+) -> tuple[PreviousSnapshot, ...]:
+    dates = touch_snapshot_dates(
+        await success_snapshot_dates(deps.engine, deps.tenant_id),
+        week_days(snapshot_date)[0],
+        snapshot_date,
+    )
+    return tuple(
+        [
+            PreviousSnapshot(
+                day, await load_lead_frame(deps.engine, deps.tenant_id, day, deps.config)
+            )
+            for day in dates
+            if day != snapshot_date
+        ]
+        + [PreviousSnapshot(snapshot_date, lead_frame)]
+    )
+
+
 async def build_report(
     deps: ReportDeps, level: ReportLevel, period: Period, snapshot_date: date, late: bool
 ) -> BuiltReport | None:
@@ -487,6 +509,12 @@ async def build_report(
         if IRRELEVANT_BY_CAMPAIGN_MODULE_ID in module_ids
         else None
     )
+    # До восьми полных снапшотов: грузятся только для w14.
+    touch_snapshots = (
+        await touch_snapshot_chain(deps, snapshot_date, lead_frame)
+        if TOUCHES_MODULE_ID in module_ids
+        else ()
+    )
     # Кадр клиентов нужен только модулям с источником I (clients:read), сейчас это d1.
     reads_clients = any(
         CLIENTS_SOURCE in deps.config.modules.all_modules[module_id].sources
@@ -502,6 +530,7 @@ async def build_report(
         previous,
         week_ago,
         previous_week,
+        touch_snapshots,
         clients,
         deps.config,
         deps.tenant_id,

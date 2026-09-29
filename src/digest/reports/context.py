@@ -17,6 +17,9 @@ class ReportContext:
     # Снапшот прошлой недели для w6: воскресенье или первый более поздний строго раньше
     # report_date, дата в нём.
     previous_week: PreviousSnapshot | None
+    # Цепочка success-снапшотов недели для w14 (touch_snapshot_dates), последний это снапшот
+    # отчёта; пустая, если w14 не запускается.
+    touch_snapshots: tuple[PreviousSnapshot, ...]
     # Клиенты mefi за report_date; None: снапшота клиентов нет или ни один модуль их не читает.
     clients: pd.DataFrame | None
     config: AppConfig

@@ -118,6 +118,7 @@ def context(app_config: AppConfig) -> ReportContext:
         None,
         None,
         None,
+        (),
         None,
         app_config,
         "sofabelle",

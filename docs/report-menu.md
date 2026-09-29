@@ -392,6 +392,26 @@ GA4: 3.120 sesiuni → 24 lead-uri (0,77%) · cea mai bună pagină: /canapea-be
 GA4: 3 120 сессий → 24 лида (0,77%) · лучшая страница: /canapea-belle 1,9%
 ```
 
+### w14 · Atingeri consultanți / Касания консультантов
+
+Тег: now
+
+**RO:** Câte treceri în Revenire 1/2/3 a înregistrat fiecare consultant în CRM în săptămână, pe niveluri.
+
+**RU:** Сколько переходов в Revenire 1/2/3 записал в CRM каждый консультант за неделю, по уровням. Касание = переход между соседними ежедневными снапшотами, не звонок.
+
+Пример RO:
+
+```
+📞 Atingeri consultanți: 37 (R1 15 · R2 17 · R3 5)
+Roibu Valeria 14 (R1 5 · R2 8 · R3 1)
+Raileanu  Leon 9 (R1 4 · R2 3 · R3 2)
+Dragoi Mihaela 0
+
+Atingere = trecerea în Revenire N înregistrată în CRM, nu apelul în sine.
+Fără snapshot CRM pentru 30.09: atingerile din acea zi pot lipsi.
+```
+
 ### w12 · Fișier Excel atașat / Excel во вложении
 
 Тег: now

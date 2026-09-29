@@ -904,6 +904,7 @@ async def test_weekly_report_contains_implemented_modules_and_excel(harness: Har
             "Pâlnia săptămânii",
             "Închise în săptămână: 0",
             "Față de săptămâna trecută",
+            "Atingeri consultanți: fără date",
             "📎 sofabelle_sapt39_2026.xlsx",
         )
     ]
@@ -948,6 +949,30 @@ async def test_week_old_snapshot_is_not_loaded_without_w8(harness: Harness) -> N
     [context] = await weekly_contexts(harness, "w1", WEEK_SUNDAY - timedelta(days=7))
 
     assert context.week_ago is None
+
+
+async def test_w14_gets_week_chain_from_last_snapshot_before_week(harness: Harness) -> None:
+    seen: list[ReportContext] = []
+
+    def touches_module(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
+        seen.append(context)
+        return ModuleResult("ok")
+
+    chain = (WEEK_SUNDAY - timedelta(days=8), WEEK_SUNDAY - timedelta(days=3), WEEK_SUNDAY)
+    for snapshot_date in (WEEK_SUNDAY - timedelta(days=9), *chain):
+        await store_snapshot(harness.deps.engine, snapshot_date, [todays_lead(1)])
+    deps = replace(harness.deps, modules={"w14": touches_module})
+
+    await run_report("weekly", MONDAY_09, deps, late=False)
+
+    [context] = seen
+    assert tuple(snapshot.snapshot_date for snapshot in context.touch_snapshots) == chain
+
+
+async def test_week_chain_is_not_loaded_without_w14(harness: Harness) -> None:
+    [context] = await weekly_contexts(harness, "w1", WEEK_SUNDAY - timedelta(days=3))
+
+    assert context.touch_snapshots == ()
 
 
 async def test_daily_report_job_alerts_when_backup_dir_has_no_dumps(

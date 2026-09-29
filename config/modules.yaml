@@ -40,6 +40,9 @@ weekly:           # пн–вс, отправка в понедельник; в�
   w6:  { name: irr_by_campaign, label: "Campanii cu irelevanți",           sources: [A], enabled: true, params: { min_source_leads: 10, min_campaign_leads: 5, top_rows: 3, campaign_label_max_length: 40 } }
   w7:  { name: missed_calls_no_lead, label: "Apeluri pierdute fără lead",      sources: [C], enabled: false }
   w8:  { name: week_over_week, label: "Față de săptămâna trecută",            sources: [A], enabled: true }
+  # Касания по разнице соседних success-снапшотов (docs/shapes/2026-09-29-touches.md); выше w12,
+  # чтобы блок шёл до вложения Excel.
+  w14: { name: manager_touches, label: "Atingeri consultanți",           sources: [A], enabled: true }
   w9:  { name: cost_per_lead_by_channel, label: "Cost per lead pe canal",  sources: [A, D], enabled: false }
   w10: { name: spend_without_leads, label: "Campanii fără lead-uri",       sources: [D], enabled: false }
   w11: { name: sessions_to_leads, label: "Trafic site → lead-uri",         sources: [A, E], enabled: false }
