@@ -23,9 +23,9 @@
 {% macro no_data_yet(days, snapshot) %}Nu există încă date pentru {{ days }}: ultimul snapshot este din {{ snapshot }}.{% endmacro %}
 {% macro period_scope(titles) %}Perioada: {{ titles | join(" vs ") }}{% endmacro %}
 {% macro snapshot_scope(day) %}Snapshot: {{ day }}{% endmacro %}
-{% macro change_with_difference(period_a, period_b, difference, change) %}{{ period_a }} față de {{ period_b }}: {{ difference }} ({{ change }}){% endmacro %}
-{% macro change_from_zero(period_a, period_b, difference) %}{{ period_a }} față de {{ period_b }}: {{ difference }}; procentul nu se calculează, baza este 0{% endmacro %}
-{% macro change_in_points(period_a, period_b, difference) %}{{ period_a }} față de {{ period_b }}: {{ difference }}{% endmacro %}
+{% macro change_with_difference(value_a, value_b, difference, change) %}{{ value_a }} față de {{ value_b }}: {{ difference }} ({{ change }}){% endmacro %}
+{% macro change_from_zero(value_a, value_b, difference) %}{{ value_a }} față de {{ value_b }}: {{ difference }}; procentul nu se calculează, baza este 0{% endmacro %}
+{% macro change_in_points(value_a, value_b, difference) %}{{ value_a }} față de {{ value_b }}: {{ difference }}{% endmacro %}
 {% macro direction_up() %}creștere{% endmacro %}
 {% macro direction_down() %}scădere{% endmacro %}
 {% macro direction_same() %}fără schimbare{% endmacro %}

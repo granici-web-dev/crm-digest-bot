@@ -130,8 +130,9 @@ chat:             # режим вопросов; включается целик
     compare_periods: >-
       Compară o singură metrică între două perioade (de ex. lead-uri săptămâna aceasta față de
       săptămâna trecută). period_a este perioada evaluată (de obicei cea mai recentă), period_b
-      este baza comparației. Câmpul change dă schimbarea gata formulată („august 2026 față de iulie
-      2026: +12 (+17,4%)”, la KPI în puncte procentuale); o citezi exact. difference este
+      este baza comparației. Câmpul change dă schimbarea gata formulată, cu valoarea period_a
+      întâi („138 față de 135: +3 (+2,2%)”; la KPI valorile în procente și diferența în puncte
+      procentuale, „14,2% față de 16,0%: −1,8 pp”); o citezi exact. difference este
       diferența fără semn, direction este creștere, scădere sau fără schimbare. day_count și
       days_with_data dau numărul de zile ale fiecărei perioade și câte au date. Opțional pentru
       un singur showroom.

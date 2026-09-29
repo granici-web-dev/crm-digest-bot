@@ -143,12 +143,12 @@ def test_change_sentence_requires_only_its_percent() -> None:
             ExpectedCall(tool="compare_periods", arguments={"metric": "leads"}, numbers=["change"])
         ],
     )
-    change = "21.09–27.09.2026 față de 14.09–20.09.2026: +17,4%"
+    change = "138 față de 135: +3 (+2,2%)"
 
     grade = grade_case(
         case,
         ChatAnswer(
-            "Lead-urile au crescut cu 17,4%.",
+            "Lead-urile au crescut cu 2,2%.",
             "answered",
             (
                 ExecutedToolCall(

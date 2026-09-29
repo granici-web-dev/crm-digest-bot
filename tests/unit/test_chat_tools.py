@@ -11,6 +11,8 @@ from digest.chat.tools import (
     ALL_SHOWROOMS,
     TOOL_FUNCTIONS,
     ToolData,
+    count_comparison,
+    kpi_comparison,
     run_tool,
     tool_definitions,
 )
@@ -251,7 +253,7 @@ async def test_compare_periods_matches_lead_counts_of_both_windows(
     )
     # 93 lead-uri în ultima săptămână din mai față de 300 în mai: 93 / 300 − 1 = −69,0%.
     assert (week_leads, month_leads) == (93, 300)
-    assert content["change"] == "25.05–31.05.2026 față de 01.05–31.05.2026: −207 (−69,0%)"
+    assert content["change"] == "93 față de 300: −207 (−69,0%)"
     assert (content["difference"], content["direction"]) == (207, "scădere")
     assert (content["period_a"]["day_count"], content["period_a"]["days_with_data"]) == (7, 7)
     assert (content["period_b"]["day_count"], content["period_b"]["days_with_data"]) == (31, 31)
@@ -280,8 +282,21 @@ async def test_compare_periods_of_kpi_gives_no_relative_change(
     assert week_scr is not None
     assert month_scr is not None
     assert round((week_scr - month_scr) * 100, 1) == -1.8
-    assert content["change"] == "25.05–31.05.2026 față de 01.05–31.05.2026: −1,8 pp"
+    assert content["change"] == (
+        f"{content['period_a']['value']} față de {content['period_b']['value']}: −1,8 pp"
+    )
     assert (content["difference"], content["direction"]) == ("1,8 pp", "scădere")
+
+
+def test_change_from_zero_base_names_both_values_without_percent() -> None:
+    comparison = count_comparison(5, 0)
+
+    assert comparison["change"] == "5 față de 0: +5; procentul nu se calculează, baza este 0"
+    assert (comparison["difference"], comparison["direction"]) == (5, "creștere")
+
+
+def test_kpi_change_is_absent_when_one_period_has_no_kpi() -> None:
+    assert kpi_comparison(None, 0.25) == {"difference": None, "direction": None, "change": None}
 
 
 async def test_loss_reasons_match_metrics(

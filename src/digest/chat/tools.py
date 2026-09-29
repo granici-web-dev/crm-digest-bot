@@ -550,12 +550,6 @@ def kpi_value(
     return value
 
 
-def compared_period_title(period_frame: PeriodFrame) -> str:
-    if isinstance(period_frame.period, ChatMonth):
-        return period_title(period_frame.period, period_frame.label)
-    return period_frame.label
-
-
 def direction_text(difference: float) -> str:
     if difference > 0:
         return text("direction_up")
@@ -564,27 +558,24 @@ def direction_text(difference: float) -> str:
     return text("direction_same")
 
 
-def count_comparison(
-    frame_a: PeriodFrame, frame_b: PeriodFrame, count_a: int, count_b: int
-) -> dict[str, Any]:
-    # Направление и разницу формулирует код, модель цитирует: иначе она путает, что с чем
-    # сравнивается, и считает разницу сама.
-    title_a, title_b = compared_period_title(frame_a), compared_period_title(frame_b)
+def count_comparison(count_a: int, count_b: int) -> dict[str, Any]:
+    # Значения, направление и разницу формулирует код, модель цитирует: иначе она путает, что с
+    # чем сравнивается, считает разницу сама или отвечает разницей без самих значений.
     difference = value_difference(count_a, count_b)
     assert difference is not None
     delta = period_delta(count_a, count_b)
     change = (
         text(
             "change_from_zero",
-            period_a=title_a,
-            period_b=title_b,
+            value_a=count_a,
+            value_b=count_b,
             difference=signed_count(difference),
         )
         if delta is None
         else text(
             "change_with_difference",
-            period_a=title_a,
-            period_b=title_b,
+            value_a=count_a,
+            value_b=count_b,
             difference=signed_count(difference),
             change=signed_percent_one_decimal(delta),
         )
@@ -596,9 +587,7 @@ def count_comparison(
     }
 
 
-def kpi_comparison(
-    frame_a: PeriodFrame, frame_b: PeriodFrame, kpi_a: float | None, kpi_b: float | None
-) -> dict[str, Any]:
+def kpi_comparison(kpi_a: float | None, kpi_b: float | None) -> dict[str, Any]:
     difference = value_difference(kpi_a, kpi_b)
     if difference is None:
         return {"difference": None, "direction": None, "change": None}
@@ -609,8 +598,8 @@ def kpi_comparison(
         "direction": direction_text(round(difference * 100, 1)),
         "change": text(
             "change_in_points",
-            period_a=compared_period_title(frame_a),
-            period_b=compared_period_title(frame_b),
+            value_a=percent_one_decimal(kpi_a),
+            value_b=percent_one_decimal(kpi_b),
             difference=signed_points_one_decimal(difference),
         ),
     }
@@ -626,12 +615,12 @@ async def compare_periods(data: ToolData, arguments: ComparePeriodsArguments) ->
         kpi_a = kpi_value(frame_a, metric, showroom, data.config)
         kpi_b = kpi_value(frame_b, metric, showroom, data.config)
         values = (percent_one_decimal(kpi_a), percent_one_decimal(kpi_b))
-        comparison = kpi_comparison(frame_a, frame_b, kpi_a, kpi_b)
+        comparison = kpi_comparison(kpi_a, kpi_b)
     else:
         count_a = count_value(frame_a, metric, showroom, data.config)
         count_b = count_value(frame_b, metric, showroom, data.config)
         values = (count_a, count_b)
-        comparison = count_comparison(frame_a, frame_b, count_a, count_b)
+        comparison = count_comparison(count_a, count_b)
     return outcome(
         {
             "metric": metric,

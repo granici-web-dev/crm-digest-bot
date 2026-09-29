@@ -137,7 +137,7 @@ def required_tokens(value: Any) -> list[str]:
     if isinstance(value, bool):
         raise ValueError("булево значение не число ответа")
     tokens = number_tokens(str(value))
-    # Фраза изменения («… față de …: +17,4%») содержит даты периодов: требуем только процент.
+    # Во фразе изменения («138 față de 135: +3 (+2,2%)») требуем только проценты.
     percents = [token for token in tokens if token.endswith("%")]
     return [unsigned(normalized_number(token)) for token in (percents or tokens)]
 
