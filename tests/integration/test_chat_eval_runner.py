@@ -76,7 +76,8 @@ async def test_runner_grades_against_numbers_recomputed_from_snapshot(
     assert failed.grade.reason == "статус unverified_numbers, число «3»"
     assert retried.grade.passed, retried.grade.reason
     summary = summarize(results, "claude-sonnet-5")
-    assert (summary.passed, summary.guard_hits, summary.guard_retries) == (2, 1, 2)
+    # Проваленный повтор (failed) идёт в guard_hits, в повторы только успешный (retried).
+    assert (summary.passed, summary.guard_hits, summary.guard_retries) == (2, 1, 1)
     lines = answer_text_lines(results)
     assert lines.count("Текст модели до стража:") == 2
     assert "Ieri au intrat 4 lead-uri." in lines

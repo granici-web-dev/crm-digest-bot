@@ -339,11 +339,51 @@ async def test_unverified_number_is_blocked_and_alert_names_it(
 
     assert harness.replies == [UNVERIFIED_NUMBERS_TEXT]
     [alert] = harness.ops_texts
-    assert "«17»" in alert
-    assert "повтор не помог" in alert
+    assert "страж отклонил число «17», повтор не помог (отклонено «17»)" in alert
     assert "câte lead-uri azi?" in alert
     assert "funnel()" in alert
-    assert alert.endswith("Текст модели: Azi au fost 3 lead-uri din 17 posibile.")
+    assert alert.endswith(
+        "Текст модели: Azi au fost 3 lead-uri din 17 posibile. "
+        "| Повтор: Azi au fost 3 lead-uri, 17 posibile."
+    )
+    [row] = await logged_questions(enabled_chat)
+    assert row["status"] == "unverified_numbers"
+
+
+async def test_long_texts_of_both_attempts_share_the_alert_limit(
+    enabled_chat: AsyncEngine, app_config: AppConfig
+) -> None:
+    first = "Azi au fost 3 lead-uri din 17 posibile. " + "Detalii. " * 80
+    second = "Azi au fost 3 lead-uri din 18 posibile. " + "Altele. " * 80
+    api = scripted_anthropic(tool_use(FUNNEL_TODAY), text_message(first), text_message(second))
+    harness = ChatHarness(enabled_chat, app_config, api)
+
+    await harness.send(f"{MENTION} câte lead-uri azi?")
+
+    [alert] = harness.ops_texts
+    assert "повтор не помог (отклонено «18»)" in alert
+    assert alert.endswith(f"Текст модели: {first.strip()[:250]} | Повтор: {second.strip()[:250]}")
+
+
+async def test_guard_retry_over_deadline_is_refused_with_alert(
+    enabled_chat: AsyncEngine, app_config: AppConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(chat_handlers, "QUESTION_DEADLINE_SECONDS", 1)
+    api = scripted_anthropic(
+        tool_use(FUNNEL_TODAY),
+        text_message("Azi au fost 3 lead-uri din 17 posibile."),
+        text_message("Azi au fost 3 lead-uri."),
+        delays=(0, 0, 5),
+    )
+    harness = ChatHarness(enabled_chat, app_config, api)
+
+    await harness.send(f"{MENTION} câte lead-uri azi?")
+
+    assert harness.replies == [UNVERIFIED_NUMBERS_TEXT]
+    [alert] = harness.ops_texts
+    assert alert.startswith(
+        "Chat: страж отклонил число «17», страж сработал, повтор не уложился в дедлайн"
+    )
     [row] = await logged_questions(enabled_chat)
     assert row["status"] == "unverified_numbers"
 

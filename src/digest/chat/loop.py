@@ -1,3 +1,4 @@
+import asyncio
 import html
 import json
 import re
@@ -8,7 +9,7 @@ from string import Template
 from typing import Any
 
 from anthropic import AsyncAnthropic
-from anthropic.types import MessageParam, ToolResultBlockParam
+from anthropic.types import MessageParam, ToolChoiceParam, ToolResultBlockParam
 
 from digest.chat.tools import (
     ALL_MANAGERS,
@@ -22,8 +23,11 @@ from digest.chat.tools import (
 from digest.config import AppConfig
 from digest.db.schema import ChatQuestionStatus
 from digest.reports.lead_links import LeadLinks
-from digest.reports.render import TEMPLATES_DIR, render, text
+from digest.reports.render import RO_MONTHS, TEMPLATES_DIR, render, text
 
+# Таймаут клиента на каждый запрос, а вопрос это до пяти запросов с повторами и снапшоты:
+# без общего дедлайна группа ждала бы ответа минутами.
+QUESTION_DEADLINE_SECONDS = 60
 PERIOD_ARGUMENTS = frozenset({"period", "period_a", "period_b"})
 CANNOT_ANSWER_NOW_TEXT = text("cannot_answer_now")
 UNVERIFIED_NUMBERS_TEXT = text("unverified_numbers")
@@ -31,6 +35,9 @@ UNVERIFIED_NUMBERS_TEXT = text("unverified_numbers")
 # поданный как «15%». Знак только в начале слова: «top-3» это 3, а не −3.
 NUMBER = re.compile(r"(?:(?<![\w.,])[+\-\u2212])?\d+(?:[.,]\d+)*(?:[ \u00a0]?%)?")
 DATE_LIKE = re.compile(r"^\d{1,2}\.\d{1,2}(?:\.\d{4})?$")
+DAY_MONTH = re.compile(
+    rf"(?<![\w.,])(\d{{1,2}}) ({'|'.join(RO_MONTHS)})(?: (\d{{4}}))?(?!\w)", re.IGNORECASE
+)
 MINUS_SIGNS = "-\u2212"
 WORD = re.compile(r"[^\W\d_]+")
 CEDILLA_TO_COMMA = str.maketrans("şţŞŢ", "șțȘȚ")
@@ -100,6 +107,10 @@ class ChatAnswer:
     unverified_number: str | None = None
     rejected_text: str | None = None
     retried: bool = False
+    # Провал повтора: его число и текст (None, если модель не дала текста) или истёкший дедлайн.
+    retry_unverified_number: str | None = None
+    retry_rejected_text: str | None = None
+    retry_timed_out: bool = False
 
     @property
     def snapshot_dates(self) -> tuple[date, ...]:
@@ -142,6 +153,8 @@ def number_tokens(text: str) -> list[str]:
 def mefi_name_pattern(config: AppConfig) -> re.Pattern[str]:
     # Цифры в именах mefi («Revenire 2», «BIFE 2026») это часть имени, а не число: без маски
     # статус в результате разрешил бы голую «2» во всём ответе, а статус в ответе давал отказ.
+    # Регистр учитывается (имена mefi не нормализуются), а после «Data revenire» идёт дата или
+    # число дней, не статус: иначе «Data Revenire 3 octombrie» прятала бы от стража «3».
     status_mapping = config.status_mapping
     names = {
         *status_mapping.category_by_status,
@@ -154,8 +167,36 @@ def mefi_name_pattern(config: AppConfig) -> re.Pattern[str]:
         key=len,
         reverse=True,
     )
-    alternatives = [rf"(?<!\w){re.escape(name)}(?!\w)" for name in with_digits]
-    return re.compile("|".join(alternatives) or "(?!)", re.IGNORECASE)
+    alternatives = [rf"(?<!(?i:data)\s)(?<!\w){re.escape(name)}(?!\w)" for name in with_digits]
+    return re.compile("|".join(alternatives) or "(?!)")
+
+
+def date_form(day: str, month: str, year: str | None = None) -> str | None:
+    # Отдельная форма даты: иначе разрешённая «28.09» разрешила бы и дробь «28,9».
+    if not (1 <= int(day) <= 31 and 1 <= int(month) <= 12):
+        return None
+    return f"date:{int(day)}.{int(month)}" + ("" if year is None else f".{int(year)}")
+
+
+def numeric_date_form(token: str) -> str | None:
+    if not DATE_LIKE.match(token):
+        return None
+    day, month, *year = token.split(".")
+    return date_form(day, month, *year)
+
+
+def allowed_date_forms(token: str) -> set[str]:
+    # Полная дата результата разрешает и свою короткую форму, короткая полную не разрешает.
+    full = numeric_date_form(token)
+    if full is None:
+        return set()
+    day, month = token.split(".")[:2]
+    return {full, *filter(None, [date_form(day, month)])}
+
+
+def day_month_form(match: re.Match[str]) -> str | None:
+    day, month_name, year = match.groups()
+    return date_form(day, str(RO_MONTHS.index(month_name.lower()) + 1), year)
 
 
 def allowed_numbers(signature_text: str, sources: Iterable[str]) -> set[str]:
@@ -169,13 +210,24 @@ def allowed_numbers(signature_text: str, sources: Iterable[str]) -> set[str]:
     for token in NUMBER.findall(signature_text):
         if DATE_LIKE.match(token):
             allowed.update(str(int(part)) for part in token.split("."))
+    # Дата целиком («28.09», «28 septembrie») разрешена, если она есть в результате или подписи.
+    allowed.update(
+        form
+        for source in (signature_text, *sources)
+        for token in NUMBER.findall(source)
+        for form in allowed_date_forms(token)
+    )
     return allowed
 
 
 def first_unverified_number(text: str, allowed: set[str]) -> str | None:
-    for token in number_tokens(text):
-        if normalized_number(token) not in allowed:
-            return token
+    without_known_dates = DAY_MONTH.sub(
+        lambda match: " " if day_month_form(match) in allowed else match.group(0), text
+    )
+    for token in number_tokens(without_known_dates):
+        if normalized_number(token) in allowed or numeric_date_form(token) in allowed:
+            continue
+        return token
     return None
 
 
@@ -207,8 +259,47 @@ async def answer_question(
     client: AsyncAnthropic,
     model: str,
     data: ToolData,
-    previous: PreviousExchange | None = None,
+    previous: PreviousExchange | None,
+    deadline: float,
 ) -> ChatAnswer:
+    # deadline во времени цикла событий (loop.time()). Первая попытка и повтор под отдельными
+    # таймаутами: истечение на повторе даёт отказ стража, а не сбой вопроса.
+    async with asyncio.timeout_at(deadline):
+        answer, messages = await first_attempt(question, client, model, data, previous)
+    # Число отклонения есть только у unverified_numbers.
+    if answer.unverified_number is None:
+        return answer
+    try:
+        async with asyncio.timeout_at(deadline):
+            return await guard_retry(
+                question, answer, answer.unverified_number, messages, client, model, data
+            )
+    except TimeoutError:
+        return replace(answer, retried=True, retry_timed_out=True)
+
+
+def model_request(
+    model: str, data: ToolData, messages: list[MessageParam], tool_choice: ToolChoiceParam
+) -> dict[str, Any]:
+    return {
+        "model": model,
+        "max_tokens": data.config.modules.chat.max_answer_tokens,
+        "system": system_prompt(data.today),
+        "tools": tool_definitions(data.config),
+        "tool_choice": tool_choice,
+        # Маршрутизация по enum: рассуждение съело бы бюджет короткого ответа.
+        "thinking": {"type": "disabled"},
+        "messages": messages,
+    }
+
+
+async def first_attempt(
+    question: str,
+    client: AsyncAnthropic,
+    model: str,
+    data: ToolData,
+    previous: PreviousExchange | None,
+) -> tuple[ChatAnswer, list[MessageParam]]:
     messages: list[MessageParam] = [
         {
             "role": "user",
@@ -222,39 +313,35 @@ async def answer_question(
     ]
     calls: list[ExecutedToolCall] = []
     input_tokens = output_tokens = 0
-    tools = tool_definitions(data.config)
-    chat_settings = data.config.modules.chat
+    max_tool_calls = data.config.modules.chat.max_tool_calls
     while True:
         response = await client.messages.create(
-            model=model,
-            max_tokens=chat_settings.max_answer_tokens,
-            system=system_prompt(data.today),
-            tools=tools,
-            tool_choice=(
-                {"type": "auto"} if len(calls) < chat_settings.max_tool_calls else {"type": "none"}
-            ),
-            # Маршрутизация по enum: рассуждение съело бы бюджет короткого ответа.
-            thinking={"type": "disabled"},
-            messages=messages,
+            **model_request(
+                model,
+                data,
+                messages,
+                {"type": "auto"} if len(calls) < max_tool_calls else {"type": "none"},
+            )
         )
         input_tokens += response.usage.input_tokens
         output_tokens += response.usage.output_tokens
+        messages.append({"role": "assistant", "content": response.content})
         if response.stop_reason in ("max_tokens", "refusal"):
-            return ChatAnswer(
+            failed = ChatAnswer(
                 CANNOT_ANSWER_NOW_TEXT,
                 response.stop_reason,
                 tuple(calls),
                 input_tokens,
                 output_tokens,
             )
+            return failed, messages
         if response.stop_reason != "tool_use":
             break
-        messages.append({"role": "assistant", "content": response.content})
         results: list[ToolResultBlockParam] = []
         for block in response.content:
             if block.type != "tool_use":
                 continue
-            if len(calls) < chat_settings.max_tool_calls:
+            if len(calls) < max_tool_calls:
                 outcome = await run_tool(block.name, block.input, data)
                 calls.append(ExecutedToolCall(block.name, dict(block.input), outcome))
             else:
@@ -268,52 +355,63 @@ async def answer_question(
                 }
             )
         messages.append({"role": "user", "content": results})
-
-    mefi_names = mefi_name_pattern(data.config)
-    model_text = response_text(response.content)
     answer = checked_answer(
-        question, model_text, tuple(calls), input_tokens, output_tokens, data.lead_links, mefi_names
+        question,
+        response_text(response.content),
+        tuple(calls),
+        input_tokens,
+        output_tokens,
+        data.lead_links,
+        mefi_name_pattern(data.config),
     )
-    if answer.status != "unverified_numbers" or answer.unverified_number is None:
-        return answer
+    return answer, messages
+
+
+async def guard_retry(
+    question: str,
+    rejected: ChatAnswer,
+    rejected_number: str,
+    messages: list[MessageParam],
+    client: AsyncAnthropic,
+    model: str,
+    data: ToolData,
+) -> ChatAnswer:
     # Одна просьба переписать без отклонённого числа (shape chat-derived-numbers, «Согласовано»):
     # те же результаты в истории, новых вызовов нет.
-    messages.append({"role": "assistant", "content": response.content})
-    messages.append(
-        {"role": "user", "content": text("guard_retry", number=answer.unverified_number)}
+    retry_messages: list[MessageParam] = [
+        *messages,
+        {"role": "user", "content": text("guard_retry", number=rejected_number)},
+    ]
+    response = await client.messages.create(
+        **model_request(model, data, retry_messages, {"type": "none"})
     )
-    retry = await client.messages.create(
-        model=model,
-        max_tokens=chat_settings.max_answer_tokens,
-        system=system_prompt(data.today),
-        tools=tools,
-        tool_choice={"type": "none"},
-        thinking={"type": "disabled"},
-        messages=messages,
+    input_tokens = rejected.input_tokens + response.usage.input_tokens
+    output_tokens = rejected.output_tokens + response.usage.output_tokens
+    retried = replace(
+        rejected, input_tokens=input_tokens, output_tokens=output_tokens, retried=True
     )
-    input_tokens += retry.usage.input_tokens
-    output_tokens += retry.usage.output_tokens
-    retried = (
-        checked_answer(
-            question,
-            response_text(retry.content),
-            tuple(calls),
-            input_tokens,
-            output_tokens,
-            data.lead_links,
-            mefi_names,
+    if response.stop_reason != "end_turn":
+        return retried
+    second = checked_answer(
+        question,
+        response_text(response.content),
+        rejected.tool_calls,
+        input_tokens,
+        output_tokens,
+        data.lead_links,
+        mefi_name_pattern(data.config),
+    )
+    if second.status == "answered":
+        return replace(
+            second,
+            unverified_number=rejected_number,
+            rejected_text=rejected.rejected_text,
+            retried=True,
         )
-        if retry.stop_reason == "end_turn"
-        else answer
-    )
     return replace(
         retried,
-        status="answered" if retried.status == "answered" else "unverified_numbers",
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        unverified_number=answer.unverified_number,
-        rejected_text=answer.rejected_text,
-        retried=True,
+        retry_unverified_number=second.unverified_number,
+        retry_rejected_text=second.rejected_text,
     )
 
 

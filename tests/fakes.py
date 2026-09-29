@@ -1,3 +1,4 @@
+import asyncio
 import json
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
@@ -217,12 +218,18 @@ class ScriptedAnthropic:
     requests: list[dict[str, Any]]
 
 
-def scripted_anthropic(*responses: dict[str, Any] | int) -> ScriptedAnthropic:
+def scripted_anthropic(
+    *responses: dict[str, Any] | int, delays: tuple[float, ...] = ()
+) -> ScriptedAnthropic:
+    # delays[i]: пауза в секундах перед i-м ответом, для проверки дедлайнов.
     remaining = list(responses)
     requests: list[dict[str, Any]] = []
 
-    def handle(request: httpx2.Request) -> httpx2.Response:
+    async def handle(request: httpx2.Request) -> httpx2.Response:
         requests.append(json.loads(request.content))
+        index = len(requests) - 1
+        if index < len(delays):
+            await asyncio.sleep(delays[index])
         response = remaining.pop(0)
         if isinstance(response, int):
             return httpx2.Response(

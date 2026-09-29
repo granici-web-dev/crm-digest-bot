@@ -125,7 +125,8 @@ chat:             # режим вопросов; включается целик
     manager_kpi: >-
       KPI-urile unui consultant pentru o perioadă: numărătorile pâlniei, cei 9 KPI și dacă ținta
       fiecărui KPI este atinsă. targets_met din targets_total dă câte ținte sunt atinse; vs_target
-      dă diferența fiecărui KPI față de țintă, în puncte procentuale, cu semn.
+      dă diferența fiecărui KPI față de țintă, în puncte procentuale, cu semn; la KPI cu plafon
+      (PLR, PFR, ACR, IRR), minus înseamnă în limită; citești vs_target împreună cu meets_target.
     compare_periods: >-
       Compară o singură metrică între două perioade (de ex. lead-uri săptămâna aceasta față de
       săptămâna trecută). period_a este perioada evaluată (de obicei cea mai recentă), period_b

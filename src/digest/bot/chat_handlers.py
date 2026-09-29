@@ -14,7 +14,13 @@ from aiogram.types import Message, User
 from anthropic import AsyncAnthropic
 
 from digest.chat.log import AskedQuestion, previous_exchange, questions_since, record_question
-from digest.chat.loop import CANNOT_ANSWER_NOW_TEXT, ChatAnswer, answer_question, call_label
+from digest.chat.loop import (
+    CANNOT_ANSWER_NOW_TEXT,
+    QUESTION_DEADLINE_SECONDS,
+    ChatAnswer,
+    answer_question,
+    call_label,
+)
 from digest.chat.state import chat_enabled
 from digest.chat.tools import ToolData
 from digest.config import ChatSettings
@@ -27,9 +33,6 @@ from digest.snapshot import describe_error
 logger = logging.getLogger(__name__)
 
 DAILY_LIMIT_TEXT = text("daily_limit")
-# Таймаут клиента на каждый запрос, а вопрос это до четырёх запросов с повторами и снапшоты:
-# без общего дедлайна группа ждала бы ответа минутами.
-QUESTION_DEADLINE_SECONDS = 60
 
 
 @dataclass(frozen=True)
@@ -79,19 +82,32 @@ def replied_bot_message_id(message: Message, me: User) -> int | None:
 REJECTED_TEXT_ALERT_LIMIT = 500
 
 
+def retry_outcome(answer: ChatAnswer) -> str:
+    if answer.status == "answered":
+        return "повтор прошёл, ответ отправлен"
+    if answer.retry_timed_out:
+        return "страж сработал, повтор не уложился в дедлайн, ответ не отправлен"
+    if answer.retry_unverified_number is None:
+        return "повтор не дал текста, ответ не отправлен"
+    return f"повтор не помог (отклонено «{answer.retry_unverified_number}»), ответ не отправлен"
+
+
+def rejected_texts(answer: ChatAnswer) -> str:
+    # Инструменты не отдают данных клиентов, поэтому текст модели в ops допустим. Два текста
+    # делят один лимит поровну, чтобы второй не выпал целиком за длинным первым.
+    first = answer.rejected_text or ""
+    if answer.retry_rejected_text is None:
+        return first[:REJECTED_TEXT_ALERT_LIMIT]
+    half = REJECTED_TEXT_ALERT_LIMIT // 2
+    return f"{first[:half]} | Повтор: {answer.retry_rejected_text[:half]}"
+
+
 def answer_alert(question: AskedQuestion, answer: ChatAnswer) -> str | None:
     calls = ", ".join(call_label(call) for call in answer.tool_calls) or "без инструментов"
     if answer.unverified_number is not None:
-        outcome = (
-            "повтор прошёл, ответ отправлен"
-            if answer.status == "answered"
-            else "повтор не помог, ответ не отправлен"
-        )
-        # Инструменты не отдают данных клиентов, поэтому текст модели в ops допустим.
-        rejected_text = (answer.rejected_text or "")[:REJECTED_TEXT_ALERT_LIMIT]
         return (
-            f"Chat: страж отклонил число «{answer.unverified_number}», {outcome}. "
-            f"Вопрос: {question.text}. Инструменты: {calls}. Текст модели: {rejected_text}"
+            f"Chat: страж отклонил число «{answer.unverified_number}», {retry_outcome(answer)}. "
+            f"Вопрос: {question.text}. Инструменты: {calls}. Текст модели: {rejected_texts(answer)}"
         )
     if answer.status in ("max_tokens", "refusal"):
         return f"Chat: ответ модели не получен ({answer.status}). Вопрос: {question.text}."
@@ -158,8 +174,9 @@ async def answer_in_group(
     context_question_id: int | None = None
     # Единственное место, где ловится сбой вопроса: группа получает отказ без цифр, вопрос
     # пишется в журнал и входит в дневной лимит (токены уже потрачены), ops получает алерт.
+    deadline = asyncio.get_running_loop().time() + QUESTION_DEADLINE_SECONDS
     try:
-        async with asyncio.timeout(QUESTION_DEADLINE_SECONDS):
+        async with asyncio.timeout_at(deadline):
             previous = await previous_exchange(
                 deps.engine,
                 deps.tenant_id,
@@ -175,9 +192,9 @@ async def answer_in_group(
                 deps.config,
                 deps.lead_links,
             )
-            answer = await answer_question(
-                question.text, chat.anthropic_client, chat.model, data, previous
-            )
+        answer = await answer_question(
+            question.text, chat.anthropic_client, chat.model, data, previous, deadline
+        )
         sent = await message.reply(answer.text)
     except Exception as error:
         logger.error("chat question failed", extra={"error": describe_error(error)})

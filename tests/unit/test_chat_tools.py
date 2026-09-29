@@ -41,6 +41,7 @@ from factories import (
 TODAY = date(2026, 6, 3)
 END_OF_MAY = date(2026, 5, 31)
 LEAD_ID_OFFSET = 7_000_000
+KPI_NAMES_UPPER = tuple(name.upper() for name in KPI_NAMES)
 
 
 @pytest.fixture(scope="module")
@@ -179,21 +180,50 @@ async def test_manager_kpi_matches_etalon_consultant(
         "irr": "17,1%",
     }
     assert set(content["meets_target"]) == set(etalon_config.kpi.targets)
-    # Цели config/kpi.yaml: SCR 2/63 = 3,17% против 10% это −6,8 pp; ACR и IRR ниже потолка.
-    vs_target = content["vs_target"]
-    assert {name: gap for name, gap in vs_target.items() if name != "cdr"} == {
+    # Цели config/kpi.yaml: SCR 2/63 = 3,17% против 10% это −6,8 pp; CDR (76 − 13)/76 = 82,89%
+    # против 90% это −7,1 pp; ACR и IRR ниже потолка.
+    assert content["vs_target"] == {
         "scr": "−6,8 pp",
         "l2o": "−13,5 pp",
         "o2c": "−11,3 pp",
+        "cdr": "−7,1 pp",
         "plr": "+25,0 pp",
         "sc": "−14,4 pp",
         "pfr": "+1,1 pp",
         "acr": "−20,0 pp",
         "irr": "−2,9 pp",
     }
-    assert vs_target["cdr"].startswith("−7,")
     assert (content["targets_met"], content["targets_total"]) == (2, 9)
     assert [name for name, met in content["meets_target"].items() if met] == ["acr", "irr"]
+
+
+async def test_manager_without_leads_has_no_gap_to_target(
+    etalon_config: AppConfig, lead_frame: pd.DataFrame
+) -> None:
+    idle = Manager(id=990_001, name="Consultant Fără Lead-uri", showroom=None, active=True)
+    roster = ManagerRoster(managers=[*etalon_config.managers.managers, idle])
+    config = etalon_config.model_copy(update={"managers": roster})
+
+    content = await run(
+        "manager_kpi", {"manager": idle.name, "period": "luna_trecuta"}, config, lead_frame
+    )
+
+    assert content["counts"]["leads"] == 0
+    assert content["vs_target"] == dict.fromkeys(config.kpi.targets)
+    assert content["targets_met"] == 0
+
+
+def test_manager_kpi_description_names_every_ceiling_kpi(etalon_config: AppConfig) -> None:
+    # «Минус значит в пределах» верно только для KPI с потолком; список в описании сверяется с
+    # направлением целей kpi.yaml.
+    ceilings = {
+        name.upper()
+        for name, target in etalon_config.kpi.targets.items()
+        if target.direction == "lower"
+    }
+    description = etalon_config.modules.chat.tools["manager_kpi"]
+
+    assert f"({', '.join(sorted(ceilings, key=list(KPI_NAMES_UPPER).index))})" in description
 
 
 async def test_compare_periods_matches_lead_counts_of_both_windows(

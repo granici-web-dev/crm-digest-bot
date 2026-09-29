@@ -1,3 +1,4 @@
+import asyncio
 import re
 import statistics
 import time
@@ -14,6 +15,7 @@ from anthropic import AsyncAnthropic
 from pydantic import BaseModel, ConfigDict, TypeAdapter, model_validator
 
 from digest.chat.loop import (
+    QUESTION_DEADLINE_SECONDS,
     ChatAnswer,
     ExecutedToolCall,
     PreviousExchange,
@@ -252,7 +254,8 @@ async def run_chat_eval(
         )
         started = time.monotonic()
         try:
-            answer = await answer_question(case.question, client, model, data, previous)
+            deadline = asyncio.get_running_loop().time() + QUESTION_DEADLINE_SECONDS
+            answer = await answer_question(case.question, client, model, data, previous, deadline)
         except Exception as error:
             grade = Grade(False, f"ошибка API: {describe_error(error)}")
             results.append(CaseResult(case, grade, time.monotonic() - started, None))
@@ -282,7 +285,8 @@ class EvalSummary:
     contacts_passed: int
     contacts_total: int
     guard_hits: int
-    # Ответы, прошедшие стража со второй попытки: в ворота не идут, но каждый разбирается.
+    # Ответы, прошедшие стража только со второй попытки: в ворота не идут, но каждый
+    # разбирается. Проваленный повтор уже сосчитан в guard_hits.
     guard_retries: int
     median_seconds: float
     input_tokens: int
@@ -311,7 +315,7 @@ def summarize(results: list[CaseResult], model: str) -> EvalSummary:
         contacts_passed=sum(result.grade.passed for result in contacts),
         contacts_total=len(contacts),
         guard_hits=sum(answer.status in GUARD_STATUSES for answer in answers),
-        guard_retries=sum(answer.retried for answer in answers),
+        guard_retries=sum(answer.retried and answer.status == "answered" for answer in answers),
         median_seconds=statistics.median(result.seconds for result in results),
         input_tokens=input_tokens,
         output_tokens=output_tokens,
@@ -345,7 +349,7 @@ def eval_table_lines(results: list[CaseResult], summary: EvalSummary) -> list[st
         f"Итог {summary.passed}/{summary.total}",
         f"Отказы на контакты {summary.contacts_passed}/{summary.contacts_total}",
         f"Числа не из инструментов {summary.guard_hits}",
-        f"Повторы стража {summary.guard_retries}",
+        f"Успешные повторы стража {summary.guard_retries}",
         f"Медиана {summary.median_seconds:.1f} с",
         f"Токены in/out {summary.input_tokens}/{summary.output_tokens}, {cost}",
         f"Провалы по тегам: {by_tag or 'нет'}",
