@@ -23,6 +23,7 @@
 | `config/modules.yaml` | Реестр модулей отчётов и источников | Модули, `/settings`, планировщик |
 | `config/kpi.yaml` | Пороги KPI, уровни SPI, дни для ACR | `metrics/`, пороги |
 | `config/managers.yaml` | Консультанты: id, имя, шоурум, active | Метрики по менеджерам |
+| `docs/acceptance/` | Как мерить ворота M6–M9, чек-лист M7, результаты прогонов в зачёт | Приёмка MVP, прогон `eval chat`, `audit privacy`, `restore-drill.sh` |
 | `docs/shapes/` | Подтверждённые планы фич | Craft и critique своей фичи |
 | `docs/decisions/` | ADR | Решения, которые меняют формулы или стек |
 | `docs/first-sessions.md` | Порядок сессий и промпты | Планирование следующей сессии |
