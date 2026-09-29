@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -62,6 +63,21 @@ class OverdueRevenire:
             groups,
             tuple(lead_id for group in groups for lead_id in group.lead_ids),
         )
+
+
+@dataclass(frozen=True)
+class MissingFollowupGroup:
+    # None: «Fără responsabil» (консультант с not_taken или без консультанта).
+    manager_name: str | None
+    lead_count: int
+    lead_ids: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class MissingFollowupDate:
+    lead_count: int
+    groups: tuple[MissingFollowupGroup, ...]
+    lead_ids: tuple[int, ...]
 
 
 @dataclass(frozen=True)
@@ -207,6 +223,50 @@ def overdue_revenire_by_manager(
         groups,
         lead_id_tuple(overdue["lead_id"]),
     )
+
+
+def missing_followup_date(
+    lead_frame: pd.DataFrame, report_date: date, config: AppConfig
+) -> MissingFollowupDate:
+    # docs/kpi-definitions.md, «Ежедневные проверки», d3 без Data revenire.
+    status_mapping = config.status_mapping
+    followup_reasons = [
+        reason_name
+        for reason_name, reason in status_mapping.categories.LOST.reasons.items()
+        if reason.followup_field is not None
+    ]
+    category = lead_frame["category"]
+    in_followup = category.eq("ACTIVE_FOLLOWUP") | (
+        category.eq("LOST") & lead_frame["loss_reason"].isin(followup_reasons)
+    )
+    created_from = datetime.combine(
+        status_mapping.leads_created_from, time(), tzinfo=ZoneInfo(status_mapping.time.timezone)
+    )
+    # Возраст от конца окна, как в d2. status_changed_at = null, если статус задан при создании
+    # (CLAUDE.md): тогда статус стоит с created_at.
+    window_end = daily_window(report_date, status_mapping.time).end
+    status_set_at = lead_frame["status_changed_at"].fillna(lead_frame["created_at"])
+    status_age_hours = (window_end - status_set_at).dt.total_seconds() / 3600
+    min_age_hours = config.modules.overdue_revenire_params.missing_followup_min_age_hours
+    reported = (
+        in_followup
+        & lead_frame["data_revenire"].isna()
+        & lead_frame["created_at"].ge(created_from)
+        & status_age_hours.gt(min_age_hours)
+    )
+    leads = oldest_first(lead_frame[reported], status_set_at[reported])
+    names = manager_names(leads, config)
+    # Порядок managers.yaml, а не по числу лидов: строка не рейтинг худших.
+    file_order = [manager.name for manager in config.managers.managers]
+    unknown_names = sorted(set(names.dropna()) - set(file_order))
+    group_names: list[str | None] = [*file_order, *unknown_names, None]
+    groups = []
+    for manager_name in group_names:
+        in_group = names.isna() if manager_name is None else names.eq(manager_name)
+        if in_group.any():
+            group_ids = lead_id_tuple(leads.loc[in_group, "lead_id"])
+            groups.append(MissingFollowupGroup(manager_name, len(group_ids), group_ids))
+    return MissingFollowupDate(len(leads), tuple(groups), lead_id_tuple(leads["lead_id"]))
 
 
 def snapshot_period(analysis_date: date, config: AppConfig) -> Period:

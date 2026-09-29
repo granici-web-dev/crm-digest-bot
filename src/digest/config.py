@@ -272,6 +272,7 @@ class StatusMapping(StrictConfigModel):
     tenant_display_name: str
     without_source_label: str
     hidden_campaign_label: str
+    leads_created_from: date
     lead_links: LeadLinkSettings
     time: TimeSettings
     raw_strip: list[str]
@@ -363,6 +364,11 @@ class UntouchedLeadsParams(StrictConfigModel):
     touch_tolerance_seconds: PositiveInt
 
 
+class OverdueRevenireParams(StrictConfigModel):
+    missing_followup_date: bool
+    missing_followup_min_age_hours: PositiveInt
+
+
 class AnomalyParams(StrictConfigModel):
     site_zero_min_average: PositiveFloat
     site_average_days: PositiveInt
@@ -440,6 +446,7 @@ class ModuleRegistry(StrictConfigModel):
         return {**self.daily, **self.weekly, **self.monthly, **self.yearly}
 
     _untouched_leads_params: UntouchedLeadsParams = PrivateAttr()
+    _overdue_revenire_params: OverdueRevenireParams = PrivateAttr()
     _anomaly_params: AnomalyParams = PrivateAttr()
     _scr_levels_params: ScrLevelsParams = PrivateAttr()
     _scr_by_source_campaign_params: ScrBySourceCampaignParams = PrivateAttr()
@@ -448,6 +455,10 @@ class ModuleRegistry(StrictConfigModel):
     @property
     def untouched_leads_params(self) -> UntouchedLeadsParams:
         return self._untouched_leads_params
+
+    @property
+    def overdue_revenire_params(self) -> OverdueRevenireParams:
+        return self._overdue_revenire_params
 
     @property
     def anomaly_params(self) -> AnomalyParams:
@@ -519,6 +530,9 @@ class ModuleRegistry(StrictConfigModel):
     def module_params_are_parsed(self) -> Self:
         # Один разбор при загрузке: опечатка в пороге роняет старт, а не отчёт в 19:30.
         self._untouched_leads_params = self.parsed_params("untouched_leads", UntouchedLeadsParams)
+        self._overdue_revenire_params = self.parsed_params(
+            "overdue_revenire", OverdueRevenireParams
+        )
         self._anomaly_params = self.parsed_params("anomalies", AnomalyParams)
         self._scr_levels_params = self.parsed_params("scr_with_targets", ScrLevelsParams)
         self._scr_by_source_campaign_params = self.parsed_params(

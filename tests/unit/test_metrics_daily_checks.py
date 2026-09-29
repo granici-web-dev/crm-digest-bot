@@ -9,6 +9,8 @@ from digest.metrics.daily import LEAD_ROWS, PreviousSnapshot, seller_format_coun
 from digest.metrics.daily_checks import (
     Anomalies,
     IrelevantSpike,
+    MissingFollowupDate,
+    MissingFollowupGroup,
     OverdueGroup,
     OverdueRevenire,
     SameWeekdayComparison,
@@ -16,6 +18,7 @@ from digest.metrics.daily_checks import (
     UntouchedGroup,
     UntouchedLeads,
     anomalies,
+    missing_followup_date,
     overdue_revenire_by_manager,
     same_weekday_comparison,
     stale_offers,
@@ -578,6 +581,121 @@ def test_same_weekday_window_crosses_dst(app_config: AppConfig) -> None:
     assert (result.leads, result.leads_week_ago) == (2, 1)
 
 
+# d3: без Data revenire
+
+REVENIRE_1 = {"category": "ACTIVE_FOLLOWUP", "status_name": "Revenire 1"}
+STAND_BY = {"category": "LOST", "loss_reason": "STAND_BY", "status_name": "Stand BY"}
+
+
+def followup_lead(lead_id: int, status_age: timedelta, **overrides: Any) -> dict[str, Any]:
+    return make_snapshot_row(
+        lead_id=lead_id,
+        status_changed_at=WINDOW_END - status_age,
+        **{"created_at": datetime(2026, 9, 1, 12, 0, tzinfo=BUCHAREST), **REVENIRE_1, **overrides},
+    )
+
+
+def missing(rows: list[dict[str, Any]], config: AppConfig) -> MissingFollowupDate:
+    return missing_followup_date(frame(rows, config), REPORT_DATE, config)
+
+
+@pytest.mark.parametrize(
+    ("status_age", "reported"),
+    [
+        (timedelta(hours=24), False),
+        (timedelta(hours=24, seconds=1), True),
+    ],
+    ids=["exactly_24h", "24h_and_1s"],
+)
+def test_followup_without_data_revenire_is_reported_only_after_24_hours(
+    app_config: AppConfig, status_age: timedelta, reported: bool
+) -> None:
+    result = missing([followup_lead(1, status_age)], app_config)
+
+    assert result.lead_ids == ((1,) if reported else ())
+
+
+@pytest.mark.parametrize(
+    ("created_age", "reported"),
+    [(timedelta(hours=23), False), (timedelta(hours=25), True)],
+    ids=["created_23h_ago", "created_25h_ago"],
+)
+def test_null_status_changed_at_counts_age_from_created_at(
+    app_config: AppConfig, created_age: timedelta, reported: bool
+) -> None:
+    row = make_snapshot_row(
+        lead_id=1, created_at=WINDOW_END - created_age, status_changed_at=None, **REVENIRE_1
+    )
+
+    assert missing([row], app_config).lead_ids == ((1,) if reported else ())
+
+
+def test_only_stand_by_and_revenire_statuses_are_checked(app_config: AppConfig) -> None:
+    week = timedelta(days=7)
+    rows = [
+        followup_lead(1, week),
+        followup_lead(2, week, **STAND_BY),
+        followup_lead(3, week, category="ACTIVE", status_name="IN PROCES"),
+        followup_lead(
+            4, week, category="LOST", loss_reason="NU_RASPUNS", status_name="NU A RASPUNS"
+        ),
+        followup_lead(5, week, category="PARTNERSHIP", status_name="DESIGNER"),
+        followup_lead(6, week, category="WON", status_name="Clienți"),
+        followup_lead(7, week, category="UNMAPPED", status_name=None),
+    ]
+
+    assert missing(rows, app_config).lead_ids == (1, 2)
+
+
+def test_lead_with_data_revenire_is_not_reported(app_config: AppConfig) -> None:
+    rows = [followup_lead(1, timedelta(days=7), data_revenire=date(2026, 10, 1))]
+
+    assert missing(rows, app_config) == MissingFollowupDate(0, (), ())
+
+
+def test_lead_created_before_leads_created_from_is_not_checked(app_config: AppConfig) -> None:
+    rows = [
+        followup_lead(
+            1, timedelta(days=7), created_at=datetime(2026, 5, 31, 23, 59, tzinfo=BUCHAREST)
+        ),
+        followup_lead(
+            2, timedelta(days=7), created_at=datetime(2026, 6, 1, 0, 0, tzinfo=BUCHAREST)
+        ),
+    ]
+
+    assert missing(rows, app_config).lead_ids == (2,)
+
+
+def test_test_account_lead_is_not_checked(app_config: AppConfig) -> None:
+    rows = [followup_lead(1, timedelta(days=7), assigned_to_id=4, assigned_to_name="Potinga Dima")]
+
+    assert missing(rows, app_config) == MissingFollowupDate(0, (), ())
+
+
+def test_groups_follow_managers_yaml_order_and_not_taken_is_last(app_config: AppConfig) -> None:
+    raileanu = {"assigned_to_id": 13, "assigned_to_name": "Raileanu  Leon"}
+    roibu = {"assigned_to_id": 8, "assigned_to_name": "Roibu Valeria"}
+    rows = [
+        followup_lead(1, timedelta(days=2), **raileanu),
+        followup_lead(2, timedelta(days=3), **raileanu),
+        followup_lead(3, timedelta(days=5), **roibu),
+        followup_lead(4, timedelta(days=9), assigned_to_id=7, assigned_to_name="Marketing Sofa"),
+        followup_lead(5, timedelta(days=4), assigned_to_id=None, assigned_to_name=None),
+        followup_lead(6, timedelta(days=6), assigned_to_id=2, assigned_to_name="Palega Andrei"),
+    ]
+
+    assert missing(rows, app_config) == MissingFollowupDate(
+        lead_count=6,
+        groups=(
+            MissingFollowupGroup("Palega Andrei", 1, (6,)),
+            MissingFollowupGroup("Roibu Valeria", 1, (3,)),
+            MissingFollowupGroup("Raileanu  Leon", 2, (2, 1)),
+            MissingFollowupGroup(None, 2, (4, 5)),
+        ),
+        lead_ids=(4, 6, 3, 5, 2, 1),
+    )
+
+
 # Пустой кадр
 
 
@@ -588,6 +706,9 @@ def test_every_check_is_empty_on_empty_frame(app_config: AppConfig) -> None:
     assert untouched_leads(lead_frame, REPORT_DATE, app_config) == UntouchedLeads(0, None, (), ())
     assert overdue_revenire_by_manager(lead_frame, REPORT_DATE, app_config) == OverdueRevenire(
         0, None, (), ()
+    )
+    assert missing_followup_date(lead_frame, REPORT_DATE, app_config) == MissingFollowupDate(
+        0, (), ()
     )
     no_offers = {"Brașov": 0, "București": 0, "Cluj": 0, None: 0}
     assert stale_offers(lead_frame, yesterday, REPORT_DATE, app_config) == StaleOffers(

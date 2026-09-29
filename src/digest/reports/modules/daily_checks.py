@@ -1,7 +1,9 @@
 import pandas as pd
+from markupsafe import Markup
 
 from digest.metrics.daily_checks import (
     anomalies,
+    missing_followup_date,
     overdue_revenire_by_manager,
     same_weekday_comparison,
     stale_offers,
@@ -24,7 +26,23 @@ def overdue_revenire_report(lead_frame: pd.DataFrame, context: ReportContext) ->
     links = context.lead_links.block_lines(
         overdue.lead_ids, [group.lead_ids for group in overdue.groups]
     )
-    return ModuleResult(render("overdue_revenire", overdue=overdue, links=links))
+    missing = None
+    missing_links: list[Markup] = []
+    if context.config.modules.overdue_revenire_params.missing_followup_date:
+        missing = missing_followup_date(lead_frame, context.report_date, context.config)
+        # Отдельная строка со своим лимитом ссылок: иначе при 10+ просроченных она их не получит.
+        missing_links = context.lead_links.block_lines(
+            missing.lead_ids, [group.lead_ids for group in missing.groups]
+        )
+    return ModuleResult(
+        render(
+            "overdue_revenire",
+            overdue=overdue,
+            links=links,
+            missing=missing,
+            missing_links=missing_links,
+        )
+    )
 
 
 def stale_offers_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
