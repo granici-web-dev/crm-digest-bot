@@ -145,6 +145,39 @@ async def test_forbidden_clients_key_without_message_names_clients_key(
 
 
 @respx.mock
+async def test_check_key_sends_one_page_of_one_with_all_lifecycles(
+    mefi_client: MefiClient,
+) -> None:
+    leads_route = respx.post(SEARCH_URL).respond(json=make_search_page([make_lead()], total=1))
+    clients_route = respx.post(CLIENTS_SEARCH_URL).respond(
+        json=make_search_page([make_client()], total=1)
+    )
+
+    await mefi_client.check_key("/leads/search")
+    await mefi_client.check_key("/clients/search")
+
+    leads_body = json.loads(leads_route.calls.last.request.content)
+    clients_body = json.loads(clients_route.calls.last.request.content)
+    assert (leads_body["filters"], leads_body["per_page"]) == (
+        {"lifecycle": ["active", "lost", "junk"]},
+        1,
+    )
+    assert (clients_body["filters"], clients_body["per_page"]) == ({}, 1)
+    assert (leads_route.call_count, clients_route.call_count) == (1, 1)
+
+
+@respx.mock
+async def test_check_key_raises_key_rejected_on_401(mefi_client: MefiClient) -> None:
+    respx.post(SEARCH_URL).respond(401, json={"success": False, "message": "Autentificare eșuată"})
+
+    with pytest.raises(MefiKeyRejected) as raised:
+        await mefi_client.check_key("/leads/search")
+
+    assert "leads:read" in str(raised.value)
+    assert "MEFI_API_KEY" in str(raised.value)
+
+
+@respx.mock
 async def test_pagination_dedupes_by_id(mefi_client: MefiClient) -> None:
     respx.post(SEARCH_URL).mock(
         side_effect=[

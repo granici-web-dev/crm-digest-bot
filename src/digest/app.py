@@ -33,7 +33,7 @@ from digest.db.lead_frame import previous_success_snapshot_date
 from digest.db.schema import schedules
 from digest.delivery.ops import OpsChannel, notify_ops
 from digest.delivery.telegram import create_bot
-from digest.mefi.client import MefiClient, create_mefi_http_client
+from digest.mefi.client import MefiClient, MefiKeyRejected, create_mefi_http_client
 from digest.reports.lead_links import LeadLinks
 from digest.reports.modules import IMPLEMENTED_MODULES
 from digest.reports.periods import ReportLevel, report_period
@@ -55,6 +55,8 @@ logger = logging.getLogger(__name__)
 
 CHAT_API_TIMEOUT_SECONDS = 30
 CHAT_API_MAX_RETRIES = 2
+# Два запроса через пейсер 1,2 с; при висящем mefi старт не ждёт дольше.
+MEFI_KEY_CHECK_TIMEOUT_SECONDS = 20
 
 # Отчёт, опоздавший до получаса, руководству ещё полезен; позже его отправляют вручную.
 REPORT_MISFIRE_GRACE = timedelta(minutes=30)
@@ -389,8 +391,33 @@ def schedule_snapshot_jobs(
     )
 
 
-def startup_announcement(app_version: str, dry_run: bool) -> str:
-    return f"Бот запущен, версия {app_version}, DRY_RUN={int(dry_run)}."
+async def mefi_keys_line(snapshot_sources: SnapshotSources) -> str:
+    # Отозванный ключ виден сразу после рестарта, а не в 19:00. Старт проверка не блокирует:
+    # любой сбой кроме отказа ключа это «не проверен», дальше всё идёт как без неё.
+    checks = [
+        ("leads", snapshot_sources.leads_client, "/leads/search"),
+        ("clients", snapshot_sources.clients_client, "/clients/search"),
+    ]
+    deadline = asyncio.get_running_loop().time() + MEFI_KEY_CHECK_TIMEOUT_SECONDS
+    marks: list[str] = []
+    rejections: list[str] = []
+    for label, client, path in checks:
+        try:
+            async with asyncio.timeout_at(deadline):
+                await client.check_key(path)
+            marks.append(f"{label} ✓")
+        except MefiKeyRejected as error:
+            marks.append(f"{label} ✗")
+            rejections.append(str(error))
+        except Exception as error:
+            logger.warning("mefi key check failed", extra={"error": describe_error(error)})
+            marks.append(f"{label} не проверен ({describe_error(error)})")
+    line = f"Ключи mefi: {', '.join(marks)}."
+    return "\n".join([f"⚠️ {line}" if rejections else line, *rejections])
+
+
+def startup_announcement(app_version: str, dry_run: bool, mefi_keys: str) -> str:
+    return f"Бот запущен, версия {app_version}, DRY_RUN={int(dry_run)}.\n{mefi_keys}"
 
 
 def create_anthropic_client(app_settings: Settings) -> AsyncAnthropic | None:
@@ -433,7 +460,10 @@ async def run_app(engine: AsyncEngine, config: AppConfig, app_settings: Settings
     for level, schedule in schedules_by_level.items():
         if schedule.enabled:
             reschedule(level, schedule.cron)
-    await notify_ops(deps.ops, startup_announcement(app_settings.app_version, app_settings.dry_run))
+    mefi_keys = await mefi_keys_line(snapshot_sources)
+    await notify_ops(
+        deps.ops, startup_announcement(app_settings.app_version, app_settings.dry_run, mefi_keys)
+    )
     schedule_alert = nonstandard_schedule_alert(config, schedules_by_level)
     if schedule_alert is not None:
         await notify_ops(deps.ops, schedule_alert)

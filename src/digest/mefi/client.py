@@ -254,6 +254,12 @@ class MefiClient:
             range_shortfalls=sorted(range_shortfalls, key=lambda shortfall: shortfall.created_from),
         )
 
+    async def check_key(self, path: str) -> None:
+        # Одна запись на странице: проверяется только ключ. Пустой filters лидов всё равно не
+        # отправляем (CLAUDE.md, ловушки mefi), у клиентов пустой отдаёт все состояния.
+        filters = {"lifecycle": ["active", "lost", "junk"]} if path == "/leads/search" else {}
+        await self._search_page(path, filters, 1, 0, sort="created_at", per_page=1)
+
     async def _search_page(
         self,
         path: str,

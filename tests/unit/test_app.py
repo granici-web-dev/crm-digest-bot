@@ -1,12 +1,17 @@
+import asyncio
 from zoneinfo import ZoneInfo
 
 import httpx
+import pytest
+import respx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from digest.app import (
     StoredSchedule,
     default_schedules,
+    mefi_keys_line,
     nonstandard_schedule_alert,
     schedule_report_job,
     schedule_snapshot_jobs,
@@ -14,20 +19,78 @@ from digest.app import (
 )
 from digest.config import AppConfig
 from digest.delivery.ops import OpsChannel
-from digest.mefi.client import MefiClient
+from digest.mefi.client import MefiClient, RequestPacer, create_mefi_http_client
 from digest.reports.modules import IMPLEMENTED_MODULES
 from digest.reports.periods import ReportLevel
 from digest.reports.runner import ReportDeps
 from digest.snapshot import SnapshotSources
-from factories import TEST_CONTACT_HASH_KEY, make_lead_links
+from factories import (
+    TEST_CONTACT_HASH_KEY,
+    FakeTime,
+    make_client,
+    make_lead_links,
+    make_search_page,
+)
 from fakes import recording_bot
 
 
-def test_startup_announcement_contains_version_and_dry_run_flag() -> None:
-    assert startup_announcement("abc1234", dry_run=True) == (
-        "Бот запущен, версия abc1234, DRY_RUN=1."
+def test_startup_announcement_contains_keys_line() -> None:
+    keys = "Ключи mefi: leads ✓, clients ✓."
+
+    assert startup_announcement("abc1234", dry_run=True, mefi_keys=keys) == (
+        "Бот запущен, версия abc1234, DRY_RUN=1.\nКлючи mefi: leads ✓, clients ✓."
     )
-    assert startup_announcement("abc1234", dry_run=False).endswith("DRY_RUN=0.")
+    assert "DRY_RUN=0." in startup_announcement("abc1234", dry_run=False, mefi_keys=keys)
+
+
+MEFI_BASE_URL = "https://mefi.test/api/v1"
+
+
+def fast_snapshot_sources(http_client: httpx.AsyncClient) -> SnapshotSources:
+    fake_time = FakeTime()
+    pacer = RequestPacer(1.2, sleep=fake_time.sleep, clock=fake_time.clock)
+    return SnapshotSources(
+        MefiClient(http_client, pacer), MefiClient(http_client, pacer), TEST_CONTACT_HASH_KEY
+    )
+
+
+@respx.mock
+async def test_startup_line_marks_rejected_key_and_keeps_other() -> None:
+    respx.post(f"{MEFI_BASE_URL}/leads/search").respond(
+        401, json={"success": False, "message": "Autentificare eșuată"}
+    )
+    respx.post(f"{MEFI_BASE_URL}/clients/search").respond(
+        json=make_search_page([make_client()], total=1)
+    )
+
+    async with create_mefi_http_client(MEFI_BASE_URL, SecretStr("test-key")) as http_client:
+        line = await mefi_keys_line(fast_snapshot_sources(http_client))
+
+    first_line, rejection = line.split("\n")
+    assert first_line == "⚠️ Ключи mefi: leads ✗, clients ✓."
+    assert rejection.startswith("mefi отклонил ключ leads:read (Autentificare eșuată)")
+    assert "MEFI_API_KEY" in rejection
+
+
+@respx.mock
+async def test_startup_line_reports_unchecked_key_on_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def hang(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(10)
+        raise AssertionError("unreachable")
+
+    monkeypatch.setattr("digest.app.MEFI_KEY_CHECK_TIMEOUT_SECONDS", 0.05)
+    respx.post(f"{MEFI_BASE_URL}/leads/search").mock(side_effect=hang)
+    respx.post(f"{MEFI_BASE_URL}/clients/search").mock(side_effect=hang)
+
+    async with create_mefi_http_client(MEFI_BASE_URL, SecretStr("test-key")) as http_client:
+        async with asyncio.timeout(1):
+            line = await mefi_keys_line(fast_snapshot_sources(http_client))
+
+    assert line == (
+        "Ключи mefi: leads не проверен (TimeoutError), clients не проверен (TimeoutError)."
+    )
 
 
 async def test_report_and_snapshot_jobs_tolerate_late_start(app_config: AppConfig) -> None:
