@@ -445,6 +445,7 @@ async def test_source_breakdown_campaign_label_hides_phone(
     campaigns.loc[campaigns.index[:3], "utm_campanie"] = "Promo +40700000001"
     campaigns.loc[campaigns.index[3:5], "utm_campanie"] = "Promo 30"
     campaigns.loc[campaigns.index[5:6], "utm_campanie"] = "Toamna"
+    campaigns.loc[campaigns.index[6:7], "utm_campanie"] = "15"
 
     outcome = await run_tool(
         "source_breakdown",
@@ -454,7 +455,7 @@ async def test_source_breakdown_campaign_label_hides_phone(
 
     keys = [row["key"] for row in outcome.content["rows"]]
     hidden = etalon_config.status_mapping.hidden_campaign_label
-    assert sorted(keys) == sorted([hidden, "Promo 30", "Toamna"])
+    assert sorted(keys) == sorted([hidden, "Promo 30", "Toamna", "15"])
     assert "+40" not in json.dumps(outcome.content, ensure_ascii=False)
     assert outcome.masked_names == ("Promo 30",)
 

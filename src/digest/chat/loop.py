@@ -17,6 +17,7 @@ from digest.chat.tools import (
     ToolData,
     ToolOutcome,
     date_label,
+    is_masked_name,
     run_tool,
     tool_definitions,
 )
@@ -168,12 +169,8 @@ def name_mask_pattern(names: Iterable[str]) -> re.Pattern[str]:
     # в ответе давало отказ. Регистр учитывается (имена mefi не нормализуются), а после «Data
     # revenire» идёт дата или число дней, не статус: иначе «Data Revenire 3 octombrie» прятала бы
     # от стража «3».
-    with_digits = sorted(
-        (name for name in names if any(character.isdigit() for character in name)),
-        key=len,
-        reverse=True,
-    )
-    alternatives = [rf"(?<!(?i:data)\s)(?<!\w){re.escape(name)}(?!\w)" for name in with_digits]
+    masked = sorted((name for name in names if is_masked_name(name)), key=len, reverse=True)
+    alternatives = [rf"(?<!(?i:data)\s)(?<!\w){re.escape(name)}(?!\w)" for name in masked]
     return re.compile("|".join(alternatives) or "(?!)")
 
 

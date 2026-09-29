@@ -19,6 +19,7 @@ from digest.chat.loop import (
     checked_answer,
     config_mask_names,
     first_unverified_number,
+    name_mask_pattern,
     system_prompt,
 )
 from digest.chat.tools import ALL_MANAGERS, ToolData, ToolOutcome, tool_definitions
@@ -696,6 +697,39 @@ def test_guard_masks_campaign_label_digits(app_config: AppConfig) -> None:
     assert rejected("Campania Promo 30 a adus 7 lead-uri.") is None
     assert rejected("Campania a adus 30 lead-uri.") == "30"
     assert rejected("Campania promo 30 a adus 7 lead-uri.") == "30"
+
+
+def test_numeric_campaign_label_is_checked_as_a_number(app_config: AppConfig) -> None:
+    # Подпись из одних цифр не маскируется, даже если попала в masked_names: иначе маска вырезала
+    # бы «15» из «15,0%» и «2026» из даты подписи.
+    by_campaign = ExecutedToolCall(
+        "source_breakdown",
+        {"period": "luna_curenta", "by": "utm_campanie"},
+        ToolOutcome(
+            {"rows": [{"key": "15", "leads": 7, "irr": "15,0%"}, {"key": "2026", "leads": 3}]},
+            is_error=False,
+            scope="Perioada: 28.09.2026",
+            snapshot_dates=(TODAY,),
+            masked_names=("15", "2026"),
+        ),
+    )
+
+    def rejected(model_text: str) -> str | None:
+        return checked_answer(
+            "?",
+            model_text,
+            (by_campaign,),
+            0,
+            0,
+            make_lead_links(app_config.status_mapping),
+            config_mask_names(app_config),
+        ).unverified_number
+
+    assert name_mask_pattern(["15", "2026", "Promo 30"]).pattern.count("Promo") == 1
+    assert "15" not in name_mask_pattern(["15", "2026"]).pattern
+    assert rejected("Campania 15 are 7 lead-uri și IRR 15,0%; date din 28.09.2026.") is None
+    assert rejected("Campania 15 are IRR 15,5%.") == "15,5%"
+    assert rejected("Campania 16 are 7 lead-uri.") == "16"
 
 
 def test_source_name_in_results_allows_its_count_but_not_its_year(app_config: AppConfig) -> None:

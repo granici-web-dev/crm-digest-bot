@@ -124,6 +124,14 @@ class NoDataError(Exception):
     pass
 
 
+def is_masked_name(name: str) -> bool:
+    # Маскируется только имя с буквой и цифрой. Подпись из одних цифр («15», «2026») читается как
+    # число, и страж сверяет её как число: маска вырезала бы её из «15,0%» и «28.09.2026».
+    return any(character.isdigit() for character in name) and any(
+        character.isalpha() for character in name
+    )
+
+
 def context_config(info: ValidationInfo) -> AppConfig:
     assert info.context is not None
     config: AppConfig = info.context["config"]
@@ -808,7 +816,7 @@ async def source_breakdown(data: ToolData, arguments: SourceBreakdownArguments) 
         content["key_share"] = percent_one_decimal(breakdown.key_share)
     return replace(
         outcome(content, frame),
-        masked_names=tuple(key for key in keys if any(character.isdigit() for character in key)),
+        masked_names=tuple(key for key in keys if is_masked_name(key)),
     )
 
 
