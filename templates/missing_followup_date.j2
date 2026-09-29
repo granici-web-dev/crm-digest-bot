@@ -1,9 +1,10 @@
 {% from "_names.j2" import manager %}
-{# Отдельный блок d3 со своим лимитом ссылок; missing_links: строка ссылок на каждую группу. #}
+{# Отдельный блок d3 со своим лимитом ссылок, заголовок в <b>: по нему аудит приватности режет
+   блоки (docs/shapes/2026-09-29-acceptance.md). missing_links: строка ссылок на каждую группу. #}
 {% if missing.field_unavailable %}
 Date Data revenire indisponibile
 {% elif missing.lead_count %}
-📅 Fără Data revenire: {{ missing.lead_count }}
+<b>📅 Fără Data revenire: {{ missing.lead_count }}</b>
 {% for group in missing.groups %}
 {{ manager(group.manager_name) }} {{ group.lead_count }}{% if missing_links[loop.index0] %}: {{ missing_links[loop.index0] }}{% endif %}
 

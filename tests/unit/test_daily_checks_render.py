@@ -155,7 +155,7 @@ def test_overdue_and_missing_blocks_each_link_ten_leads() -> None:
         missing_links=missing_links(MISSING),
     )
 
-    overdue_block, missing_block = text.split("📅 Fără Data revenire: 13")
+    overdue_block, missing_block = text.split("<b>📅 Fără Data revenire: 13</b>")
     assert overdue_block.count("<a href=") == 10
     assert missing_block.count("<a href=") == 10
     assert overdue_block.count("și încă 2") == 1
@@ -259,7 +259,7 @@ def d3_result(config: AppConfig, data_revenire_problem: str | None = None) -> Mo
 
 
 def test_d3_lists_missing_followup_date_when_param_is_on(app_config: AppConfig) -> None:
-    assert "📅 Fără Data revenire: 1\nDragoi Mihaela 1: " in d3_result(app_config).text
+    assert "<b>📅 Fără Data revenire: 1</b>\nDragoi Mihaela 1: " in d3_result(app_config).text
 
 
 def test_d3_alerts_ops_when_data_revenire_is_unreadable_for_every_lead(

@@ -171,7 +171,7 @@ async def test_daily_report_contains_d1_to_d6_in_order(harness: Harness) -> None
             "<b>TOTAL</b>",
             "⚠ Lead-uri neatinse sau nepreluate: 2 (cel mai vechi: 9h)\n"
             f"Dragoi Mihaela 2 (9h): {link(1)}, {link(2)}",
-            "⏰ Reveniri restante: 1 (cea mai veche: 3 zile)\n"
+            "<b>⏰ Reveniri restante: 1</b> (cea mai veche: 3 zile)\n"
             f"Dragoi Mihaela 1 (3 zile): {link(2)}",
             "Oferte blocate >14 zile: nu",
             "Anomalii: nu",

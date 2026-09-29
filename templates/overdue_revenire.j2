@@ -3,7 +3,7 @@
 {% macro days(count) %}{{ count }} {% if count == 1 %}zi{% elif count % 100 == 0 or count % 100 >= 20 %}de zile{% else %}zile{% endif %}{% endmacro %}
 {# links: строка ссылок на каждую группу, пустая, если лиды группы не попали в лимит блока. #}
 {% if overdue.lead_count %}
-⏰ Reveniri restante: {{ overdue.lead_count }} (cea mai veche: {{ days(overdue.max_days_overdue) }})
+<b>⏰ Reveniri restante: {{ overdue.lead_count }}</b> (cea mai veche: {{ days(overdue.max_days_overdue) }})
 {% for group in overdue.groups %}
 {{ manager(group.manager_name) }} {{ group.lead_count }} ({{ days(group.max_days_overdue) }}){% if links[loop.index0] %}: {{ links[loop.index0] }}{% endif %}
 
