@@ -415,6 +415,12 @@ def test_system_prompt_compare_rule_without_periods() -> None:
     assert "nu le repeta" in rule
 
 
+def test_system_prompt_names_default_period_for_touches() -> None:
+    [rule] = [line for line in system_prompt(TODAY).splitlines() if "manager_touches, dacă" in line]
+    assert "saptamana_curenta" in rule
+    assert "spui în răspuns" in rule
+
+
 def test_prompt_asks_for_consultant_only_where_tool_requires_one(app_config: AppConfig) -> None:
     # Eval 29.09: на «без Data revenire» модель спрашивала консультанта, хотя
     # overdue_followups принимает toti.
