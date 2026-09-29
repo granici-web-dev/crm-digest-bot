@@ -70,7 +70,7 @@ async def level_cron(deps: ReportDeps, level: SettingsLevel) -> str:
 
 
 async def load_level_menu(deps: ReportDeps, level: SettingsLevel) -> Menu:
-    overrides = await module_enabled_overrides(deps)
+    overrides = await module_enabled_overrides(deps.reader)
     enabled_by_module = {
         module_id: overrides.get(module_id, module.enabled)
         for module_id, module in modules_of_level(deps.config.modules, level).items()
@@ -116,7 +116,7 @@ async def switch_module(
         await callback.answer(reason, show_alert=True)
         return
     module = deps.config.modules.all_modules[module_id]
-    was_enabled = (await module_enabled_overrides(deps)).get(module_id, module.enabled)
+    was_enabled = (await module_enabled_overrides(deps.reader)).get(module_id, module.enabled)
     if was_enabled == callback_data.enabled:
         await callback.answer()
         return

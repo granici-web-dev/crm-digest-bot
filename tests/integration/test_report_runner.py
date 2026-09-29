@@ -25,7 +25,7 @@ from digest.db.schema import (
 from digest.delivery.ops import OpsChannel
 from digest.reports.context import ModuleResult, ReportContext, ReportDocument, ReportPhoto
 from digest.reports.modules import IMPLEMENTED_MODULES, ReportModuleFunction
-from digest.reports.runner import ReportDeps, run_report, runnable_modules
+from digest.reports.runner import ReportDeps, run_report, select_modules
 from factories import BUCHAREST, lead_snapshots_row, make_lead_links, make_snapshot_row
 from fakes import recording_bot
 
@@ -635,10 +635,10 @@ async def test_module_needing_calibrated_kpi_is_skipped_even_if_enabled_in_db(
             insert(module_settings).values(tenant_id=TENANT_ID, module_id="m6", enabled=True)
         )
 
-    runnable = await runnable_modules(harness.deps, "monthly")
+    selection = await select_modules(harness.deps.reader, "monthly")
 
-    assert "m6" not in [module_id for module_id, _ in runnable]
-    assert any("m6" in alert and "calibrated" in alert for alert in harness.ops_texts)
+    assert "m6" not in [module_id for module_id, _ in selection.runnable]
+    assert any("m6" in alert and "calibrated" in alert for alert in selection.alerts)
 
 
 async def test_seed_defaults_keeps_existing_values(

@@ -61,6 +61,15 @@ ReportRunOutcome = Literal["success", "partial", "failed", "already_sent", "in_p
 
 
 @dataclass(frozen=True)
+class ReportReader:
+    engine: AsyncEngine
+    config: AppConfig
+    tenant_id: str
+    modules: Mapping[str, ReportModuleFunction]
+    lead_links: LeadLinks
+
+
+@dataclass(frozen=True)
 class ReportDeps:
     engine: AsyncEngine
     config: AppConfig
@@ -70,6 +79,10 @@ class ReportDeps:
     report_chat_id: int
     modules: Mapping[str, ReportModuleFunction]
     lead_links: LeadLinks
+
+    @property
+    def reader(self) -> ReportReader:
+        return ReportReader(self.engine, self.config, self.tenant_id, self.modules, self.lead_links)
 
 
 @dataclass(frozen=True)
@@ -90,8 +103,23 @@ class BuiltReport:
     text: str
     status: Literal["success", "partial"]
     snapshot_date: date
+    blocks: tuple[ModuleBlock, ...] = ()
+    # Сборка ничего не шлёт: алерты модулей отправляет run_report, аудит их только печатает.
+    alerts: tuple[str, ...] = ()
     photos: tuple[ReportPhoto, ...] = ()
     documents: tuple[ReportDocument, ...] = ()
+
+
+@dataclass(frozen=True)
+class ReportInputs:
+    lead_frame: pd.DataFrame
+    context: ReportContext
+    late_snapshot_at: datetime | None
+
+
+def report_snapshot_date(period: Period, timezone: ZoneInfo) -> date:
+    # Снапшот за последний день периода: weekly в понедельник читает воскресный снапшот.
+    return (period.end - timedelta(microseconds=1)).astimezone(timezone).date()
 
 
 def period_label(level: ReportLevel, period: Period) -> str:
@@ -177,11 +205,11 @@ async def record_message_ids(deps: ReportDeps, run_id: int, message_ids: list[in
         )
 
 
-async def module_enabled_overrides(deps: ReportDeps) -> dict[str, bool]:
-    async with deps.engine.connect() as connection:
+async def module_enabled_overrides(reader: ReportReader) -> dict[str, bool]:
+    async with reader.engine.connect() as connection:
         rows = await connection.execute(
             select(module_settings.c.module_id, module_settings.c.enabled).where(
-                module_settings.c.tenant_id == deps.tenant_id
+                module_settings.c.tenant_id == reader.tenant_id
             )
         )
         return {module_id: enabled for module_id, enabled in rows}
@@ -203,15 +231,15 @@ class ModuleSelection:
     alerts: list[str]
 
 
-async def select_modules(deps: ReportDeps, level: ReportLevel) -> ModuleSelection:
-    overrides = await module_enabled_overrides(deps)
+async def select_modules(reader: ReportReader, level: ReportLevel) -> ModuleSelection:
+    overrides = await module_enabled_overrides(reader)
     runnable: list[tuple[str, ReportModuleFunction]] = []
     alerts: list[str] = []
     not_implemented: list[str] = []
-    for module_id, module in modules_of_level(deps.config.modules, level).items():
+    for module_id, module in modules_of_level(reader.config.modules, level).items():
         if not overrides.get(module_id, module.enabled):
             continue
-        blockers = deps.config.module_blockers(module_id)
+        blockers = reader.config.module_blockers(module_id)
         if blockers.disconnected_sources:
             alerts.append(
                 f"Модуль {module_id} включён, но источники "
@@ -222,25 +250,16 @@ async def select_modules(deps: ReportDeps, level: ReportLevel) -> ModuleSelectio
                 f"Модуль {module_id} включён, но требует kpi.yaml status: "
                 f"{blockers.missing_kpi_status}: пропущен."
             )
-        elif module_id not in deps.modules:
+        elif module_id not in reader.modules:
             not_implemented.append(module_id)
         else:
-            runnable.append((module_id, deps.modules[module_id]))
+            runnable.append((module_id, reader.modules[module_id]))
     if not_implemented:
         alerts.append(
             f"Модули {not_implemented} отчёта {level} включены, но не реализованы: "
             "в отчёт не попали."
         )
     return ModuleSelection(runnable, alerts)
-
-
-async def runnable_modules(
-    deps: ReportDeps, level: ReportLevel
-) -> list[tuple[str, ReportModuleFunction]]:
-    selection = await select_modules(deps, level)
-    for alert in selection.alerts:
-        await notify_ops(deps.ops, alert)
-    return selection.runnable
 
 
 UNKNOWN_KEY_PROBLEMS = ("unknown_raw_key", "unknown_custom_field")
@@ -403,16 +422,20 @@ async def alert_snapshot_findings(
         )
 
 
-async def snapshot_if_successful(deps: ReportDeps, snapshot_date: date) -> PreviousSnapshot | None:
+async def snapshot_if_successful(
+    reader: ReportReader, snapshot_date: date
+) -> PreviousSnapshot | None:
     try:
-        lead_frame = await load_lead_frame(deps.engine, deps.tenant_id, snapshot_date, deps.config)
+        lead_frame = await load_lead_frame(
+            reader.engine, reader.tenant_id, snapshot_date, reader.config
+        )
     except SnapshotMissingError:
         return None
     return PreviousSnapshot(snapshot_date, lead_frame)
 
 
 async def previous_week_snapshot(
-    deps: ReportDeps, week_ago: PreviousSnapshot | None, snapshot_date: date
+    reader: ReportReader, week_ago: PreviousSnapshot | None, snapshot_date: date
 ) -> PreviousSnapshot | None:
     # Правило закрытого периода чата (period_snapshot_date): снапшот воскресенья прошлой недели,
     # нет его, первый успешный после, но строго раньше снапшота отчёта: свой снапшот отчёта дал
@@ -421,25 +444,25 @@ async def previous_week_snapshot(
     if week_ago is not None:
         return week_ago
     week_end = snapshot_date - timedelta(days=DAYS_IN_WEEK)
-    dates = await success_snapshot_dates(deps.engine, deps.tenant_id)
+    dates = await success_snapshot_dates(reader.engine, reader.tenant_id)
     substitute = first_snapshot_on_or_after(week_end, dates, until=snapshot_date)
     if substitute is None:
         return None
-    return await snapshot_if_successful(deps, substitute)
+    return await snapshot_if_successful(reader, substitute)
 
 
 async def touch_snapshot_chain(
-    deps: ReportDeps, snapshot_date: date, lead_frame: pd.DataFrame
+    reader: ReportReader, snapshot_date: date, lead_frame: pd.DataFrame
 ) -> tuple[PreviousSnapshot, ...]:
     dates = touch_snapshot_dates(
-        await success_snapshot_dates(deps.engine, deps.tenant_id),
+        await success_snapshot_dates(reader.engine, reader.tenant_id),
         week_days(snapshot_date)[0],
         snapshot_date,
     )
     return tuple(
         [
             PreviousSnapshot(
-                day, await load_lead_frame(deps.engine, deps.tenant_id, day, deps.config)
+                day, await load_lead_frame(reader.engine, reader.tenant_id, day, reader.config)
             )
             for day in dates
             if day != snapshot_date
@@ -448,80 +471,57 @@ async def touch_snapshot_chain(
     )
 
 
-async def build_report(
-    deps: ReportDeps, level: ReportLevel, period: Period, snapshot_date: date, late: bool
-) -> BuiltReport | None:
-    modules = await runnable_modules(deps, level)
-    if not modules:
-        return None
-    render_values = {
-        "late": late,
-        "level": level,
-        "period_label": period_label(level, period),
-        "snapshot_date": snapshot_date,
-        "tenant_display_name": deps.config.status_mapping.tenant_display_name,
-    }
+async def load_report_inputs(
+    reader: ReportReader, level: ReportLevel, snapshot_date: date, module_ids: set[str]
+) -> ReportInputs | None:
     try:
-        lead_frame = await load_lead_frame(deps.engine, deps.tenant_id, snapshot_date, deps.config)
+        lead_frame = await load_lead_frame(
+            reader.engine, reader.tenant_id, snapshot_date, reader.config
+        )
     except SnapshotMissingError:
-        await notify_ops(
-            deps.ops,
-            f"Снапшот {deps.tenant_id} за {snapshot_date} отсутствует или failed: "
-            f"отчёт {level} уходит с пометкой «данные mefi недоступны».",
-        )
-        text = render(
-            "report",
-            blocks=[],
-            snapshot_missing=True,
-            late_snapshot_at=None,
-            unavailable_sources=[],
-            **render_values,
-        )
-        return BuiltReport(text, "partial", snapshot_date)
-
-    await alert_snapshot_findings(deps, snapshot_date, lead_frame)
+        return None
     # Поздний снапшот сдвигает только ежедневный отчёт: его разница снапшотов захватила вечер.
     late_snapshot_at = (
-        await late_snapshot_started_at(deps.engine, deps.tenant_id, snapshot_date)
+        await late_snapshot_started_at(reader.engine, reader.tenant_id, snapshot_date)
         if level == "daily"
         else None
     )
-    previous_date = await previous_success_snapshot_date(deps.engine, deps.tenant_id, snapshot_date)
+    previous_date = await previous_success_snapshot_date(
+        reader.engine, reader.tenant_id, snapshot_date
+    )
     previous = (
         PreviousSnapshot(
             previous_date,
-            await load_lead_frame(deps.engine, deps.tenant_id, previous_date, deps.config),
+            await load_lead_frame(reader.engine, reader.tenant_id, previous_date, reader.config),
         )
         if previous_date is not None
         else None
     )
     # w8 сравнивает оферты только со снапшотом ровно за прошлое воскресенье: более старый покрыл
     # бы больше недели. Кадр нужен только w8, без него лишняя загрузка полного снапшота.
-    module_ids = {module_id for module_id, _ in modules}
-    runs_week_over_week = WEEK_OVER_WEEK_MODULE_ID in module_ids
     week_ago = (
-        await snapshot_if_successful(deps, snapshot_date - timedelta(days=DAYS_IN_WEEK))
-        if runs_week_over_week
+        await snapshot_if_successful(reader, snapshot_date - timedelta(days=DAYS_IN_WEEK))
+        if WEEK_OVER_WEEK_MODULE_ID in module_ids
         else None
     )
     previous_week = (
-        await previous_week_snapshot(deps, week_ago, snapshot_date)
+        await previous_week_snapshot(reader, week_ago, snapshot_date)
         if IRRELEVANT_BY_CAMPAIGN_MODULE_ID in module_ids
         else None
     )
     # До восьми полных снапшотов: грузятся только для w14.
     touch_snapshots = (
-        await touch_snapshot_chain(deps, snapshot_date, lead_frame)
+        await touch_snapshot_chain(reader, snapshot_date, lead_frame)
         if TOUCHES_MODULE_ID in module_ids
         else ()
     )
     # Кадр клиентов нужен только модулям с источником I (clients:read), сейчас это d1.
     reads_clients = any(
-        CLIENTS_SOURCE in deps.config.modules.all_modules[module_id].sources
-        for module_id, _ in modules
+        CLIENTS_SOURCE in reader.config.modules.all_modules[module_id].sources
+        for module_id in module_ids
     )
     clients = (
-        await load_client_frame(deps.engine, deps.tenant_id, snapshot_date, deps.config)
+        await load_client_frame(reader.engine, reader.tenant_id, snapshot_date, reader.config)
         if reads_clients
         else None
     )
@@ -532,30 +532,58 @@ async def build_report(
         previous_week,
         touch_snapshots,
         clients,
-        deps.config,
-        deps.tenant_id,
-        deps.lead_links,
+        reader.config,
+        reader.tenant_id,
+        reader.lead_links,
     )
+    return ReportInputs(lead_frame, context, late_snapshot_at)
+
+
+def render_report(
+    config: AppConfig,
+    level: ReportLevel,
+    period: Period,
+    snapshot_date: date,
+    late: bool,
+    modules: Sequence[tuple[str, ReportModuleFunction]],
+    inputs: ReportInputs | None,
+) -> BuiltReport:
+    render_values = {
+        "late": late,
+        "level": level,
+        "period_label": period_label(level, period),
+        "snapshot_date": snapshot_date,
+        "tenant_display_name": config.status_mapping.tenant_display_name,
+    }
+    if inputs is None:
+        text = render(
+            "report",
+            blocks=[],
+            snapshot_missing=True,
+            late_snapshot_at=None,
+            unavailable_sources=[],
+            **render_values,
+        )
+        return BuiltReport(text, "partial", snapshot_date)
+
     blocks: list[ModuleBlock] = []
+    alerts: list[str] = []
     photos: list[ReportPhoto] = []
     documents: list[ReportDocument] = []
     unavailable_sources: set[str] = set()
     for module_id, module_function in modules:
         try:
-            result = module_function(lead_frame, context)
+            result = module_function(inputs.lead_frame, inputs.context)
         except Exception as error:
             # str(error) может содержать строки raw (см. snapshot.describe_error).
             logger.error(
                 "report module failed",
                 extra={"module_id": module_id, "error": describe_error(error)},
             )
-            await notify_ops(
-                deps.ops, f"Модуль {module_id} отчёта {level} упал: {describe_error(error)}."
-            )
+            alerts.append(f"Модуль {module_id} отчёта {level} упал: {describe_error(error)}.")
             blocks.append(ModuleBlock(module_id, None))
         else:
-            for alert in result.alerts:
-                await notify_ops(deps.ops, alert)
+            alerts.extend(result.alerts)
             unavailable_sources.update(result.unavailable_sources)
             if result.photo is not None:
                 photos.append(result.photo)
@@ -567,15 +595,49 @@ async def build_report(
         "report",
         blocks=blocks,
         snapshot_missing=False,
-        late_snapshot_at=late_snapshot_at,
-        daily_window_end=deps.config.status_mapping.time.daily_window_end,
+        late_snapshot_at=inputs.late_snapshot_at,
+        daily_window_end=config.status_mapping.time.daily_window_end,
         unavailable_sources=sorted(unavailable_sources),
         **render_values,
     )
     status: Literal["success", "partial"] = (
         "partial" if any(block.text is None for block in blocks) else "success"
     )
-    return BuiltReport(text, status, snapshot_date, tuple(photos), tuple(documents))
+    return BuiltReport(
+        text,
+        status,
+        snapshot_date,
+        tuple(blocks),
+        tuple(alerts),
+        tuple(photos),
+        tuple(documents),
+    )
+
+
+async def build_and_alert(
+    deps: ReportDeps, level: ReportLevel, period: Period, snapshot_date: date, late: bool
+) -> BuiltReport | None:
+    selection = await select_modules(deps.reader, level)
+    for alert in selection.alerts:
+        await notify_ops(deps.ops, alert)
+    if not selection.runnable:
+        return None
+    module_ids = {module_id for module_id, _ in selection.runnable}
+    inputs = await load_report_inputs(deps.reader, level, snapshot_date, module_ids)
+    if inputs is None:
+        await notify_ops(
+            deps.ops,
+            f"Снапшот {deps.tenant_id} за {snapshot_date} отсутствует или failed: "
+            f"отчёт {level} уходит с пометкой «данные mefi недоступны».",
+        )
+    else:
+        await alert_snapshot_findings(deps, snapshot_date, inputs.lead_frame)
+    report = render_report(
+        deps.config, level, period, snapshot_date, late, selection.runnable, inputs
+    )
+    for alert in report.alerts:
+        await notify_ops(deps.ops, alert)
+    return report
 
 
 async def run_report(
@@ -585,8 +647,7 @@ async def run_report(
     time_settings = deps.config.status_mapping.time
     timezone = ZoneInfo(time_settings.timezone)
     period = report_period(level, now, time_settings)
-    # Снапшот за последний день периода: weekly в понедельник читает воскресный снапшот.
-    snapshot_date = (period.end - timedelta(microseconds=1)).astimezone(timezone).date()
+    snapshot_date = report_snapshot_date(period, timezone)
     label = period_label(level, period)
     log_extra = {"level": level, "period_start": period.start.isoformat(), "chat_id": chat_id}
 
@@ -615,7 +676,7 @@ async def run_report(
         )
 
     try:
-        report = await build_report(deps, level, period, snapshot_date, late)
+        report = await build_and_alert(deps, level, period, snapshot_date, late)
         parts = split_message(report.text) if report is not None else []
     except Exception as error:
         logger.error("report build failed", extra={**log_extra, "error": describe_error(error)})

@@ -282,7 +282,7 @@ async def catch_up_level(
     if not report_catch_up_due(schedule.cron, period, now, catch_up_days, timezone):
         return
     # Без модулей раннер писал бы failed «no modules» и алертил на каждом рестарте.
-    if not (await select_modules(deps, level)).runnable:
+    if not (await select_modules(deps.reader, level)).runnable:
         return
     # Без сегодняшнего снапшота ежедневный отчёт состоял бы из одной пометки «нет данных».
     if level == "daily" and await dates_without_success_snapshot(
