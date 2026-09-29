@@ -17,8 +17,8 @@ from digest.chat.loop import (
     allowed_numbers,
     answer_question,
     checked_answer,
+    config_mask_names,
     first_unverified_number,
-    mefi_name_pattern,
     system_prompt,
 )
 from digest.chat.tools import ALL_MANAGERS, ToolData, ToolOutcome, tool_definitions
@@ -619,7 +619,7 @@ def guarded(app_config: AppConfig, model_text: str, question: str = "?") -> str 
         0,
         0,
         make_lead_links(app_config.status_mapping),
-        mefi_name_pattern(app_config),
+        config_mask_names(app_config),
     )
     return answer.unverified_number
 
@@ -663,6 +663,35 @@ def test_only_whole_mefi_names_are_masked(app_config: AppConfig) -> None:
     assert guarded(app_config, "Revenire 12 are 7 lead-uri.") == "12"
 
 
+def test_guard_masks_campaign_label_digits(app_config: AppConfig) -> None:
+    by_campaign = ExecutedToolCall(
+        "source_breakdown",
+        {"period": "luna_curenta", "by": "utm_campanie"},
+        ToolOutcome(
+            {"rows": [{"key": "Promo 30", "leads": 7}]},
+            is_error=False,
+            scope="Luna curentă",
+            snapshot_dates=(TODAY,),
+            masked_names=("Promo 30",),
+        ),
+    )
+
+    def rejected(model_text: str) -> str | None:
+        return checked_answer(
+            "?",
+            model_text,
+            (by_campaign,),
+            0,
+            0,
+            make_lead_links(app_config.status_mapping),
+            config_mask_names(app_config),
+        ).unverified_number
+
+    assert rejected("Campania Promo 30 a adus 7 lead-uri.") is None
+    assert rejected("Campania a adus 30 lead-uri.") == "30"
+    assert rejected("Campania promo 30 a adus 7 lead-uri.") == "30"
+
+
 def test_source_name_in_results_allows_its_count_but_not_its_year(app_config: AppConfig) -> None:
     # Подпись без года, иначе «2026» разрешила бы дата подписи.
     by_source = ExecutedToolCall(
@@ -684,7 +713,7 @@ def test_source_name_in_results_allows_its_count_but_not_its_year(app_config: Ap
             0,
             0,
             make_lead_links(app_config.status_mapping),
-            mefi_name_pattern(app_config),
+            config_mask_names(app_config),
         ).unverified_number
 
     assert rejected("Sursa BIFE 2026 are 58 lead-uri.") is None

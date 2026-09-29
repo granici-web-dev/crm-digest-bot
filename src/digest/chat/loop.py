@@ -150,18 +150,24 @@ def number_tokens(text: str) -> list[str]:
     return [*NUMBER.findall(text), *numerals]
 
 
-def mefi_name_pattern(config: AppConfig) -> re.Pattern[str]:
-    # Цифры в именах mefi («Revenire 2», «BIFE 2026») это часть имени, а не число: без маски
-    # статус в результате разрешил бы голую «2» во всём ответе, а статус в ответе давал отказ.
-    # Регистр учитывается (имена mefi не нормализуются), а после «Data revenire» идёт дата или
-    # число дней, не статус: иначе «Data Revenire 3 octombrie» прятала бы от стража «3».
+def config_mask_names(config: AppConfig) -> frozenset[str]:
     status_mapping = config.status_mapping
-    names = {
-        *status_mapping.category_by_status,
-        *(source for group in status_mapping.sources.model_dump().values() for source in group),
-        *status_mapping.showrooms,
-        *(manager.name for manager in config.managers.managers),
-    }
+    return frozenset(
+        {
+            *status_mapping.category_by_status,
+            *(source for group in status_mapping.sources.model_dump().values() for source in group),
+            *status_mapping.showrooms,
+            *(manager.name for manager in config.managers.managers),
+        }
+    )
+
+
+def name_mask_pattern(names: Iterable[str]) -> re.Pattern[str]:
+    # Цифры в именах mefi («Revenire 2», «BIFE 2026») и подписях кампаний («Promo 30») это часть
+    # имени, а не число: без маски имя в результате разрешило бы голую «2» во всём ответе, а имя
+    # в ответе давало отказ. Регистр учитывается (имена mefi не нормализуются), а после «Data
+    # revenire» идёт дата или число дней, не статус: иначе «Data Revenire 3 octombrie» прятала бы
+    # от стража «3».
     with_digits = sorted(
         (name for name in names if any(character.isdigit() for character in name)),
         key=len,
@@ -362,7 +368,7 @@ async def first_attempt(
         input_tokens,
         output_tokens,
         data.lead_links,
-        mefi_name_pattern(data.config),
+        config_mask_names(data.config),
     )
     return answer, messages
 
@@ -399,7 +405,7 @@ async def guard_retry(
         input_tokens,
         output_tokens,
         data.lead_links,
-        mefi_name_pattern(data.config),
+        config_mask_names(data.config),
     )
     if second.status == "answered":
         return replace(
@@ -437,7 +443,7 @@ def checked_answer(
     input_tokens: int,
     output_tokens: int,
     lead_links: LeadLinks,
-    mefi_names: re.Pattern[str],
+    config_names: frozenset[str],
 ) -> ChatAnswer:
     # Инвариант 2 держит код: без отработавшего вызова инструмента цифр нет, с ним каждое число
     # ответа должно найтись в его результатах, в вопросе или в подписи.
@@ -451,6 +457,9 @@ def checked_answer(
             return ChatAnswer(render("chat_refusal"), "no_tool", calls, input_tokens, output_tokens)
         return ChatAnswer(html.escape(model_text), "no_tool", calls, input_tokens, output_tokens)
     signature_text = signature(list(calls))
+    mefi_names = name_mask_pattern(
+        config_names.union(*(call.outcome.masked_names for call in answered_calls))
+    )
     allowed = allowed_numbers(
         mefi_names.sub(" ", signature_text),
         [
