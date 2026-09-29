@@ -1,6 +1,6 @@
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import date, timedelta
 from typing import Annotated, Any
 
 import pandas as pd
@@ -38,6 +38,7 @@ from digest.metrics.chat_periods import (
     period_snapshot_date,
 )
 from digest.metrics.cockpit import manager_cockpit_table
+from digest.metrics.daily import PreviousSnapshot
 from digest.metrics.daily_checks import (
     MissingFollowupDate,
     missing_followup_date,
@@ -54,6 +55,7 @@ from digest.metrics.kpi import (
     lead_counts_by_showroom,
 )
 from digest.metrics.monthly import RepeatClientCounts, monthly_repeat_clients
+from digest.metrics.touches import ManagerTouches, manager_touches, touch_snapshot_dates
 from digest.metrics.weekly import (
     LossReasons,
     converted_count,
@@ -61,6 +63,7 @@ from digest.metrics.weekly import (
     loss_reasons_in_window,
 )
 from digest.reports.lead_links import LeadLinks
+from digest.reports.modules.weekly import day_ranges_label
 from digest.reports.render import (
     RO_MONTHS,
     campaign_label,
@@ -78,6 +81,9 @@ ALL_MANAGERS = "toti"
 CONTRACTS_METRIC = "contracts"
 COMPARABLE_METRICS: tuple[str, ...] = (*COUNT_NAMES, *KPI_NAMES, CONTRACTS_METRIC)
 MONTH_PERIODS: tuple[ChatPeriod, ...] = ("luna_curenta", "luna_trecuta")
+# Касания только по дням и неделям: месяц это до 31 загрузки снапшота на вопрос, и отчёт-двойник
+# w14 недельный (shape chat-new-tools).
+TOUCH_PERIODS: tuple[ChatPeriod, ...] = ("azi", "ieri", "saptamana_curenta", "saptamana_trecuta")
 
 FrameLoader = Callable[[date], Awaitable[pd.DataFrame]]
 
@@ -278,6 +284,20 @@ class RepeatClientsArguments(ToolArguments):
         return value
 
 
+class ManagerTouchesArguments(ToolArguments):
+    period: PeriodArgument
+    manager: str
+
+    @field_validator("period", mode="after")
+    @classmethod
+    def period_is_day_or_week(
+        cls, value: ChatPeriod | DayArgument | MonthArgument
+    ) -> ChatPeriod | DayArgument | MonthArgument:
+        if not (isinstance(value, DayArgument) or value in TOUCH_PERIODS):
+            raise ValueError(text("touches_days_only"))
+        return value
+
+
 class OverdueFollowupsArguments(ToolArguments):
     manager: str
 
@@ -295,6 +315,7 @@ ARGUMENT_MODELS: dict[ChatToolName, type[ToolArguments]] = {
     "untouched_leads": UntouchedLeadsArguments,
     "source_breakdown": SourceBreakdownArguments,
     "repeat_clients": RepeatClientsArguments,
+    "manager_touches": ManagerTouchesArguments,
 }
 
 
@@ -333,6 +354,7 @@ PERIOD_PROPERTY: dict[str, Any] = {
 }
 # Инструменты со своим набором периодов получают подмножество: модель не видит формы, которые
 # pydantic всё равно отклонит.
+TOUCH_PERIOD_PROPERTY: dict[str, Any] = {"anyOf": [enum_property(TOUCH_PERIODS), DAY_PERIOD_FORM]}
 MONTH_PERIOD_PROPERTY: dict[str, Any] = {"anyOf": [enum_property(MONTH_PERIODS), MONTH_PERIOD_FORM]}
 
 
@@ -360,6 +382,10 @@ def tool_definitions(config: AppConfig) -> list[ToolParam]:
             "showroom": showrooms,
         },
         "repeat_clients": {"period": MONTH_PERIOD_PROPERTY},
+        "manager_touches": {
+            "period": TOUCH_PERIOD_PROPERTY,
+            "manager": enum_property((ALL_MANAGERS, *consultants)),
+        },
     }
     parameter_descriptions = config.modules.chat.parameters
     return [
@@ -829,6 +855,93 @@ async def repeat_clients(data: ToolData, arguments: RepeatClientsArguments) -> T
     )
 
 
+def touch_levels(by_level: tuple[int, ...], config: AppConfig) -> list[dict[str, Any]]:
+    # Полные имена статусов, не «R1»: модель, сокращавшая их до «Revenire 1/2/3», писала цифры,
+    # которых нет в результате.
+    statuses = config.status_mapping.categories.ACTIVE_FOLLOWUP.statuses
+    return [
+        {"status": status, "touch_count": count}
+        for status, count in zip(statuses, by_level, strict=True)
+    ]
+
+
+def touches_content(touches: ManagerTouches, manager: str, config: AppConfig) -> dict[str, Any]:
+    if manager != ALL_MANAGERS:
+        return {
+            "manager": manager,
+            "touch_count": touches.touch_count,
+            "by_level": touch_levels(touches.by_level, config),
+        }
+    named = [group for group in touches.groups if group.manager_name is not None]
+    return {
+        "touch_count": touches.touch_count,
+        "by_level": touch_levels(touches.by_level, config),
+        "manager_count": sum(1 for group in named if group.touch_count),
+        "managers_without_touches": sum(1 for group in named if not group.touch_count),
+        "by_manager": [
+            {
+                "manager": manager_label(group.manager_name),
+                "touch_count": group.touch_count,
+                "by_level": touch_levels(group.by_level, config),
+            }
+            for group in touches.groups
+        ],
+    }
+
+
+async def manager_touches_tool(data: ToolData, arguments: ManagerTouchesArguments) -> ToolOutcome:
+    # Та же цепочка пар снапшотов и те же дни, что w14 (docs/kpi-definitions.md, «Касания
+    # консультантов»): за прошлую неделю число совпадает с воскресным отчётом по построению.
+    period = chosen_period(arguments.period, data.today)
+    first_day, last_day = period_days(period, data.today)
+    label = days_label(first_day, last_day)
+    day_count = (last_day - first_day).days + 1
+    days = tuple(first_day + timedelta(days=offset) for offset in range(day_count))
+    chain_dates = touch_snapshot_dates(data.snapshot_dates, first_day, last_day)
+    snapshots = tuple(
+        [PreviousSnapshot(day, await load_snapshot(data, day)) for day in chain_dates]
+    )
+    touches = manager_touches(snapshots, days, data.config)
+    covered_from = touches.covered_from
+    if covered_from is None:
+        raise NoDataError(text("touches_no_snapshot_pair", days=label))
+    covered_until = chain_dates[-1]
+    notes = []
+    if covered_from > first_day:
+        notes.append(text("touches_counted_from", day=f"{covered_from:%d.%m}"))
+    if touches.days_without_snapshot:
+        notes.append(
+            text(
+                "touches_missing_days",
+                days=day_ranges_label(touches.days_without_snapshot),
+                day_count=len(touches.days_without_snapshot),
+            )
+        )
+    if arguments.manager != ALL_MANAGERS:
+        touches = touches.of_manager(arguments.manager)
+    return ToolOutcome(
+        {
+            "period": period if isinstance(period, str) else period_title(period, label),
+            "days": label,
+            "day_count": day_count,
+            "covered_from": date_label(covered_from),
+            "covered_until": date_label(covered_until),
+            "covered_day_count": (covered_until - covered_from).days + 1,
+            "days_without_snapshot": (
+                day_ranges_label(touches.days_without_snapshot)
+                if touches.days_without_snapshot
+                else None
+            ),
+            "days_without_snapshot_count": len(touches.days_without_snapshot),
+            **touches_content(touches, arguments.manager, data.config),
+        },
+        is_error=False,
+        scope=text("period_scope", titles=[period_title(period, label)]),
+        snapshot_dates=chain_dates,
+        snapshot_notes=tuple(notes),
+    )
+
+
 def snapshot_outcome(
     content: dict[str, Any], snapshot_date: date, lead_ids: tuple[int, ...]
 ) -> ToolOutcome:
@@ -970,6 +1083,7 @@ TOOL_FUNCTIONS: Mapping[ChatToolName, ToolFunction] = {
     "untouched_leads": untouched_leads_tool,
     "source_breakdown": source_breakdown,
     "repeat_clients": repeat_clients,
+    "manager_touches": manager_touches_tool,
 }
 
 

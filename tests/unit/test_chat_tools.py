@@ -19,7 +19,7 @@ from digest.chat.tools import (
 from digest.config import KPI_NAMES, AppConfig, ChatToolName, Manager, ManagerRoster
 from digest.db.lead_frame import SnapshotMissingError
 from digest.metrics.chat_periods import CHAT_PERIODS, chat_period_window
-from digest.metrics.daily import daily_window
+from digest.metrics.daily import PreviousSnapshot, daily_window
 from digest.metrics.daily_checks import overdue_revenire_by_manager, untouched_leads
 from digest.metrics.frame import prepare_lead_frame
 from digest.metrics.kpi import COUNT_NAMES, kpis_from, lead_counts, lead_counts_by_showroom
@@ -28,10 +28,12 @@ from digest.metrics.monthly import (
     monthly_repeat_clients,
     monthly_source_conversion,
 )
+from digest.metrics.touches import manager_touches, touch_snapshot_dates
 from digest.metrics.weekly import (
     converted_count,
     converted_count_by_showroom,
     loss_reasons_in_window,
+    week_days,
     weekly_funnel,
 )
 from digest.reports.render import percent_one_decimal
@@ -528,6 +530,158 @@ async def test_repeat_clients_result_has_no_contact_keys(
     assert "_key" not in serialized
 
 
+TOUCH_TODAY = date(2026, 9, 29)
+LAST_SUNDAY = date(2026, 9, 27)
+
+
+def touch_lead(lead_id: int, status_name: str, changed_on: date | None = None) -> dict[str, Any]:
+    created_at = datetime(2026, 9, 1, 11, 0, tzinfo=BUCHAREST)
+    return make_snapshot_row(
+        lead_id=lead_id,
+        category="ACTIVE_FOLLOWUP" if status_name.startswith("Revenire") else "ACTIVE",
+        status_name=status_name,
+        created_at=created_at,
+        last_contact_at=created_at,
+        status_changed_at=(
+            None
+            if changed_on is None
+            else datetime(changed_on.year, changed_on.month, changed_on.day, 12, tzinfo=BUCHAREST)
+        ),
+    )
+
+
+def touch_snapshots(config: AppConfig) -> dict[date, pd.DataFrame]:
+    rows = {
+        date(2026, 9, 20): [touch_lead(1, "IN PROCES"), touch_lead(2, "IN PROCES")],
+        date(2026, 9, 24): [
+            touch_lead(1, "Revenire 1", date(2026, 9, 23)),
+            touch_lead(2, "IN PROCES"),
+        ],
+        LAST_SUNDAY: [
+            touch_lead(1, "Revenire 2", date(2026, 9, 26)),
+            touch_lead(2, "Revenire 1", LAST_SUNDAY),
+        ],
+        date(2026, 9, 28): [
+            touch_lead(1, "Revenire 2", date(2026, 9, 26)),
+            touch_lead(2, "Revenire 2", date(2026, 9, 28)),
+        ],
+    }
+    return {day: prepare_lead_frame(day_rows, config) for day, day_rows in rows.items()}
+
+
+def touch_data(config: AppConfig, frames: dict[date, pd.DataFrame]) -> ToolData:
+    async def load_frame(snapshot_date: date) -> pd.DataFrame:
+        return frames[snapshot_date]
+
+    return ToolData(
+        TOUCH_TODAY,
+        tuple(sorted(frames)),
+        load_frame,
+        config,
+        make_lead_links(config.status_mapping),
+    )
+
+
+async def test_manager_touches_last_week_matches_w14(app_config: AppConfig) -> None:
+    frames = touch_snapshots(app_config)
+    outcome = await run_tool(
+        "manager_touches",
+        {"period": "saptamana_trecuta", "manager": ALL_MANAGERS},
+        touch_data(app_config, frames),
+    )
+
+    # Как touch_snapshot_chain воскресного прогона w14 за 27.09.
+    chain = touch_snapshot_dates(tuple(sorted(frames)), week_days(LAST_SUNDAY)[0], LAST_SUNDAY)
+    w14 = manager_touches(
+        tuple(PreviousSnapshot(day, frames[day]) for day in chain),
+        week_days(LAST_SUNDAY),
+        app_config,
+    )
+    content = outcome.content
+    assert content["touch_count"] == w14.touch_count == 3
+    assert [level["touch_count"] for level in content["by_level"]] == list(w14.by_level)
+    assert [level["status"] for level in content["by_level"]] == [
+        "Revenire 1",
+        "Revenire 2",
+        "Revenire 3",
+    ]
+    assert {row["manager"]: row["touch_count"] for row in content["by_manager"]} == {
+        group.manager_name or "Nepreluate": group.touch_count for group in w14.groups
+    }
+    assert content["manager_count"] == 1
+    assert content["managers_without_touches"] == sum(
+        1 for group in w14.groups if group.manager_name and not group.touch_count
+    )
+    assert (content["days"], content["day_count"]) == ("21.09–27.09.2026", 7)
+    assert outcome.snapshot_dates == chain
+
+
+async def test_manager_touches_single_consultant_uses_of_manager(app_config: AppConfig) -> None:
+    data = touch_data(app_config, touch_snapshots(app_config))
+
+    touched = await run_tool(
+        "manager_touches", {"period": "saptamana_trecuta", "manager": "Dragoi Mihaela"}, data
+    )
+    idle = await run_tool(
+        "manager_touches", {"period": "saptamana_trecuta", "manager": "Moaca Andreea"}, data
+    )
+
+    assert touched.content["manager"] == "Dragoi Mihaela"
+    assert touched.content["touch_count"] == 3
+    assert "by_manager" not in touched.content
+    assert idle.content["touch_count"] == 0
+    assert [level["touch_count"] for level in idle.content["by_level"]] == [0, 0, 0]
+
+
+@pytest.mark.parametrize("period", ["luna_curenta", "ultimele_30_zile", {"year": 2026, "month": 9}])
+async def test_manager_touches_rejects_month_period(app_config: AppConfig, period: Any) -> None:
+    outcome = await run_tool(
+        "manager_touches",
+        {"period": period, "manager": ALL_MANAGERS},
+        touch_data(app_config, touch_snapshots(app_config)),
+    )
+
+    assert outcome.is_error
+    assert not outcome.no_data
+    assert "zile și săptămâni" in outcome.content["error"]
+
+
+async def test_manager_touches_without_snapshot_pair_is_no_data(app_config: AppConfig) -> None:
+    frames = touch_snapshots(app_config)
+    outcome = await run_tool(
+        "manager_touches",
+        {"period": "ieri", "manager": ALL_MANAGERS},
+        touch_data(app_config, {date(2026, 9, 28): frames[date(2026, 9, 28)]}),
+    )
+
+    assert outcome.is_error
+    assert outcome.no_data
+    assert "două snapshoturi CRM pentru 28.09.2026" in outcome.content["error"]
+
+
+async def test_manager_touches_reports_days_without_snapshot(app_config: AppConfig) -> None:
+    frames = touch_snapshots(app_config)
+    del frames[date(2026, 9, 20)]
+
+    outcome = await run_tool(
+        "manager_touches",
+        {"period": "saptamana_trecuta", "manager": ALL_MANAGERS},
+        touch_data(app_config, frames),
+    )
+
+    content = outcome.content
+    assert (content["covered_from"], content["covered_until"]) == ("25.09.2026", "27.09.2026")
+    assert content["covered_day_count"] == 3
+    assert (content["days_without_snapshot"], content["days_without_snapshot_count"]) == (
+        "25–26.09",
+        2,
+    )
+    assert outcome.snapshot_notes == (
+        "Atingeri numărate de la 25.09: nu există snapshot CRM mai vechi",
+        "Fără snapshot CRM pentru 25–26.09: atingerile din acele zile pot lipsi",
+    )
+
+
 def followup_frame(config: AppConfig, **overrides: Any) -> pd.DataFrame:
     rows = [
         make_snapshot_row(
@@ -633,6 +787,10 @@ def all_tool_calls(config: AppConfig) -> list[tuple[str, dict[str, Any]]]:
             ),
         ]
     calls += [("repeat_clients", {"period": period}) for period in ("luna_curenta", "luna_trecuta")]
+    calls += [
+        ("manager_touches", {"period": period, "manager": ALL_MANAGERS})
+        for period in ("ieri", "saptamana_curenta")
+    ]
     calls += [
         ("manager_kpi", {"manager": name, "period": period})
         for name, period in product(managers, CHAT_PERIODS)
@@ -916,6 +1074,9 @@ def test_tool_definitions_period_enums_per_tool(app_config: AppConfig) -> None:
         schema: Any = definitions[tool]["input_schema"]
         return cast(list[Any], schema["properties"]["period"]["anyOf"])
 
+    named, day = period_forms("manager_touches")
+    assert named["enum"] == ["azi", "ieri", "saptamana_curenta", "saptamana_trecuta"]
+    assert set(day["properties"]) == {"day"}
     named, month = period_forms("repeat_clients")
     assert named["enum"] == ["luna_curenta", "luna_trecuta"]
     assert set(month["properties"]) == {"year", "month"}

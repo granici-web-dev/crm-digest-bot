@@ -165,6 +165,13 @@ chat:             # режим вопросов; включается целик
       clienți). Clienții de dinainte de CRM (înainte de 2026) fără sursa Client Fidel nu se văd,
       deci procentul este subestimat. won_without_converted_at sunt lead-uri Clienți fără dată de
       conversie, neincluse. Doar pe lună.
+    manager_touches: >-
+      Atingerile consultanților într-o zi sau o săptămână: o atingere este trecerea unui lead în
+      Revenire N înregistrată în CRM, nu apelul în sine. touch_count este totalul, by_level pe
+      status (numele întregi, exact ca în rezultat), by_manager pe consultant; manager_count și
+      managers_without_touches dau câți consultanți au, respectiv nu au atingeri. covered_from,
+      covered_until și days_without_snapshot spun pentru ce zile există date; dacă lipsesc zile,
+      o spui. Doar zile și săptămâni, nu luni. Opțional pentru un singur consultant.
   # Описания параметров по имени, для каждого инструмента с таким параметром.
   parameters:
     period_a: Perioada evaluată, de obicei cea mai recentă (de ex. august în „august față de iulie”).

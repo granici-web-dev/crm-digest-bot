@@ -14,6 +14,10 @@
 {% macro unknown_consultant(manager) %}consultant necunoscut: {{ manager }}{% endmacro %}
 {% macro one_consultant_required() %}manager_kpi cere un singur consultant{% endmacro %}
 {% macro repeat_clients_months_only() %}Clienții care revin se numără pe lună; alege o lună{% endmacro %}
+{% macro touches_days_only() %}Atingerile se numără pe zile și săptămâni; alege o zi sau o săptămână{% endmacro %}
+{% macro touches_no_snapshot_pair(days) %}Nu există încă două snapshoturi CRM pentru {{ days }}; atingerile nu pot fi numărate.{% endmacro %}
+{% macro touches_counted_from(day) %}Atingeri numărate de la {{ day }}: nu există snapshot CRM mai vechi{% endmacro %}
+{% macro touches_missing_days(days, day_count) %}Fără snapshot CRM pentru {{ days }}: {{ "atingerile din acea zi pot lipsi" if day_count == 1 else "atingerile din acele zile pot lipsi" }}{% endmacro %}
 {% macro unknown_metric(metric) %}metrică necunoscută: {{ metric }}{% endmacro %}
 {% macro unknown_tool(name) %}Instrument necunoscut: {{ name }}.{% endmacro %}
 {% macro invalid_arguments(problems) %}Argumente invalide: {{ problems }}.{% endmacro %}
