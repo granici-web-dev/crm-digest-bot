@@ -337,11 +337,11 @@ def touched_week(first: date) -> list[tuple[date, list[dict[str, Any]]]]:
 def test_manager_touches_text(app_config: AppConfig, snapshot: SnapshotAssertion) -> None:
     text = touches_text(app_config, touched_week(date(2026, 9, 20)))
 
-    assert "📞 Atingeri consultanți: 4 (R1 2 · R2 1 · R3 1)" in text
+    assert "<b>📞 Atingeri consultanți: 4</b> (R1 2 · R2 1 · R3 1)" in text
     assert "Nepreluate 1 (R1 1 · R2 0 · R3 0)" in text
     assert "Dragoi Mihaela 2 (R1 1 · R2 1 · R3 0)" in text
     assert "Marc Andra 0\n" in text
-    assert "Fără snapshot CRM pentru 21.09, 22.09, 23.09, 24.09, 25.09, 26.09" in text
+    assert "<i>Fără snapshot CRM pentru 21–26.09: atingerile din acele zile pot lipsi.</i>" in text
     assert text == snapshot
 
 
@@ -353,7 +353,7 @@ def test_manager_touches_text_without_touches(
 
     text = touches_text(app_config, daily)
 
-    assert "📞 Atingeri consultanți: 0\n" in text
+    assert "<b>📞 Atingeri consultanți: 0</b>\n" in text
     assert "Fără snapshot" not in text
     assert text == snapshot
 
@@ -363,12 +363,24 @@ def test_manager_touches_text_notes_first_covered_day(
 ) -> None:
     text = touches_text(app_config, touched_week(date(2026, 9, 25)))
 
-    assert "Atingeri numărate de la 26.09: nu există snapshot CRM mai vechi." in text
-    assert "Fără snapshot CRM pentru 26.09: atingerile din acea zi pot lipsi." in text
+    assert (
+        "<i>Atingeri numărate de la 26.09: nu există snapshot CRM mai vechi, iar pentru 26.09 "
+        "lipsește snapshotul, atingerile din acea zi pot lipsi.</i>" in text
+    )
+    assert "Fără snapshot" not in text
     assert text == snapshot
+
+
+def test_manager_touches_text_splits_missing_days_into_ranges(app_config: AppConfig) -> None:
+    rows = [followup_lead(1, "IN PROCES")]
+    days = (date(2026, 9, 20), date(2026, 9, 23), date(2026, 9, 24), date(2026, 9, 27))
+
+    text = touches_text(app_config, [(day, rows) for day in days])
+
+    assert "Fără snapshot CRM pentru 21–22.09, 25–26.09:" in text
 
 
 def test_manager_touches_text_without_data(app_config: AppConfig) -> None:
     text = touches_text(app_config, [(SUNDAY, [followup_lead(1, "Revenire 1")])])
 
-    assert text == "Atingeri consultanți: fără date"
+    assert text == "<b>📞 Atingeri consultanți: fără date</b>"

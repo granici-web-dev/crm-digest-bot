@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from datetime import date
 from itertools import pairwise
@@ -7,6 +8,8 @@ import pandas as pd
 from digest.config import AppConfig
 from digest.metrics.daily import PreviousSnapshot, daily_window, daily_window_days
 from digest.metrics.daily_checks import manager_names, name_or_not_taken, not_taken_first
+
+logger = logging.getLogger(__name__)
 
 TOUCH_ROW_COLUMNS = ("lead_id", "level", "assigned_to_id", "assigned_to_name", "touch_day")
 
@@ -92,6 +95,16 @@ def touch_rows(
         touches["status_changed_at"].fillna(touches["created_at"]), time_settings
     )
     inside_pair = touch_day.gt(previous.snapshot_date) & touch_day.le(current.snapshot_date)
+    clamped_count = int((~inside_pair).sum())
+    if clamped_count:
+        logger.warning(
+            "touch days clamped to later snapshot",
+            extra={
+                "previous_snapshot": previous.snapshot_date.isoformat(),
+                "current_snapshot": current.snapshot_date.isoformat(),
+                "clamped_count": clamped_count,
+            },
+        )
     return pd.DataFrame(
         {
             "lead_id": touches["lead_id"],

@@ -59,6 +59,18 @@ def week_range_label(days: tuple[date, ...]) -> str:
     return f"{first_label}–{last:%d.%m}"
 
 
+def day_ranges_label(days: tuple[date, ...]) -> str:
+    runs: list[list[date]] = []
+    for day in days:
+        if runs and day - runs[-1][-1] == timedelta(days=1):
+            runs[-1].append(day)
+        else:
+            runs.append([day])
+    return ", ".join(
+        f"{run[0]:%d.%m}" if len(run) == 1 else week_range_label(tuple(run)) for run in runs
+    )
+
+
 # Таблицы в раскладке ручного понедельничного отчёта (docs/samples/weekly-manual-report-2026-07.md):
 # одни и те же строки идут в Telegram и в Excel.
 def day_showroom_table(counts: DayShowroomCounts, first_header: str) -> list[TableRow]:
@@ -228,4 +240,11 @@ def irr_by_campaign_report(lead_frame: pd.DataFrame, context: ReportContext) -> 
 def manager_touches_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
     days = week_days(context.report_date)
     touches = manager_touches(context.touch_snapshots, days, context.config)
-    return ModuleResult(render("manager_touches", touches=touches, first_day=days[0]))
+    return ModuleResult(
+        render(
+            "manager_touches",
+            touches=touches,
+            first_day=days[0],
+            missing_days=day_ranges_label(touches.days_without_snapshot),
+        )
+    )

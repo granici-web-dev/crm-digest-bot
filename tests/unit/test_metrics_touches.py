@@ -1,7 +1,9 @@
+import logging
 from datetime import date, datetime, timedelta
 from typing import Any
 
 import pandas as pd
+import pytest
 
 from digest.config import AppConfig
 from digest.metrics.daily import PreviousSnapshot
@@ -136,6 +138,62 @@ def test_level_skip_is_one_touch_at_landing_level(app_config: AppConfig) -> None
 
     assert result.touch_count == 2
     assert result.by_level == (0, 1, 1)
+
+
+def test_downgrade_is_touch_at_landing_level(app_config: AppConfig) -> None:
+    friday, saturday = date(2026, 9, 25), date(2026, 9, 26)
+    result = touches(
+        [
+            (friday, [lead(1, "Revenire 2", status_changed_at=at(friday, 10))]),
+            (saturday, [lead(1, "Revenire 1", status_changed_at=at(saturday, 12))]),
+        ],
+        app_config,
+    )
+
+    assert result.by_level == (1, 0, 0)
+
+
+def test_changed_status_with_null_status_changed_at_is_dated_by_later_snapshot(
+    app_config: AppConfig, caplog: pytest.LogCaptureFixture
+) -> None:
+    friday, saturday = date(2026, 9, 25), date(2026, 9, 26)
+    with caplog.at_level(logging.WARNING, logger="digest.metrics.touches"):
+        result = touches(
+            [(friday, [lead(1, "IN PROCES")]), (saturday, [lead(1, "Revenire 1")])],
+            app_config,
+            days=(saturday,),
+        )
+
+    assert result.touch_count == 1
+    [record] = caplog.records
+    assert record.clamped_count == 1  # type: ignore[attr-defined]
+    assert "lead" not in record.getMessage()
+
+
+def test_touch_after_sunday_1900_in_monday_snapshot_belongs_to_next_week(
+    app_config: AppConfig,
+) -> None:
+    monday = date(2026, 9, 28)
+    snapshots = [
+        (SUNDAY, [lead(1, "IN PROCES")]),
+        (monday, [lead(1, "Revenire 1", status_changed_at=at(SUNDAY, 21))]),
+    ]
+
+    assert touches(snapshots, app_config).touch_count == 0
+    assert touches(snapshots, app_config, days=week_days(date(2026, 10, 4))).touch_count == 1
+
+
+def test_touch_after_sunday_1900_in_late_sunday_snapshot_stays_in_week(
+    app_config: AppConfig,
+) -> None:
+    saturday = date(2026, 9, 26)
+    snapshots = [
+        (saturday, [lead(1, "IN PROCES")]),
+        (SUNDAY, [lead(1, "Revenire 1", status_changed_at=at(SUNDAY, 21))]),
+    ]
+
+    assert touches(snapshots, app_config).touch_count == 1
+    assert touches(snapshots, app_config, days=week_days(date(2026, 10, 4))).touch_count == 0
 
 
 def test_touch_goes_to_manager_in_later_snapshot(app_config: AppConfig) -> None:

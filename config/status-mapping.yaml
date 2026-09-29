@@ -15,7 +15,8 @@ categories:
     statuses: ["IN PROCES", "Ofertat", "SHOWROOM", "BIFE 2026"]
     # Срок алерта «без движения» один на проект: kpi.yaml active_offer_stale_days.
   ACTIVE_FOLLOWUP:
-    # Порядок = уровень касания w14 (R1, R2, R3).
+    # Порядок = уровень касания w14; перестановка меняет уровни во всех отчётах и ответах чата;
+    # новый статус — только в конец списка.
     statuses: ["Revenire 1", "Revenire 2", "Revenire 3"]
     counts_as: ACTIVE
   LOST:
