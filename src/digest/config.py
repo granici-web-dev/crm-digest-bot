@@ -406,6 +406,7 @@ ChatToolName = Literal[
     "loss_reasons",
     "overdue_followups",
     "untouched_leads",
+    "source_breakdown",
 ]
 
 

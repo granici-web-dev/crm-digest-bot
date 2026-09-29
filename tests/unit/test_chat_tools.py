@@ -23,7 +23,7 @@ from digest.metrics.daily import daily_window
 from digest.metrics.daily_checks import overdue_revenire_by_manager, untouched_leads
 from digest.metrics.frame import prepare_lead_frame
 from digest.metrics.kpi import COUNT_NAMES, kpis_from, lead_counts, lead_counts_by_showroom
-from digest.metrics.monthly import monthly_funnel
+from digest.metrics.monthly import monthly_funnel, monthly_source_conversion
 from digest.metrics.weekly import (
     converted_count,
     converted_count_by_showroom,
@@ -382,6 +382,77 @@ async def test_overdue_followups_for_manager_without_overdue_is_zero(
 SEPTEMBER_REPORT_DATE = date(2026, 9, 25)
 
 
+@pytest.mark.parametrize("by", ["source_name", "utm_campanie"])
+async def test_source_breakdown_total_equals_funnel_leads(
+    etalon_config: AppConfig, lead_frame: pd.DataFrame, by: str
+) -> None:
+    for showroom in (ALL_SHOWROOMS, *etalon_config.status_mapping.showrooms):
+        arguments = {"period": "luna_trecuta", "showroom": showroom}
+        breakdown = await run(
+            "source_breakdown", {**arguments, "by": by}, etalon_config, lead_frame
+        )
+        funnel = await run("funnel", arguments, etalon_config, lead_frame)
+
+        assert breakdown["total"]["leads"] == funnel["counts"]["leads"] > 0, showroom
+        assert breakdown["total"]["scr"] == funnel["kpis"]["scr"], showroom
+        row_leads = sum(row["leads"] for row in breakdown["rows"])
+        without_key = breakdown["without_key"]
+        assert (
+            row_leads + (0 if without_key is None else without_key["leads"])
+            == (breakdown["total"]["leads"])
+        )
+        assert breakdown["row_count"] == len(breakdown["rows"])
+
+
+async def test_source_breakdown_rows_match_m7_for_last_month(
+    etalon_config: AppConfig, lead_frame: pd.DataFrame
+) -> None:
+    conversion = monthly_source_conversion(lead_frame, END_OF_MAY, etalon_config)
+    by_source = await run(
+        "source_breakdown",
+        {"period": "luna_trecuta", "by": "source_name", "showroom": ALL_SHOWROOMS},
+        etalon_config,
+        lead_frame,
+    )
+    by_campaign = await run(
+        "source_breakdown",
+        {"period": "luna_trecuta", "by": "utm_campanie", "showroom": ALL_SHOWROOMS},
+        etalon_config,
+        lead_frame,
+    )
+
+    rows = {row["key"]: row for row in by_source["rows"]}
+    assert conversion.by_source.rows
+    for m7_row in conversion.by_source.rows:
+        assert rows[m7_row.key]["leads"] == m7_row.counts.leads
+        assert rows[m7_row.key]["scr"] == percent_one_decimal(m7_row.kpis.scr)
+    assert by_campaign["leads_with_key"] == conversion.leads_with_campaign > 0
+    assert by_campaign["key_share"] == percent_one_decimal(conversion.campaign_share)
+    assert "leads_with_key" not in by_source
+
+
+async def test_source_breakdown_campaign_label_hides_phone(
+    etalon_config: AppConfig, lead_frame: pd.DataFrame
+) -> None:
+    campaigns = lead_frame.copy()
+    campaigns["utm_campanie"] = None
+    campaigns.loc[campaigns.index[:3], "utm_campanie"] = "Promo +40700000001"
+    campaigns.loc[campaigns.index[3:5], "utm_campanie"] = "Promo 30"
+    campaigns.loc[campaigns.index[5:6], "utm_campanie"] = "Toamna"
+
+    outcome = await run_tool(
+        "source_breakdown",
+        {"period": {"year": 2026, "month": 5}, "by": "utm_campanie", "showroom": ALL_SHOWROOMS},
+        tool_data(etalon_config, campaigns),
+    )
+
+    keys = [row["key"] for row in outcome.content["rows"]]
+    hidden = etalon_config.status_mapping.hidden_campaign_label
+    assert sorted(keys) == sorted([hidden, "Promo 30", "Toamna"])
+    assert "+40" not in json.dumps(outcome.content, ensure_ascii=False)
+    assert outcome.masked_names == ("Promo 30",)
+
+
 def followup_frame(config: AppConfig, **overrides: Any) -> pd.DataFrame:
     rows = [
         make_snapshot_row(
@@ -474,6 +545,8 @@ def all_tool_calls(config: AppConfig) -> list[tuple[str, dict[str, Any]]]:
         calls += [
             ("funnel", {"period": period, "showroom": showroom}),
             ("loss_reasons", {"period": period, "showroom": showroom}),
+            ("source_breakdown", {"period": period, "by": "source_name", "showroom": showroom}),
+            ("source_breakdown", {"period": period, "by": "utm_campanie", "showroom": showroom}),
             (
                 "compare_periods",
                 {

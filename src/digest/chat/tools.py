@@ -1,5 +1,5 @@
 from collections.abc import Awaitable, Callable, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from typing import Annotated, Any
 
@@ -19,6 +19,13 @@ from pydantic import (
 
 from digest.config import KPI_NAMES, AppConfig, ChatToolName
 from digest.db.lead_frame import SnapshotMissingError
+from digest.metrics.breakdown import (
+    BREAKDOWN_COLUMNS,
+    BreakdownColumn,
+    BreakdownRow,
+    UnkeyedBreakdownRow,
+    lead_breakdown,
+)
 from digest.metrics.chat_periods import (
     CHAT_PERIODS,
     ChatDay,
@@ -55,6 +62,7 @@ from digest.metrics.weekly import (
 from digest.reports.lead_links import LeadLinks
 from digest.reports.render import (
     RO_MONTHS,
+    campaign_label,
     percent_one_decimal,
     points_one_decimal,
     signed_count,
@@ -90,6 +98,9 @@ class ToolOutcome:
     scope: str | None = None
     snapshot_dates: tuple[date, ...] = ()
     snapshot_notes: tuple[str, ...] = ()
+    # Имена из данных с цифрами (подписи кампаний, источники вне конфига): страж маскирует их, как
+    # имена mefi из конфига, иначе «Promo 30» в результате разрешила бы голую «30».
+    masked_names: tuple[str, ...] = ()
     # id лидов для строки ссылок под ответом, самые старые первыми. Модели не передаются
     # (инвариант 7): в content их нет.
     lead_ids: tuple[int, ...] = ()
@@ -244,6 +255,12 @@ class LossReasonsArguments(ToolArguments):
     showroom: str
 
 
+class SourceBreakdownArguments(ToolArguments):
+    period: PeriodArgument
+    by: BreakdownColumn
+    showroom: str
+
+
 class OverdueFollowupsArguments(ToolArguments):
     manager: str
 
@@ -259,6 +276,7 @@ ARGUMENT_MODELS: dict[ChatToolName, type[ToolArguments]] = {
     "loss_reasons": LossReasonsArguments,
     "overdue_followups": OverdueFollowupsArguments,
     "untouched_leads": UntouchedLeadsArguments,
+    "source_breakdown": SourceBreakdownArguments,
 }
 
 
@@ -317,6 +335,11 @@ def tool_definitions(config: AppConfig) -> list[ToolParam]:
         "loss_reasons": {"period": periods, "showroom": showrooms},
         "overdue_followups": {"manager": enum_property((ALL_MANAGERS, *consultants))},
         "untouched_leads": {},
+        "source_breakdown": {
+            "period": periods,
+            "by": enum_property(BREAKDOWN_COLUMNS),
+            "showroom": showrooms,
+        },
     }
     parameter_descriptions = config.modules.chat.parameters
     return [
@@ -685,6 +708,64 @@ async def loss_reasons(data: ToolData, arguments: LossReasonsArguments) -> ToolO
     return outcome({**period_header(frame), "showroom": showroom, **content}, frame)
 
 
+def breakdown_numbers(row: BreakdownRow | UnkeyedBreakdownRow) -> dict[str, Any]:
+    counts, kpis = row.counts, row.kpis
+    return {
+        "leads": counts.leads,
+        "useful": counts.useful,
+        "offers": counts.offers,
+        "clienti": counts.clienti,
+        "irr": percent_one_decimal(kpis.irr),
+        "scr": percent_one_decimal(kpis.scr),
+    }
+
+
+async def source_breakdown(data: ToolData, arguments: SourceBreakdownArguments) -> ToolOutcome:
+    frame = await period_frame(data, arguments.period)
+    showroom = selected_showroom(arguments.showroom)
+    lead_frame = (
+        frame.frame if showroom is None else frame.frame[frame.frame["showroom"].eq(showroom)]
+    )
+    # min_leads = 1: в чате все ключи, без свёртки (shape chat-new-tools, «Согласовано»).
+    breakdown = lead_breakdown(
+        lead_frame, arguments.by, frame.window, frame.snapshot_date, data.config, min_leads=1
+    )
+    if arguments.by == "utm_campanie":
+        # Сырое значение UTM модели не уходит: в нём бывают телефон и e-mail (инвариант 7).
+        params = data.config.modules.scr_by_source_campaign_params
+        keys = [
+            campaign_label(
+                row.key,
+                params.campaign_label_max_length,
+                data.config.status_mapping.hidden_campaign_label,
+            )
+            for row in breakdown.rows
+        ]
+    else:
+        keys = [row.key for row in breakdown.rows]
+    content: dict[str, Any] = {
+        **period_header(frame),
+        "by": arguments.by,
+        "showroom": showroom,
+        "row_count": len(breakdown.rows),
+        "rows": [
+            {"key": key, **breakdown_numbers(row)}
+            for key, row in zip(keys, breakdown.rows, strict=True)
+        ],
+        "without_key": (
+            None if breakdown.without_key is None else breakdown_numbers(breakdown.without_key)
+        ),
+        "total": breakdown_numbers(breakdown.total),
+    }
+    if arguments.by == "utm_campanie":
+        content["leads_with_key"] = breakdown.leads_with_key
+        content["key_share"] = percent_one_decimal(breakdown.key_share)
+    return replace(
+        outcome(content, frame),
+        masked_names=tuple(key for key in keys if any(character.isdigit() for character in key)),
+    )
+
+
 def snapshot_outcome(
     content: dict[str, Any], snapshot_date: date, lead_ids: tuple[int, ...]
 ) -> ToolOutcome:
@@ -824,6 +905,7 @@ TOOL_FUNCTIONS: Mapping[ChatToolName, ToolFunction] = {
     "loss_reasons": loss_reasons,
     "overdue_followups": overdue_followups,
     "untouched_leads": untouched_leads_tool,
+    "source_breakdown": source_breakdown,
 }
 
 

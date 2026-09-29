@@ -151,7 +151,15 @@ chat:             # режим вопросов; включается целик
       Lead-uri noi neatinse de consultant (fără schimbare de status, contact sau ofertă) după
       pragul de ore, pe consultant, din ultimele zile. oldest_age_days este vârsta celui mai vechi
       în zile întregi; manager_count dă câți consultanți au lead-uri neatinse.
+    source_breakdown: >-
+      Lead-urile unei perioade pe sursă (source_name) sau pe campania din UTM_Campanie
+      (utm_campanie): pentru fiecare rând lead-uri, utile, oferte, clienți, IRR și SCR. total
+      este totalul perioadei, egal cu funnel; row_count dă numărul de rânduri; without_key sunt
+      lead-urile fără sursă sau fără campanie; la campanii, leads_with_key este numărul
+      lead-urilor cu campanie, iar key_share ponderea lor. Numele surselor și campaniilor se scriu
+      exact ca în rezultat. Opțional pentru un singur showroom.
   # Описания параметров по имени, для каждого инструмента с таким параметром.
   parameters:
     period_a: Perioada evaluată, de obicei cea mai recentă (de ex. august în „august față de iulie”).
+    by: "source_name: pe sursa lead-ului din CRM; utm_campanie: pe campania din UTM_Campanie."
     period_b: Baza comparației, de obicei perioada mai veche (de ex. iulie în „august față de iulie”).

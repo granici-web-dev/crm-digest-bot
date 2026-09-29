@@ -10,13 +10,26 @@ GOLDEN_FILE = Path(__file__).resolve().parents[1] / "eval" / "chat-golden.yaml"
 TODAY = date(2026, 9, 29)
 
 
+# Шесть инструментов M6 (docs/success-criteria.md, «1. MVP»); новые инструменты проверяет набор I4.
+M6_TOOLS = frozenset(
+    {
+        "funnel",
+        "manager_kpi",
+        "compare_periods",
+        "loss_reasons",
+        "overdue_followups",
+        "untouched_leads",
+    }
+)
+
+
 def test_golden_file_has_thirty_cases_with_required_coverage() -> None:
-    cases = load_golden_cases(GOLDEN_FILE)
+    cases = [case for case in load_golden_cases(GOLDEN_FILE) if "i4" not in case.tags]
     tags = Counter(tag for case in cases for tag in case.tags)
     tools = Counter(call.tool for case in cases for call in case.calls)
 
     assert len(cases) == 30
-    assert set(tools) == set(ARGUMENT_MODELS)
+    assert set(tools) == M6_TOOLS
     assert min(tools.values()) >= 2
     assert tools["compare_periods"] >= 2
     assert tags["contacts"] == 3
