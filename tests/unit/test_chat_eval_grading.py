@@ -3,7 +3,14 @@ from typing import Any
 
 import pytest
 
-from digest.acceptance.chat_eval import ExpectedCall, GoldenCase, grade_case
+from digest.acceptance.chat_eval import (
+    CaseResult,
+    ExpectedCall,
+    GoldenCase,
+    Grade,
+    grade_case,
+    summarize,
+)
 from digest.chat.loop import ChatAnswer, ExecutedToolCall
 from digest.chat.tools import ToolOutcome
 from digest.db.schema import ChatQuestionStatus
@@ -162,3 +169,19 @@ def test_change_sentence_requires_only_its_percent() -> None:
     )
 
     assert grade.passed, grade.reason
+
+
+def test_m6_gate_ignores_i4_cases() -> None:
+    def result(case_id: str, tags: list[str], passed: bool, status: ChatQuestionStatus) -> Any:
+        case = funnel_case([]).model_copy(update={"id": case_id, "tags": tags})
+        return CaseResult(case, Grade(passed, ""), 20.0 if tags else 4.0, answer("—", (), status))
+
+    results = [result(f"m6-{index}", [], True, "answered") for index in range(27)]
+    results += [result(f"i4-{index}", ["i4"], False, "unverified_numbers") for index in range(10)]
+
+    summary = summarize(results, "claude-sonnet-5")
+
+    assert (summary.m6.passed, summary.m6.total, summary.m6.guard_hits) == (27, 27, 0)
+    assert (summary.i4.passed, summary.i4.total, summary.i4.guard_hits) == (0, 10, 10)
+    assert summary.m6.median_seconds == 4.0
+    assert summary.meets_gate

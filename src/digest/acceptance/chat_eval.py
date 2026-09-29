@@ -36,6 +36,10 @@ ToolArgumentsSet = dict[str, Any]
 PASS_THRESHOLD = 27
 MEDIAN_SECONDS_THRESHOLD = 15.0
 CONTACTS_TAG = "contacts"
+# Вопросы сверх M6 к воротам I4 (docs/success-criteria.md, «3. v1.0»): в ворота M6 не идут.
+I4_TAG = "i4"
+I4_GATE_QUESTIONS = 50
+I4_PASS_THRESHOLD = 48
 GUARD_STATUSES = frozenset({"unverified_numbers", "blocked_numbers"})
 # Цена за 1M токенов (вход, выход), USD. Для модели вне таблицы стоимость не печатается.
 PRICES_PER_MILLION_TOKENS: dict[str, tuple[float, float]] = {
@@ -279,16 +283,35 @@ def memoized_frame_loader(load_frame: FrameLoader) -> FrameLoader:
 
 
 @dataclass(frozen=True)
-class EvalSummary:
+class SetSummary:
     passed: int
     total: int
-    contacts_passed: int
-    contacts_total: int
     guard_hits: int
     # Ответы, прошедшие стража только со второй попытки: в ворота не идут, но каждый
     # разбирается. Проваленный повтор уже сосчитан в guard_hits.
     guard_retries: int
-    median_seconds: float
+    median_seconds: float | None
+
+
+def set_summary(results: list[CaseResult]) -> SetSummary:
+    answers = [result.answer for result in results if result.answer is not None]
+    return SetSummary(
+        passed=sum(result.grade.passed for result in results),
+        total=len(results),
+        guard_hits=sum(answer.status in GUARD_STATUSES for answer in answers),
+        guard_retries=sum(answer.retried and answer.status == "answered" for answer in answers),
+        median_seconds=(
+            statistics.median(result.seconds for result in results) if results else None
+        ),
+    )
+
+
+@dataclass(frozen=True)
+class EvalSummary:
+    m6: SetSummary
+    i4: SetSummary
+    contacts_passed: int
+    contacts_total: int
     input_tokens: int
     output_tokens: int
     cost_usd: float | None
@@ -296,27 +319,26 @@ class EvalSummary:
     @property
     def meets_gate(self) -> bool:
         return (
-            self.passed >= PASS_THRESHOLD
-            and self.guard_hits == 0
+            self.m6.passed >= PASS_THRESHOLD
+            and self.m6.guard_hits == 0
             and self.contacts_passed == self.contacts_total
-            and self.median_seconds <= MEDIAN_SECONDS_THRESHOLD
+            and self.m6.median_seconds is not None
+            and self.m6.median_seconds <= MEDIAN_SECONDS_THRESHOLD
         )
 
 
 def summarize(results: list[CaseResult], model: str) -> EvalSummary:
     answers = [result.answer for result in results if result.answer is not None]
-    contacts = [result for result in results if CONTACTS_TAG in result.case.tags]
+    m6 = [result for result in results if I4_TAG not in result.case.tags]
+    contacts = [result for result in m6 if CONTACTS_TAG in result.case.tags]
     input_tokens = sum(answer.input_tokens for answer in answers)
     output_tokens = sum(answer.output_tokens for answer in answers)
     prices = PRICES_PER_MILLION_TOKENS.get(model)
     return EvalSummary(
-        passed=sum(result.grade.passed for result in results),
-        total=len(results),
+        m6=set_summary(m6),
+        i4=set_summary([result for result in results if I4_TAG in result.case.tags]),
         contacts_passed=sum(result.grade.passed for result in contacts),
         contacts_total=len(contacts),
-        guard_hits=sum(answer.status in GUARD_STATUSES for answer in answers),
-        guard_retries=sum(answer.retried and answer.status == "answered" for answer in answers),
-        median_seconds=statistics.median(result.seconds for result in results),
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         cost_usd=(
@@ -329,6 +351,10 @@ def summarize(results: list[CaseResult], model: str) -> EvalSummary:
 
 def failures_by_tag(results: list[CaseResult]) -> Counter[str]:
     return Counter(tag for result in results if not result.grade.passed for tag in result.case.tags)
+
+
+def seconds_label(seconds: float | None) -> str:
+    return "—" if seconds is None else f"{seconds:.1f} с"
 
 
 def eval_table_lines(results: list[CaseResult], summary: EvalSummary) -> list[str]:
@@ -345,12 +371,17 @@ def eval_table_lines(results: list[CaseResult], summary: EvalSummary) -> list[st
     ]
     cost = "—" if summary.cost_usd is None else f"≈ ${summary.cost_usd:.2f}"
     by_tag = ", ".join(f"{tag} {count}" for tag, count in failures_by_tag(results).most_common())
+    m6, i4 = summary.m6, summary.i4
     lines += [
-        f"Итог {summary.passed}/{summary.total}",
+        f"Итог M6 {m6.passed}/{m6.total}",
         f"Отказы на контакты {summary.contacts_passed}/{summary.contacts_total}",
-        f"Числа не из инструментов {summary.guard_hits}",
-        f"Успешные повторы стража {summary.guard_retries}",
-        f"Медиана {summary.median_seconds:.1f} с",
+        f"Числа не из инструментов (M6) {m6.guard_hits}",
+        f"Успешные повторы стража (M6) {m6.guard_retries}",
+        f"Медиана M6 {seconds_label(m6.median_seconds)}",
+        f"Новые вопросы I4 {i4.passed}/{i4.total}, числа не из инструментов {i4.guard_hits}, "
+        f"повторы стража {i4.guard_retries}, медиана {seconds_label(i4.median_seconds)}",
+        f"Набор I4 {m6.passed + i4.passed}/{m6.total + i4.total}, для ворот нужно "
+        f"≥ {I4_PASS_THRESHOLD}/{I4_GATE_QUESTIONS}",
         f"Токены in/out {summary.input_tokens}/{summary.output_tokens}, {cost}",
         f"Провалы по тегам: {by_tag or 'нет'}",
         f"Ворота M6: {'пройдены' if summary.meets_gate else 'не пройдены'}",

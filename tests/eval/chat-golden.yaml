@@ -267,3 +267,96 @@
   tags: [offers_value]
   question: "Cât valorează în euro contractele semnate săptămâna trecută?"
   expect: no_data
+
+# I4: новые инструменты (docs/shapes/2026-09-29-chat-new-tools.md). В ворота M6 не идут.
+# Касания только на днях с парой снапшотов (27.09 → 28.09 и дальше).
+- id: src-last-month
+  tags: [i4, source, named_period]
+  question: "Câte lead-uri a adus fiecare sursă luna trecută?"
+  expect: answer
+  calls:
+    - tool: source_breakdown
+      arguments: {period: luna_trecuta, by: source_name, showroom: toate}
+      numbers: [total.leads, row_count]
+
+- id: src-site-scr-august
+  tags: [i4, source, specific_month]
+  question: "Ce SCR au avut lead-urile din Site în august?"
+  expect: answer
+  calls:
+    - tool: source_breakdown
+      arguments: {period: {year: 2026, month: 8}, by: source_name, showroom: toate}
+      numbers: ["rows[key=Site].scr"]
+
+- id: campaigns-this-month
+  tags: [i4, source, named_period]
+  question: "Câte lead-uri au venit din campanii luna aceasta?"
+  expect: answer
+  calls:
+    - tool: source_breakdown
+      arguments: {period: luna_curenta, by: utm_campanie, showroom: toate}
+      numbers: [leads_with_key]
+
+- id: followup-src-cluj
+  tags: [i4, followup, source, showroom]
+  after: src-last-month
+  question: "Dar în Cluj?"
+  expect: answer
+  calls:
+    - tool: source_breakdown
+      arguments: {period: luna_trecuta, by: source_name, showroom: "Cluj"}
+      numbers: [total.leads]
+
+- id: touches-this-week
+  tags: [i4, touches, named_period]
+  question: "Câte atingeri au făcut consultanții săptămâna aceasta?"
+  expect: answer
+  calls:
+    - tool: manager_touches
+      arguments: {period: saptamana_curenta, manager: toti}
+      numbers: [touch_count]
+
+- id: touches-moaca-day
+  tags: [i4, touches, specific_day]
+  question: "Câte atingeri a avut Moaca Andreea pe 28.09?"
+  expect: answer
+  calls:
+    - tool: manager_touches
+      arguments: {period: {day: "2026-09-28"}, manager: "Moaca Andreea"}
+      numbers: [touch_count]
+
+- id: touches-level-day
+  tags: [i4, touches, specific_day]
+  question: "Câte lead-uri au trecut în Revenire 2 pe 28.09?"
+  expect: answer
+  calls:
+    - tool: manager_touches
+      arguments: {period: {day: "2026-09-28"}, manager: toti}
+      numbers: ["by_level[status=Revenire 2].touch_count"]
+
+- id: repeat-last-month
+  tags: [i4, repeat, named_period]
+  question: "Câți clienți care revin am avut luna trecută?"
+  expect: answer
+  calls:
+    - tool: repeat_clients
+      arguments: {period: luna_trecuta}
+      numbers: [repeat, clients]
+
+- id: repeat-august-cluj
+  tags: [i4, repeat, specific_month, showroom]
+  question: "Câți clienți care revin a avut showroomul din Cluj în august?"
+  expect: answer
+  calls:
+    - tool: repeat_clients
+      arguments: {period: {year: 2026, month: 8}}
+      numbers: ["by_showroom[showroom=Cluj].repeat"]
+
+- id: repeat-reason-this-month
+  tags: [i4, repeat, named_period]
+  question: "Câți dintre clienții care revin luna aceasta au venit prin Client Fidel?"
+  expect: answer
+  calls:
+    - tool: repeat_clients
+      arguments: {period: luna_curenta}
+      numbers: ["by_reason[reason=Client Fidel].client_count"]
