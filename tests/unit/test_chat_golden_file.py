@@ -44,9 +44,13 @@ def test_i4_cases_cover_every_new_tool() -> None:
     cases = [case for case in load_golden_cases(GOLDEN_FILE) if I4_TAG in case.tags]
     tools = Counter(call.tool for case in cases for call in case.calls)
 
-    assert len(cases) == 10
+    assert len(cases) == 12
     assert set(tools) == set(ARGUMENT_MODELS) - M6_TOOLS
     assert min(tools.values()) >= 3
+    # Отказ по неподходящему периоду у каждого инструмента со своим набором периодов.
+    refusals = [case for case in cases if "refusal_period" in case.tags]
+    assert [case.expect for case in refusals] == ["refusal", "refusal"]
+    assert {tag for case in refusals for tag in case.tags} >= {"touches", "repeat"}
 
 
 def test_golden_file_covers_every_showroom_and_three_consultants(app_config: AppConfig) -> None:

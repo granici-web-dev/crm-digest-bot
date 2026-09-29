@@ -277,7 +277,9 @@
   calls:
     - tool: source_breakdown
       arguments: {period: luna_trecuta, by: source_name, showroom: toate}
-      numbers: [total.leads, row_count]
+      # Вопрос не спрашивает число строк: ждём итог и самый крупный источник (rows[0], строки по
+      # убыванию лидов). Набор I4 ещё не в зачёте, поэтому ожидание правится без пересмотра ворот.
+      numbers: [total.leads, "rows[0].leads"]
 
 - id: src-site-scr-august
   tags: [i4, source, specific_month]
@@ -360,3 +362,13 @@
     - tool: repeat_clients
       arguments: {period: luna_curenta}
       numbers: ["by_reason[reason=Client Fidel].client_count"]
+
+- id: touches-last-month-refused
+  tags: [i4, touches, refusal_period]
+  question: "Câte atingeri au făcut consultanții luna trecută?"
+  expect: refusal
+
+- id: repeat-last-week-refused
+  tags: [i4, repeat, refusal_period]
+  question: "Câți clienți care revin am avut săptămâna trecută?"
+  expect: refusal

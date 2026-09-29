@@ -21,7 +21,14 @@ from digest.metrics.weekly import (
 )
 from digest.reports.charts import chart_labels
 from digest.reports.context import ModuleResult, ReportContext
-from digest.reports.render import RO_WEEKDAYS, campaign_label, render, target_label
+from digest.reports.render import (
+    RO_WEEKDAYS,
+    campaign_label,
+    day_ranges_label,
+    render,
+    target_label,
+    week_range_label,
+)
 
 TableRow = list[str | int]
 
@@ -51,24 +58,6 @@ def working_hours_label(config: AppConfig) -> str:
 
 def excluded_sources_label(config: AppConfig) -> str:
     return ", ".join(config.status_mapping.sources.showroom_visit)
-
-
-def week_range_label(days: tuple[date, ...]) -> str:
-    first, last = days[0], days[-1]
-    first_label = f"{first:%d}" if first.month == last.month else f"{first:%d.%m}"
-    return f"{first_label}–{last:%d.%m}"
-
-
-def day_ranges_label(days: tuple[date, ...]) -> str:
-    runs: list[list[date]] = []
-    for day in days:
-        if runs and day - runs[-1][-1] == timedelta(days=1):
-            runs[-1].append(day)
-        else:
-            runs.append([day])
-    return ", ".join(
-        f"{run[0]:%d.%m}" if len(run) == 1 else week_range_label(tuple(run)) for run in runs
-    )
 
 
 # Таблицы в раскладке ручного понедельничного отчёта (docs/samples/weekly-manual-report-2026-07.md):

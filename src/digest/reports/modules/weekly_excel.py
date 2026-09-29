@@ -18,10 +18,9 @@ from digest.reports.modules.weekly import (
     day_showroom_table,
     excluded_sources_label,
     showroom_source_table,
-    week_range_label,
     working_hours_label,
 )
-from digest.reports.render import render, text
+from digest.reports.render import render, text, week_range_label
 
 # Колонки листов «Lead-uri» и «Vizite»: имя колонки ячеек и подпись. Ячейки строятся только из
 # LEAD_ROW_COLUMNS metrics/weekly.py, где нет данных клиента (инвариант 7).

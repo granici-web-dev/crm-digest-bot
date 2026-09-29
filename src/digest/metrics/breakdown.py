@@ -46,6 +46,9 @@ class LeadBreakdown:
     without_key: UnkeyedBreakdownRow | None
     total: UnkeyedBreakdownRow
 
+    # docs/kpi-definitions.md, «Разбивка по источникам и кампаниям» (m7): доля «N din M lead-uri
+    # au campanie» = LEADS с ключом / все LEADS окна, лиды без значения только в знаменателе.
+    # Одна формула для m7 и чата.
     @property
     def leads_with_key(self) -> int:
         without_key_leads = 0 if self.without_key is None else self.without_key.counts.leads

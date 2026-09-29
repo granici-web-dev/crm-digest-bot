@@ -454,17 +454,17 @@ def checked_answer(
             return ChatAnswer(render("chat_refusal"), "no_tool", calls, input_tokens, output_tokens)
         return ChatAnswer(html.escape(model_text), "no_tool", calls, input_tokens, output_tokens)
     signature_text = signature(list(calls))
-    mefi_names = name_mask_pattern(
+    masked_name_pattern = name_mask_pattern(
         config_names.union(*(call.outcome.masked_names for call in answered_calls))
     )
     allowed = allowed_numbers(
-        mefi_names.sub(" ", signature_text),
+        masked_name_pattern.sub(" ", signature_text),
         [
-            mefi_names.sub(" ", source)
+            masked_name_pattern.sub(" ", source)
             for source in (question, *(outcome_text(call.outcome) for call in answered_calls))
         ],
     )
-    unverified = first_unverified_number(mefi_names.sub(" ", model_text), allowed)
+    unverified = first_unverified_number(masked_name_pattern.sub(" ", model_text), allowed)
     if unverified is not None:
         return ChatAnswer(
             UNVERIFIED_NUMBERS_TEXT,

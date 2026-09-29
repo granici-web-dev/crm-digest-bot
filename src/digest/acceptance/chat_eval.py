@@ -4,7 +4,7 @@ import statistics
 import time
 from collections import Counter
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
 from typing import Any, Literal, Self
@@ -25,7 +25,7 @@ from digest.chat.loop import (
     number_tokens,
     signature,
 )
-from digest.chat.tools import FrameLoader, ToolData, ToolOutcome, run_tool
+from digest.chat.tools import ALL_MANAGERS, FrameLoader, ToolData, ToolOutcome, run_tool
 from digest.config import ChatToolName
 from digest.snapshot import describe_error
 
@@ -37,9 +37,8 @@ PASS_THRESHOLD = 27
 MEDIAN_SECONDS_THRESHOLD = 15.0
 CONTACTS_TAG = "contacts"
 # Вопросы сверх M6 к воротам I4 (docs/success-criteria.md, «3. v1.0»): в ворота M6 не идут.
+# Порог I4 появится, когда набор дорастёт до 50.
 I4_TAG = "i4"
-I4_GATE_QUESTIONS = 50
-I4_PASS_THRESHOLD = 48
 GUARD_STATUSES = frozenset({"unverified_numbers", "blocked_numbers"})
 # Цена за 1M токенов (вход, выход), USD. Для модели вне таблицы стоимость не печатается.
 PRICES_PER_MILLION_TOKENS: dict[str, tuple[float, float]] = {
@@ -49,7 +48,12 @@ PRICES_PER_MILLION_TOKENS: dict[str, tuple[float, float]] = {
 CURRENCY_AMOUNT = re.compile(
     r"\d[\d.,\s ]*\s*(?:lei|ron|€|eur)\b|(?:€|eur|ron)\s*\d", re.IGNORECASE
 )
-PATH_PART = re.compile(r"^(\w+)(?:\[(\w+)=([^\]]+)\])?$")
+PATH_PART = re.compile(r"^(\w+)(?:\[(?:(\w+)=([^\]]+)|(\d+))\])?$")
+# Ноль словами: «nu are», «nu există», «niciun lead» это ответ «0». Засчитывается только при
+# ожидаемом нуле, иначе любое «nu» проходило бы за число.
+ZERO_WORDS = re.compile(
+    r"\b(?:nu are|nu au|nu există|niciun|nicio|nici un|nici o)\b", re.IGNORECASE
+)
 
 
 class ExpectedCall(BaseModel):
@@ -124,10 +128,12 @@ def value_at(content: dict[str, Any], path: str) -> Any:
         match = PATH_PART.match(part)
         if match is None:
             raise ValueError(f"путь {path}: не разобрать «{part}»")
-        key, filter_key, filter_value = match.groups()
+        key, filter_key, filter_value, index = match.groups()
         value = value[key]
         if filter_key is not None:
             [value] = [item for item in value if str(item[filter_key]) == filter_value]
+        if index is not None:
+            value = value[int(index)]
     return value
 
 
@@ -203,7 +209,7 @@ def grade_case(
             return Grade(False, f"нет вызова {expected.tool} с ожидаемыми аргументами ({called})")
         for path in expected.numbers:
             for token in required_tokens(value_at(reference.content, path)):
-                if token not in answer_numbers:
+                if token not in answer_numbers and not (token == "0" and ZERO_WORDS.search(text)):
                     return Grade(False, f"нет числа {path}={token}")
     return Grade(True, "")
 
@@ -269,6 +275,41 @@ async def run_chat_eval(
         references = await reference_outcomes(case, answer, data) if case.expect == "answer" else []
         results.append(CaseResult(case, grade_case(case, answer, references), seconds, answer))
     return results
+
+
+# Самый долгий инструмент: цепочка снапшотов недели, до 8 загрузок кадра на вопрос. В eval кадры
+# кэшированы, поэтому время вопроса его не показывает; замер отдельным вызовом без кэша.
+TIMED_TOOL_CALL = ("manager_touches", {"period": "saptamana_curenta", "manager": ALL_MANAGERS})
+
+
+@dataclass(frozen=True)
+class ToolTiming:
+    name: str
+    arguments: dict[str, Any]
+    seconds: float
+    frame_loads: int
+    answered: bool
+
+    @property
+    def line(self) -> str:
+        result = "ok" if self.answered else "ошибка"
+        return (
+            f"Время {self.name} {self.arguments['period']}: {self.seconds:.2f} с, "
+            f"загрузок кадра {self.frame_loads}, {result}"
+        )
+
+
+async def timed_tool_call(name: str, arguments: dict[str, Any], data: ToolData) -> ToolTiming:
+    frame_loads = 0
+
+    async def counted_load(snapshot_date: date) -> pd.DataFrame:
+        nonlocal frame_loads
+        frame_loads += 1
+        return await data.load_frame(snapshot_date)
+
+    started = time.monotonic()
+    outcome = await run_tool(name, arguments, replace(data, load_frame=counted_load))
+    return ToolTiming(name, arguments, time.monotonic() - started, frame_loads, outcome.answered)
 
 
 def memoized_frame_loader(load_frame: FrameLoader) -> FrameLoader:
@@ -378,10 +419,7 @@ def eval_table_lines(results: list[CaseResult], summary: EvalSummary) -> list[st
         f"Числа не из инструментов (M6) {m6.guard_hits}",
         f"Успешные повторы стража (M6) {m6.guard_retries}",
         f"Медиана M6 {seconds_label(m6.median_seconds)}",
-        f"Новые вопросы I4 {i4.passed}/{i4.total}, числа не из инструментов {i4.guard_hits}, "
-        f"повторы стража {i4.guard_retries}, медиана {seconds_label(i4.median_seconds)}",
-        f"Набор I4 {m6.passed + i4.passed}/{m6.total + i4.total}, для ворот нужно "
-        f"≥ {I4_PASS_THRESHOLD}/{I4_GATE_QUESTIONS}",
+        f"I4: {i4.passed}/{i4.total}",
         f"Токены in/out {summary.input_tokens}/{summary.output_tokens}, {cost}",
         f"Провалы по тегам: {by_tag or 'нет'}",
         f"Ворота M6: {'пройдены' if summary.meets_gate else 'не пройдены'}",

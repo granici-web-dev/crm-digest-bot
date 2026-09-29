@@ -337,7 +337,7 @@ async def test_substituted_snapshot_of_closed_period_is_disclosed(app_config: Ap
 
     assert answer.status == "answered"
     assert answer.text.endswith(
-        "<i>Date din snapshotul din 23.09.2026 (nu există snapshot pentru 22.09.2026)</i>"
+        "<i>Snapshot din 23.09: datele sunt complete, statusurile lead-urilor sunt la 23.09</i>"
     )
 
 
@@ -420,6 +420,13 @@ def test_system_prompt_names_default_period_for_touches() -> None:
     [rule] = [line for line in system_prompt(TODAY).splitlines() if "manager_touches, dacă" in line]
     assert "saptamana_curenta" in rule
     assert "spui în răspuns" in rule
+
+
+def test_system_prompt_limits_periods_of_touches_and_repeat_clients() -> None:
+    [rule] = [line for line in system_prompt(TODAY).splitlines() if "doar pe zile" in line]
+    assert "manager_touches" in rule
+    assert "repeat_clients) doar pe luni" in rule
+    assert "nu apelezi instrumentul" in rule
 
 
 def test_prompt_asks_for_consultant_only_where_tool_requires_one(app_config: AppConfig) -> None:

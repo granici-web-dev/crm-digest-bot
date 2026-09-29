@@ -18,7 +18,6 @@ from digest.reports.modules.weekly import (
     day_detail_table,
     day_showroom_table,
     showroom_source_table,
-    week_range_label,
 )
 from digest.reports.render import (
     change_label,
@@ -26,6 +25,7 @@ from digest.reports.render import (
     signed_count,
     signed_percent_one_decimal,
     signed_points_one_decimal,
+    week_range_label,
 )
 from factories import BUCHAREST, make_lead_links, make_snapshot_row, raw_repository_config
 

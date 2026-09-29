@@ -18,5 +18,6 @@ Reguli:
 - Perioada este fie un nume din listă (azi, ieri, saptamana_curenta, saptamana_trecuta, luna_curenta, luna_trecuta, ultimele_30_zile), fie o zi anume {"day": "AAAA-LL-ZZ"}, fie o lună anume {"year": AAAA, "month": L}. Folosești numele din listă când întrebarea spune „ieri”, „luna trecută” și altele asemenea; ziua sau luna anume când întrebarea dă o dată („25.09”, „pe 3 august”) sau numele unei luni („august”, „luna iulie”).
 - O dată sau o lună fără an înseamnă cea mai recentă care nu este în viitor față de astăzi.
 - Dacă întrebarea nu spune perioada, alegi perioada cea mai apropiată de sens.
+- Atingerile (manager_touches) se numără doar pe zile și săptămâni; clienții care revin (repeat_clients) doar pe luni. Pentru altă perioadă nu apelezi instrumentul și nu dai numere: spui pe ce perioade se pot număra.
 - La manager_touches, dacă întrebarea nu spune perioada, apelezi cu saptamana_curenta și spui în răspuns că este săptămâna curentă.
 - La manager_kpi, dacă lipsește numele consultantului, întrebi care consultant. La overdue_followups și manager_touches consultantul este opțional: fără nume apelezi cu toti și dai totalul pentru toți consultanții.

@@ -22,8 +22,7 @@ from digest.db.lead_frame import SnapshotMissingError
 from digest.metrics.breakdown import (
     BREAKDOWN_COLUMNS,
     BreakdownColumn,
-    BreakdownRow,
-    UnkeyedBreakdownRow,
+    LeadBreakdown,
     lead_breakdown,
 )
 from digest.metrics.chat_periods import (
@@ -50,6 +49,7 @@ from digest.metrics.kpi import (
     COUNT_NAMES,
     LeadCounts,
     Period,
+    add_counts,
     kpis_from,
     lead_counts,
     lead_counts_by_showroom,
@@ -63,10 +63,10 @@ from digest.metrics.weekly import (
     loss_reasons_in_window,
 )
 from digest.reports.lead_links import LeadLinks
-from digest.reports.modules.weekly import day_ranges_label
 from digest.reports.render import (
     RO_MONTHS,
     campaign_label,
+    day_ranges_label,
     percent_one_decimal,
     points_one_decimal,
     signed_count,
@@ -452,12 +452,12 @@ class PeriodFrame:
 
     @property
     def snapshot_note(self) -> str | None:
-        used = date_label(self.snapshot_date)
         if self.missing_snapshot_for is not None:
-            missing = date_label(self.missing_snapshot_for)
-            return text("snapshot_substituted", used=used, missing=missing)
+            # Подменный снапшот позже конца периода: лиды периода все, на его дату только
+            # статусы. Прямым текстом, иначе модель писала «datele pot fi incomplete».
+            return text("snapshot_substituted", used=f"{self.snapshot_date:%d.%m}")
         if self.data_as_of is not None:
-            return text("snapshot_used", used=used)
+            return text("snapshot_used", used=date_label(self.snapshot_date))
         return None
 
 
@@ -522,6 +522,7 @@ def period_header(period_frame: PeriodFrame) -> dict[str, Any]:
             if period_frame.missing_snapshot_for is None
             else date_label(period_frame.missing_snapshot_for)
         ),
+        "snapshot_note": period_frame.snapshot_note,
     }
 
 
@@ -762,8 +763,8 @@ async def loss_reasons(data: ToolData, arguments: LossReasonsArguments) -> ToolO
     return outcome({**period_header(frame), "showroom": showroom, **content}, frame)
 
 
-def breakdown_numbers(row: BreakdownRow | UnkeyedBreakdownRow) -> dict[str, Any]:
-    counts, kpis = row.counts, row.kpis
+def breakdown_numbers(counts: LeadCounts) -> dict[str, Any]:
+    kpis = kpis_from(counts)
     return {
         "leads": counts.leads,
         "useful": counts.useful,
@@ -772,6 +773,69 @@ def breakdown_numbers(row: BreakdownRow | UnkeyedBreakdownRow) -> dict[str, Any]
         "irr": percent_one_decimal(kpis.irr),
         "scr": percent_one_decimal(kpis.scr),
     }
+
+
+def breakdown_label(key: str, by: BreakdownColumn, config: AppConfig) -> str:
+    if by != "utm_campanie":
+        return key
+    # Сырое значение UTM модели не уходит: в нём бывают телефон и e-mail (инвариант 7).
+    return campaign_label(
+        key,
+        config.modules.scr_by_source_campaign_params.campaign_label_max_length,
+        config.status_mapping.hidden_campaign_label,
+    )
+
+
+def labeled_rows(
+    breakdown: LeadBreakdown, by: BreakdownColumn, config: AppConfig
+) -> list[tuple[str, LeadCounts]]:
+    # Кампании с одной подписью (скрытые, обрезанные) одной строкой: две строки с одним key
+    # модель не различила бы. Порядок тот же, что у lead_breakdown.
+    parts: dict[str, list[LeadCounts]] = {}
+    for row in breakdown.rows:
+        parts.setdefault(breakdown_label(row.key, by, config), []).append(row.counts)
+    merged = {label: add_counts(counts) for label, counts in parts.items()}
+    return sorted(merged.items(), key=lambda item: (-item[1].leads, item[0]))
+
+
+@dataclass(frozen=True)
+class BreakdownContent:
+    content: dict[str, Any]
+    labels: tuple[str, ...]
+
+
+def breakdown_content(
+    breakdown: LeadBreakdown, by: BreakdownColumn, config: AppConfig
+) -> BreakdownContent:
+    rows = labeled_rows(breakdown, by, config)
+    other_labels = tuple(
+        dict.fromkeys(breakdown_label(key, by, config) for key in breakdown.other_keys)
+    )
+    content: dict[str, Any] = {
+        "by": by,
+        "row_count": len(rows),
+        "rows": [{"key": label, **breakdown_numbers(counts)} for label, counts in rows],
+        # При min_leads = 1 свёртки нет; появится порог, и свёрнутые лиды не пропадут молча.
+        "other": (
+            None
+            if breakdown.other is None
+            else {
+                "keys": list(other_labels),
+                "key_count": len(breakdown.other_keys),
+                **breakdown_numbers(breakdown.other.counts),
+            }
+        ),
+        "without_key": (
+            None
+            if breakdown.without_key is None
+            else breakdown_numbers(breakdown.without_key.counts)
+        ),
+        "total": breakdown_numbers(breakdown.total.counts),
+    }
+    if by == "utm_campanie":
+        content["leads_with_key"] = breakdown.leads_with_key
+        content["key_share"] = percent_one_decimal(breakdown.key_share)
+    return BreakdownContent(content, (*(label for label, _ in rows), *other_labels))
 
 
 async def source_breakdown(data: ToolData, arguments: SourceBreakdownArguments) -> ToolOutcome:
@@ -784,40 +848,14 @@ async def source_breakdown(data: ToolData, arguments: SourceBreakdownArguments) 
     breakdown = lead_breakdown(
         lead_frame, arguments.by, frame.window, frame.snapshot_date, data.config, min_leads=1
     )
-    if arguments.by == "utm_campanie":
-        # Сырое значение UTM модели не уходит: в нём бывают телефон и e-mail (инвариант 7).
-        params = data.config.modules.scr_by_source_campaign_params
-        keys = [
-            campaign_label(
-                row.key,
-                params.campaign_label_max_length,
-                data.config.status_mapping.hidden_campaign_label,
-            )
-            for row in breakdown.rows
-        ]
-    else:
-        keys = [row.key for row in breakdown.rows]
-    content: dict[str, Any] = {
-        **period_header(frame),
-        "by": arguments.by,
-        "showroom": showroom,
-        "row_count": len(breakdown.rows),
-        "rows": [
-            {"key": key, **breakdown_numbers(row)}
-            for key, row in zip(keys, breakdown.rows, strict=True)
-        ],
-        "without_key": (
-            None if breakdown.without_key is None else breakdown_numbers(breakdown.without_key)
-        ),
-        "total": breakdown_numbers(breakdown.total),
-    }
-    if arguments.by == "utm_campanie":
-        content["leads_with_key"] = breakdown.leads_with_key
-        content["key_share"] = percent_one_decimal(breakdown.key_share)
+    result = breakdown_content(breakdown, arguments.by, data.config)
     return replace(
-        outcome(content, frame),
-        masked_names=tuple(key for key in keys if is_masked_name(key)),
+        outcome({**period_header(frame), "showroom": showroom, **result.content}, frame),
+        masked_names=tuple(label for label in result.labels if is_masked_name(label)),
     )
+
+
+NO_REPEAT_CLIENTS = RepeatClientCounts(clients=0, repeat=0)
 
 
 def repeat_numbers(counts: RepeatClientCounts) -> dict[str, Any]:
@@ -833,9 +871,17 @@ async def repeat_clients(data: ToolData, arguments: RepeatClientsArguments) -> T
     # Месяц от первого дня периода, а не от snapshot_date: подменный снапшот следующего месяца
     # сдвинул бы окно.
     repeat = monthly_repeat_clients(frame.frame, frame.first_day, data.config)
-    showrooms = {
-        showroom: counts for showroom, counts in repeat.by_showroom.items() if counts.clients
+    # Шоурумы конфига всегда, с нулями: «0 в Cluj» это ответ, а не отсутствие данных. Прочие
+    # (без шоурума, вне конфига) только с клиентами.
+    configured = data.config.status_mapping.showrooms
+    showrooms: dict[str | None, RepeatClientCounts] = {
+        showroom: repeat.by_showroom.get(showroom, NO_REPEAT_CLIENTS) for showroom in configured
     }
+    showrooms.update(
+        (showroom, counts)
+        for showroom, counts in repeat.by_showroom.items()
+        if showroom not in configured and counts.clients
+    )
     return outcome(
         {
             **period_header(frame),
@@ -856,7 +902,9 @@ async def repeat_clients(data: ToolData, arguments: RepeatClientsArguments) -> T
                 }
                 for showroom, counts in showrooms.items()
             ],
-            "showroom_count": sum(1 for showroom in showrooms if showroom is not None),
+            "showroom_count": sum(
+                1 for showroom, counts in showrooms.items() if showroom and counts.clients
+            ),
             "won_without_converted_at": repeat.won_without_converted_at,
         },
         frame,
@@ -914,17 +962,21 @@ async def manager_touches_tool(data: ToolData, arguments: ManagerTouchesArgument
     if covered_from is None:
         raise NoDataError(text("touches_no_snapshot_pair", days=label))
     covered_until = chain_dates[-1]
+    missing_days = touches.days_without_snapshot
+    missing = {"days": day_ranges_label(missing_days), "day_count": len(missing_days)}
+    first_covered = f"{covered_from:%d.%m}"
+    # Те же сноски, что у w14 (templates/manager_touches.j2), плюс конец данных: неделя чата
+    # бывает текущей.
     notes = []
-    if covered_from > first_day:
-        notes.append(text("touches_counted_from", day=f"{covered_from:%d.%m}"))
-    if touches.days_without_snapshot:
-        notes.append(
-            text(
-                "touches_missing_days",
-                days=day_ranges_label(touches.days_without_snapshot),
-                day_count=len(touches.days_without_snapshot),
-            )
-        )
+    if covered_from > first_day and covered_from in missing_days:
+        notes.append(text("touches_counted_from_and_missing", day=first_covered, **missing))
+    else:
+        if covered_from > first_day:
+            notes.append(text("touches_counted_from", day=first_covered))
+        if missing_days:
+            notes.append(text("touches_missing_days", **missing))
+    if covered_until < last_day:
+        notes.append(text("touches_covered_until", day=f"{covered_until:%d.%m}"))
     if arguments.manager != ALL_MANAGERS:
         touches = touches.of_manager(arguments.manager)
     return ToolOutcome(
@@ -935,12 +987,8 @@ async def manager_touches_tool(data: ToolData, arguments: ManagerTouchesArgument
             "covered_from": date_label(covered_from),
             "covered_until": date_label(covered_until),
             "covered_day_count": (covered_until - covered_from).days + 1,
-            "days_without_snapshot": (
-                day_ranges_label(touches.days_without_snapshot)
-                if touches.days_without_snapshot
-                else None
-            ),
-            "days_without_snapshot_count": len(touches.days_without_snapshot),
+            "days_without_snapshot": missing["days"] if missing_days else None,
+            "days_without_snapshot_count": len(missing_days),
             **touches_content(touches, arguments.manager, data.config),
         },
         is_error=False,

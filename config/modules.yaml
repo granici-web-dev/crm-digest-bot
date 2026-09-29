@@ -156,13 +156,14 @@ chat:             # режим вопросов; включается целик
       (utm_campanie): pentru fiecare rând lead-uri, utile, oferte, clienți, IRR și SCR. total
       este totalul perioadei, egal cu funnel; row_count dă numărul de rânduri; without_key sunt
       lead-urile fără sursă sau fără campanie; la campanii, leads_with_key este numărul
-      lead-urilor cu campanie, iar key_share ponderea lor. Numele surselor și campaniilor se scriu
-      exact ca în rezultat. Opțional pentru un singur showroom.
+      lead-urilor cu campanie, iar key_share ponderea lor; other, dacă nu este null, adună
+      sursele sau campaniile mici într-un rând. Numele surselor și campaniilor se scriu exact ca
+      în rezultat. Opțional pentru un singur showroom.
     repeat_clients: >-
       Clienții care revin într-o lună: din clienții lunii (clients), câți sunt clienți anteriori
       (repeat, share), pe motiv (by_reason: telefon sau e-mail al unui client anterior din CRM,
-      ori sursa Client Fidel) și pe showroom (by_showroom; showroom_count dă câte showroom-uri au
-      clienți). Clienții de dinainte de CRM (înainte de 2026) fără sursa Client Fidel nu se văd,
+      ori sursa Client Fidel) și pe showroom (by_showroom, toate showroom-urile, și cele cu 0;
+      showroom_count dă câte showroom-uri au clienți). Clienții de dinainte de CRM (înainte de 2026) fără sursa Client Fidel nu se văd,
       deci procentul este subestimat. won_without_converted_at sunt lead-uri Clienți fără dată de
       conversie, neincluse. Doar pe lună.
     manager_touches: >-

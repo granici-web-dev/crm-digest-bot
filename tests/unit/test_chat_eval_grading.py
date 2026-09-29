@@ -8,8 +8,10 @@ from digest.acceptance.chat_eval import (
     ExpectedCall,
     GoldenCase,
     Grade,
+    eval_table_lines,
     grade_case,
     summarize,
+    value_at,
 )
 from digest.chat.loop import ChatAnswer, ExecutedToolCall
 from digest.chat.tools import ToolOutcome
@@ -85,6 +87,60 @@ def test_missing_number_fails() -> None:
     )
 
     assert grade.reason == "нет числа counts.leads=42"
+
+
+ZERO_CONTENT = {"counts": {"leads": 0}, "kpis": {"scr": "—"}}
+
+
+def zero_answer(text: str) -> ChatAnswer:
+    return ChatAnswer(
+        text,
+        "answered",
+        (ExecutedToolCall("funnel", FUNNEL_ARGUMENTS, outcome(ZERO_CONTENT)),),
+        1,
+        1,
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "0 lead-uri în București.",
+        "București nu are lead-uri.",
+        "Nu există lead-uri în București.",
+        "Niciun lead în București.",
+        "Nicio ofertă în București.",
+    ],
+)
+def test_expected_zero_accepts_digit_or_negation(text: str) -> None:
+    grade = grade_case(funnel_case(["counts.leads"]), zero_answer(text), [outcome(ZERO_CONTENT)])
+
+    assert grade.passed, grade.reason
+
+
+def test_negation_does_not_count_for_a_nonzero_value() -> None:
+    grade = grade_case(
+        funnel_case(["counts.leads"]),
+        answer("București nu are lead-uri.", (("funnel", FUNNEL_ARGUMENTS),)),
+        [outcome(FUNNEL_CONTENT)],
+    )
+
+    assert grade.reason == "нет числа counts.leads=42"
+
+
+def test_expected_zero_without_digit_or_negation_fails() -> None:
+    grade = grade_case(
+        funnel_case(["counts.leads"]), zero_answer("Puține lead-uri."), [outcome(ZERO_CONTENT)]
+    )
+
+    assert grade.reason == "нет числа counts.leads=0"
+
+
+def test_path_index_reads_the_first_row() -> None:
+    content = {"rows": [{"key": "Site", "leads": 41}, {"key": "Telefon", "leads": 9}]}
+
+    assert value_at(content, "rows[0].leads") == 41
+    assert value_at(content, "rows[key=Telefon].leads") == 9
 
 
 def test_unverified_numbers_status_fails_naming_the_number() -> None:
@@ -185,3 +241,21 @@ def test_m6_gate_ignores_i4_cases() -> None:
     assert (summary.i4.passed, summary.i4.total, summary.i4.guard_hits) == (0, 10, 10)
     assert summary.m6.median_seconds == 4.0
     assert summary.meets_gate
+
+
+def test_i4_line_has_no_gate_until_fifty_questions() -> None:
+    case = funnel_case([])
+    results = [
+        CaseResult(
+            case.model_copy(update={"id": f"i4-{index}", "tags": ["i4"]}),
+            Grade(passed, ""),
+            1.0,
+            answer("—"),
+        )
+        for index, passed in enumerate([True] * 9 + [False] * 3)
+    ]
+
+    lines = eval_table_lines(results, summarize(results, "claude-sonnet-5"))
+
+    assert "I4: 9/12" in lines
+    assert not any("48" in line or "50" in line for line in lines if "I4" in line)

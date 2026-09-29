@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import logging
+from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -9,12 +10,14 @@ import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.acceptance.chat_eval import (
+    TIMED_TOOL_CALL,
     answer_text_lines,
     eval_table_lines,
     load_golden_cases,
     memoized_frame_loader,
     run_chat_eval,
     summarize,
+    timed_tool_call,
     with_dependencies,
 )
 from digest.acceptance.privacy import audit_lines, audit_privacy
@@ -199,11 +202,12 @@ async def run_chat_eval_command(
             reader.lead_links,
         )
         results = await run_chat_eval(cases, client, app_settings.anthropic_model, data)
+        timing = await timed_tool_call(*TIMED_TOOL_CALL, replace(data, load_frame=load_frame))
     finally:
         await client.close()
         await engine.dispose()
     summary = summarize(results, app_settings.anthropic_model)
-    table = eval_table_lines(results, summary)
+    table = [*eval_table_lines(results, summary), timing.line]
     print_and_save(table, out)
     for line in answer_text_lines(results):
         print(line)

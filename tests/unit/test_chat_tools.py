@@ -1,16 +1,17 @@
 import json
 from datetime import date, datetime, timedelta
-from itertools import product
 from typing import Any, cast, get_args
 
 import pandas as pd
 import pytest
 
+from digest.acceptance.chat_eval import timed_tool_call
 from digest.chat.tools import (
     ALL_MANAGERS,
     ALL_SHOWROOMS,
     TOOL_FUNCTIONS,
     ToolData,
+    breakdown_content,
     count_comparison,
     kpi_comparison,
     run_tool,
@@ -18,11 +19,19 @@ from digest.chat.tools import (
 )
 from digest.config import KPI_NAMES, AppConfig, ChatToolName, Manager, ManagerRoster
 from digest.db.lead_frame import SnapshotMissingError
-from digest.metrics.chat_periods import CHAT_PERIODS, chat_period_window
+from digest.metrics.breakdown import lead_breakdown
+from digest.metrics.chat_periods import CHAT_PERIODS, ChatPeriod, chat_period_window
 from digest.metrics.daily import PreviousSnapshot, daily_window
 from digest.metrics.daily_checks import overdue_revenire_by_manager, untouched_leads
 from digest.metrics.frame import prepare_lead_frame
-from digest.metrics.kpi import COUNT_NAMES, kpis_from, lead_counts, lead_counts_by_showroom
+from digest.metrics.kpi import (
+    COUNT_NAMES,
+    count_flags,
+    kpis_from,
+    lead_counts,
+    lead_counts_by_showroom,
+    sum_counts,
+)
 from digest.metrics.monthly import (
     monthly_funnel,
     monthly_repeat_clients,
@@ -460,6 +469,63 @@ async def test_source_breakdown_campaign_label_hides_phone(
     assert outcome.masked_names == ("Promo 30",)
 
 
+async def test_source_breakdown_merges_rows_with_the_same_label(
+    etalon_config: AppConfig, lead_frame: pd.DataFrame
+) -> None:
+    campaigns = lead_frame.copy()
+    campaigns["utm_campanie"] = None
+    long_prefix = "Campanie de toamnă pentru canapele extensibile"
+    campaigns.loc[campaigns.index[:3], "utm_campanie"] = "Promo +40700000001"
+    campaigns.loc[campaigns.index[3:5], "utm_campanie"] = "Promo client2@example.com"
+    campaigns.loc[campaigns.index[5:9], "utm_campanie"] = f"{long_prefix} A"
+    campaigns.loc[campaigns.index[9:10], "utm_campanie"] = f"{long_prefix} B"
+
+    content = await run(
+        "source_breakdown",
+        {"period": "luna_trecuta", "by": "utm_campanie", "showroom": ALL_SHOWROOMS},
+        etalon_config,
+        campaigns,
+    )
+
+    window = may(etalon_config)
+    flags = count_flags(campaigns, window, END_OF_MAY, etalon_config)
+    raw_keys = campaigns.loc[flags.index, "utm_campanie"]
+    hidden = etalon_config.status_mapping.hidden_campaign_label
+    rows = {row["key"]: row for row in content["rows"]}
+    assert len(rows) == content["row_count"] == 2
+    hidden_counts = sum_counts(flags[raw_keys.str.startswith("Promo", na=False)])
+    assert rows[hidden]["leads"] == hidden_counts.leads == 5
+    assert rows[hidden]["irr"] == percent_one_decimal(kpis_from(hidden_counts).irr)
+    [long_label] = [key for key in rows if key != hidden]
+    assert long_label.endswith("…")
+    long_counts = sum_counts(flags[raw_keys.str.startswith(long_prefix, na=False)])
+    assert rows[long_label]["leads"] == long_counts.leads == 5
+    assert rows[long_label]["scr"] == percent_one_decimal(kpis_from(long_counts).scr)
+
+
+def test_source_breakdown_returns_collapsed_keys_as_other(
+    etalon_config: AppConfig, lead_frame: pd.DataFrame
+) -> None:
+    breakdown = lead_breakdown(
+        lead_frame, "source_name", may(etalon_config), END_OF_MAY, etalon_config, min_leads=20
+    )
+    assert breakdown.other is not None
+
+    content = breakdown_content(breakdown, "source_name", etalon_config).content
+
+    other = content["other"]
+    assert other["key_count"] == len(breakdown.other_keys) > 0
+    assert other["keys"] == list(breakdown.other_keys)
+    assert other["leads"] == breakdown.other.counts.leads > 0
+    without_key = content["without_key"]
+    assert (
+        sum(row["leads"] for row in content["rows"])
+        + other["leads"]
+        + (0 if without_key is None else without_key["leads"])
+        == content["total"]["leads"]
+    )
+
+
 async def test_repeat_clients_matches_m11_for_closed_month(
     etalon_config: AppConfig, lead_frame: pd.DataFrame
 ) -> None:
@@ -483,6 +549,20 @@ async def test_repeat_clients_matches_m11_for_closed_month(
     assert content["won_without_converted_at"] == m11.won_without_converted_at
 
 
+async def test_repeat_clients_lists_every_configured_showroom_with_zeros(
+    etalon_config: AppConfig, lead_frame: pd.DataFrame
+) -> None:
+    showrooms = etalon_config.status_mapping.showrooms
+    without_cluj = lead_frame[lead_frame["showroom"].ne(showrooms[-1])]
+
+    content = await run("repeat_clients", {"period": "luna_trecuta"}, etalon_config, without_cluj)
+
+    by_showroom = {row["showroom"]: row for row in content["by_showroom"]}
+    assert set(showrooms) <= set(by_showroom)
+    assert (by_showroom[showrooms[-1]]["clients"], by_showroom[showrooms[-1]]["share"]) == (0, "—")
+    assert content["showroom_count"] == len(showrooms) - 1
+
+
 async def test_repeat_clients_substituted_snapshot_keeps_period_month(
     etalon_config: AppConfig, lead_frame: pd.DataFrame
 ) -> None:
@@ -500,7 +580,7 @@ async def test_repeat_clients_substituted_snapshot_keeps_period_month(
 
 
 @pytest.mark.parametrize("period", ["saptamana_trecuta", "ultimele_30_zile", {"day": "2026-05-15"}])
-async def test_repeat_clients_rejects_week_period(
+async def test_repeat_clients_rejects_non_month_period(
     etalon_config: AppConfig, lead_frame: pd.DataFrame, period: Any
 ) -> None:
     outcome = await run_tool(
@@ -634,6 +714,21 @@ async def test_manager_touches_single_consultant_uses_of_manager(app_config: App
     assert [level["touch_count"] for level in idle.content["by_level"]] == [0, 0, 0]
 
 
+async def test_timed_tool_call_counts_every_frame_load(app_config: AppConfig) -> None:
+    frames = touch_snapshots(app_config)
+
+    timing = await timed_tool_call(
+        "manager_touches",
+        {"period": "saptamana_trecuta", "manager": ALL_MANAGERS},
+        touch_data(app_config, frames),
+    )
+
+    chain = touch_snapshot_dates(tuple(sorted(frames)), week_days(LAST_SUNDAY)[0], LAST_SUNDAY)
+    assert timing.answered
+    assert timing.frame_loads == len(chain) == 3
+    assert timing.line.startswith("Время manager_touches saptamana_trecuta: ")
+
+
 @pytest.mark.parametrize("period", ["luna_curenta", "ultimele_30_zile", {"year": 2026, "month": 9}])
 async def test_manager_touches_rejects_month_period(app_config: AppConfig, period: Any) -> None:
     outcome = await run_tool(
@@ -677,10 +772,37 @@ async def test_manager_touches_reports_days_without_snapshot(app_config: AppConf
         "25–26.09",
         2,
     )
+    # Первый покрытый день сам без снапшота: одна сноска, как у w14.
     assert outcome.snapshot_notes == (
-        "Atingeri numărate de la 25.09: nu există snapshot CRM mai vechi",
-        "Fără snapshot CRM pentru 25–26.09: atingerile din acele zile pot lipsi",
+        "Atingeri numărate de la 25.09: nu există snapshot CRM mai vechi, iar pentru 25–26.09 "
+        "lipsește snapshotul, atingerile din acele zile pot lipsi",
     )
+
+
+async def test_manager_touches_current_week_notes_last_covered_day(app_config: AppConfig) -> None:
+    frames = touch_snapshots(app_config)
+
+    outcome = await run_tool(
+        "manager_touches",
+        {"period": "saptamana_curenta", "manager": ALL_MANAGERS},
+        touch_data(app_config, frames),
+    )
+
+    # Неделя 28.09–04.10, последний снапшот 28.09.
+    assert outcome.content["covered_until"] == "28.09.2026"
+    assert outcome.snapshot_notes == ("Date până la 28.09",)
+
+
+async def test_manager_touches_closed_week_has_no_covered_until_note(
+    app_config: AppConfig,
+) -> None:
+    outcome = await run_tool(
+        "manager_touches",
+        {"period": "saptamana_trecuta", "manager": ALL_MANAGERS},
+        touch_data(app_config, touch_snapshots(app_config)),
+    )
+
+    assert not any(note.startswith("Date până la") for note in outcome.snapshot_notes)
 
 
 def followup_frame(config: AppConfig, **overrides: Any) -> pd.DataFrame:
@@ -766,12 +888,22 @@ async def test_untouched_leads_match_metrics(
     assert content["oldest_age_days"] == untouched.oldest_age_hours // 24
 
 
-def all_tool_calls(config: AppConfig) -> list[tuple[str, dict[str, Any]]]:
-    showrooms = (ALL_SHOWROOMS, *config.status_mapping.showrooms)
+def tool_calls(config: AppConfig, period: ChatPeriod | None) -> list[tuple[str, dict[str, Any]]]:
+    # По периоду на параметр: весь перебор одним тестом не укладывался в 100 мс unit-теста.
     managers = [manager.name for manager in config.managers.managers]
-    calls: list[tuple[str, dict[str, Any]]] = [("untouched_leads", {})]
-    calls += [("overdue_followups", {"manager": name}) for name in (ALL_MANAGERS, *managers)]
-    for period, showroom in product(CHAT_PERIODS, showrooms):
+    if period is None:
+        calls: list[tuple[str, dict[str, Any]]] = [("untouched_leads", {})]
+        calls += [("overdue_followups", {"manager": name}) for name in (ALL_MANAGERS, *managers)]
+        calls += [
+            ("repeat_clients", {"period": month}) for month in ("luna_curenta", "luna_trecuta")
+        ]
+        calls += [
+            ("manager_touches", {"period": day_or_week, "manager": ALL_MANAGERS})
+            for day_or_week in ("ieri", "saptamana_curenta")
+        ]
+        return calls
+    calls = [("manager_kpi", {"manager": name, "period": period}) for name in managers]
+    for showroom in (ALL_SHOWROOMS, *config.status_mapping.showrooms):
         calls += [
             ("funnel", {"period": period, "showroom": showroom}),
             ("loss_reasons", {"period": period, "showroom": showroom}),
@@ -787,24 +919,17 @@ def all_tool_calls(config: AppConfig) -> list[tuple[str, dict[str, Any]]]:
                 },
             ),
         ]
-    calls += [("repeat_clients", {"period": period}) for period in ("luna_curenta", "luna_trecuta")]
-    calls += [
-        ("manager_touches", {"period": period, "manager": ALL_MANAGERS})
-        for period in ("ieri", "saptamana_curenta")
-    ]
-    calls += [
-        ("manager_kpi", {"manager": name, "period": period})
-        for name, period in product(managers, CHAT_PERIODS)
-    ]
     return calls
 
 
+@pytest.mark.parametrize("period", [*CHAT_PERIODS, None])
 async def test_tool_results_contain_no_lead_ids_or_client_data(
-    etalon_config: AppConfig, lead_frame: pd.DataFrame
+    etalon_config: AppConfig, lead_frame: pd.DataFrame, period: ChatPeriod | None
 ) -> None:
     lead_ids = {str(lead_id) for lead_id in lead_frame["lead_id"]}
-    for name, arguments in all_tool_calls(etalon_config):
-        outcome = await run_tool(name, arguments, tool_data(etalon_config, lead_frame))
+    data = tool_data(etalon_config, lead_frame)
+    for name, arguments in tool_calls(etalon_config, period):
+        outcome = await run_tool(name, arguments, data)
         serialized = json.dumps(outcome.content, ensure_ascii=False)
 
         assert not outcome.is_error, (name, arguments, outcome.content)
@@ -867,9 +992,11 @@ async def test_closed_period_without_its_snapshot_uses_first_later_one_with_note
 
     assert not outcome.is_error
     assert outcome.snapshot_dates == (date(2026, 6, 2),)
-    assert outcome.snapshot_notes == (
-        "Date din snapshotul din 02.06.2026 (nu există snapshot pentru 31.05.2026)",
-    )
+    # Подменный снапшот позже конца периода: текст говорит, что данные полные, и его видит
+    # модель, иначе она писала «datele pot fi incomplete».
+    note = "Snapshot din 02.06: datele sunt complete, statusurile lead-urilor sunt la 02.06"
+    assert outcome.snapshot_notes == (note,)
+    assert outcome.content["snapshot_note"] == note
     assert outcome.content["snapshot_date"] == "02.06.2026"
     assert outcome.content["missing_snapshot_for"] == "31.05.2026"
 
@@ -1029,7 +1156,7 @@ async def test_funnel_for_specific_day_matches_metrics(
     assert outcome.content["period"] == "15.05.2026"
     assert outcome.scope == "Perioada: 15.05.2026"
     assert outcome.snapshot_notes == (
-        "Date din snapshotul din 31.05.2026 (nu există snapshot pentru 15.05.2026)",
+        "Snapshot din 31.05: datele sunt complete, statusurile lead-urilor sunt la 31.05",
     )
 
 

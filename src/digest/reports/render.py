@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from datetime import date, timedelta
 from functools import cache
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,24 @@ RO_MONTHS = (
     "noiembrie",
     "decembrie",
 )
+
+
+def week_range_label(days: tuple[date, ...]) -> str:
+    first, last = days[0], days[-1]
+    first_label = f"{first:%d}" if first.month == last.month else f"{first:%d.%m}"
+    return f"{first_label}–{last:%d.%m}"
+
+
+def day_ranges_label(days: tuple[date, ...]) -> str:
+    runs: list[list[date]] = []
+    for day in days:
+        if runs and day - runs[-1][-1] == timedelta(days=1):
+            runs[-1].append(day)
+        else:
+            runs.append([day])
+    return ", ".join(
+        f"{run[0]:%d.%m}" if len(run) == 1 else week_range_label(tuple(run)) for run in runs
+    )
 
 
 def dash_if_unknown(value: int | None) -> str:

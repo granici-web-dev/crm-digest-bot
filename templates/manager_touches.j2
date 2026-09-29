@@ -1,10 +1,11 @@
 {% from "_names.j2" import manager %}
+{% from "texts.j2" import touches_counted_from, touches_missing_days, touches_counted_from_and_missing %}
 {% macro levels(by_level) %}{% for count in by_level %}R{{ loop.index }} {{ count }}{% if not loop.last %} · {% endif %}{% endfor %}{% endmacro %}
 {% if touches.covered_from is none %}
 <b>📞 Atingeri consultanți: fără date</b>
 {% else %}
 {% set missing_count = touches.days_without_snapshot | length %}
-{% set missing_tail = "atingerile din acea zi pot lipsi" if missing_count == 1 else "atingerile din acele zile pot lipsi" %}
+{% set first_covered = touches.covered_from.strftime("%d.%m") %}
 <b>📞 Atingeri consultanți: {{ touches.touch_count }}</b>{% if touches.touch_count %} ({{ levels(touches.by_level) }}){% endif %}
 
 {% for group in touches.groups %}
@@ -14,13 +15,13 @@
 
 <i>Atingere = trecerea în Revenire N înregistrată în CRM, nu apelul în sine.</i>
 {% if touches.covered_from > first_day and touches.covered_from in touches.days_without_snapshot %}
-<i>Atingeri numărate de la {{ touches.covered_from.strftime("%d.%m") }}: nu există snapshot CRM mai vechi, iar pentru {{ missing_days }} lipsește snapshotul, {{ missing_tail }}.</i>
+<i>{{ touches_counted_from_and_missing(first_covered, missing_days, missing_count) }}.</i>
 {% else %}
 {% if touches.covered_from > first_day %}
-<i>Atingeri numărate de la {{ touches.covered_from.strftime("%d.%m") }}: nu există snapshot CRM mai vechi.</i>
+<i>{{ touches_counted_from(first_covered) }}.</i>
 {% endif %}
 {% if missing_count %}
-<i>Fără snapshot CRM pentru {{ missing_days }}: {{ missing_tail }}.</i>
+<i>{{ touches_missing_days(missing_days, missing_count) }}.</i>
 {% endif %}
 {% endif %}
 {% endif %}
