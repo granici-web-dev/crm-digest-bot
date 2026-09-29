@@ -11,15 +11,7 @@
 {% else %}
 Reveniri restante: nu
 {% endif %}
-{# missing: None, если строка выключена параметром d3 missing_followup_date. #}
+{# missing: None, если блок выключен параметром d3 missing_followup_date. #}
 {% if missing is not none %}
-{% if missing.lead_count %}
-Fără Data revenire: {{ missing.lead_count }}
-{% for group in missing.groups %}
-{{ group.manager_name or "Fără responsabil" }} {{ group.lead_count }}{% if missing_links[loop.index0] %}: {{ missing_links[loop.index0] }}{% endif %}
-
-{% endfor %}
-{% else %}
-Fără Data revenire: 0
-{% endif %}
+{% include "missing_followup_date.j2" %}
 {% endif %}

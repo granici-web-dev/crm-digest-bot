@@ -1,5 +1,5 @@
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from itertools import product
 from typing import Any, cast, get_args
 
@@ -29,7 +29,14 @@ from digest.metrics.weekly import (
     weekly_funnel,
 )
 from digest.reports.render import percent_one_decimal
-from factories import etalon_lead_rows, load_etalon, make_lead_links
+from factories import (
+    BUCHAREST,
+    etalon_lead_rows,
+    load_etalon,
+    make_lead_links,
+    make_snapshot_row,
+    raw_repository_config,
+)
 
 TODAY = date(2026, 6, 3)
 END_OF_MAY = date(2026, 5, 31)
@@ -282,6 +289,66 @@ async def test_overdue_followups_for_manager_without_overdue_is_zero(
     )
 
     assert (content["lead_count"], content["max_days_overdue"]) == (0, None)
+
+
+SEPTEMBER_REPORT_DATE = date(2026, 9, 25)
+
+
+def followup_frame(config: AppConfig, **overrides: Any) -> pd.DataFrame:
+    rows = [
+        make_snapshot_row(
+            lead_id=lead_id,
+            category="ACTIVE_FOLLOWUP",
+            status_name="Revenire 1",
+            created_at=datetime(2026, 9, 1, 12, 0, tzinfo=BUCHAREST),
+            **overrides,
+        )
+        for lead_id in (1, 2)
+    ]
+    return prepare_lead_frame(rows, config)
+
+
+async def test_overdue_followups_include_leads_without_data_revenire(
+    app_config: AppConfig,
+) -> None:
+    data = tool_data(
+        app_config, followup_frame(app_config), snapshot_dates=(SEPTEMBER_REPORT_DATE,)
+    )
+
+    everyone = await run_tool("overdue_followups", {"manager": ALL_MANAGERS}, data)
+    dragoi = await run_tool("overdue_followups", {"manager": "Dragoi Mihaela"}, data)
+    roibu = await run_tool("overdue_followups", {"manager": "Roibu Valeria"}, data)
+
+    assert everyone.content["missing_followup_date"] == {
+        "lead_count": 2,
+        "by_manager": [{"manager": "Dragoi Mihaela", "lead_count": 2}],
+    }
+    assert everyone.lead_ids == (1, 2)
+    assert dragoi.content["missing_followup_date"] == {"lead_count": 2}
+    assert roibu.content["missing_followup_date"] == {"lead_count": 0}
+    assert roibu.lead_ids == ()
+
+
+async def test_overdue_followups_give_no_number_when_data_revenire_is_unreadable(
+    app_config: AppConfig,
+) -> None:
+    frame = followup_frame(app_config, data_revenire_problem="name_mismatch")
+    data = tool_data(app_config, frame, snapshot_dates=(SEPTEMBER_REPORT_DATE,))
+
+    outcome = await run_tool("overdue_followups", {"manager": ALL_MANAGERS}, data)
+
+    assert outcome.content["missing_followup_date"] == {"unavailable": True}
+
+
+async def test_overdue_followups_omit_missing_date_when_d3_param_is_off() -> None:
+    raw_config = raw_repository_config()
+    raw_config["modules"]["daily"]["d3"]["params"]["missing_followup_date"] = False
+    config = AppConfig.model_validate(raw_config)
+    data = tool_data(config, followup_frame(config), snapshot_dates=(SEPTEMBER_REPORT_DATE,))
+
+    outcome = await run_tool("overdue_followups", {"manager": ALL_MANAGERS}, data)
+
+    assert "missing_followup_date" not in outcome.content
 
 
 async def test_untouched_leads_match_metrics(

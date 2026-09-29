@@ -650,7 +650,7 @@ def test_only_stand_by_and_revenire_statuses_are_checked(app_config: AppConfig) 
 def test_lead_with_data_revenire_is_not_reported(app_config: AppConfig) -> None:
     rows = [followup_lead(1, timedelta(days=7), data_revenire=date(2026, 10, 1))]
 
-    assert missing(rows, app_config) == MissingFollowupDate(0, (), ())
+    assert missing(rows, app_config) == MissingFollowupDate(0, (), (), 0, False)
 
 
 def test_lead_created_before_leads_created_from_is_not_checked(app_config: AppConfig) -> None:
@@ -669,10 +669,10 @@ def test_lead_created_before_leads_created_from_is_not_checked(app_config: AppCo
 def test_test_account_lead_is_not_checked(app_config: AppConfig) -> None:
     rows = [followup_lead(1, timedelta(days=7), assigned_to_id=4, assigned_to_name="Potinga Dima")]
 
-    assert missing(rows, app_config) == MissingFollowupDate(0, (), ())
+    assert missing(rows, app_config) == MissingFollowupDate(0, (), (), 0, False)
 
 
-def test_groups_follow_managers_yaml_order_and_not_taken_is_last(app_config: AppConfig) -> None:
+def test_groups_are_ordered_like_overdue_not_taken_first(app_config: AppConfig) -> None:
     raileanu = {"assigned_to_id": 13, "assigned_to_name": "Raileanu  Leon"}
     roibu = {"assigned_to_id": 8, "assigned_to_name": "Roibu Valeria"}
     rows = [
@@ -687,13 +687,59 @@ def test_groups_follow_managers_yaml_order_and_not_taken_is_last(app_config: App
     assert missing(rows, app_config) == MissingFollowupDate(
         lead_count=6,
         groups=(
+            MissingFollowupGroup(None, 2, (4, 5)),
+            MissingFollowupGroup("Raileanu  Leon", 2, (2, 1)),
             MissingFollowupGroup("Palega Andrei", 1, (6,)),
             MissingFollowupGroup("Roibu Valeria", 1, (3,)),
-            MissingFollowupGroup("Raileanu  Leon", 2, (2, 1)),
-            MissingFollowupGroup(None, 2, (4, 5)),
         ),
         lead_ids=(4, 6, 3, 5, 2, 1),
+        unreadable_count=0,
+        field_unavailable=False,
     )
+
+
+def test_groups_follow_assigned_to_id_with_name_from_lead(app_config: AppConfig) -> None:
+    week = timedelta(days=7)
+    rows = [
+        followup_lead(1, week, assigned_to_id=99, assigned_to_name="Nou Consultant"),
+        followup_lead(2, week, assigned_to_id=98, assigned_to_name="Nou Consultant"),
+        followup_lead(3, week, assigned_to_id=99, assigned_to_name="Nou Consultant"),
+    ]
+
+    assert missing(rows, app_config).groups == (
+        MissingFollowupGroup("Nou Consultant", 2, (1, 3)),
+        MissingFollowupGroup("Nou Consultant", 1, (2,)),
+    )
+
+
+@pytest.mark.parametrize("problem", ["missing", "name_mismatch", "unexpected_value"])
+def test_lead_with_unreadable_data_revenire_is_not_reported_as_empty(
+    app_config: AppConfig, problem: str
+) -> None:
+    week = timedelta(days=7)
+    rows = [followup_lead(1, week, data_revenire_problem=problem), followup_lead(2, week)]
+
+    assert missing(rows, app_config) == MissingFollowupDate(
+        lead_count=1,
+        groups=(MissingFollowupGroup("Dragoi Mihaela", 1, (2,)),),
+        lead_ids=(2,),
+        unreadable_count=1,
+        field_unavailable=False,
+    )
+
+
+def test_field_is_unavailable_when_unreadable_for_every_lead_in_scope(
+    app_config: AppConfig,
+) -> None:
+    week = timedelta(days=7)
+    rows = [
+        followup_lead(1, week, data_revenire_problem="missing"),
+        followup_lead(2, week, data_revenire_problem="name_mismatch"),
+        # Вне охвата: его читаемое поле не делает блок доступным.
+        followup_lead(3, week, category="ACTIVE", status_name="IN PROCES"),
+    ]
+
+    assert missing(rows, app_config) == MissingFollowupDate(0, (), (), 2, True)
 
 
 # Пустой кадр
@@ -708,7 +754,7 @@ def test_every_check_is_empty_on_empty_frame(app_config: AppConfig) -> None:
         0, None, (), ()
     )
     assert missing_followup_date(lead_frame, REPORT_DATE, app_config) == MissingFollowupDate(
-        0, (), ()
+        0, (), (), 0, False
     )
     no_offers = {"Brașov": 0, "București": 0, "Cluj": 0, None: 0}
     assert stale_offers(lead_frame, yesterday, REPORT_DATE, app_config) == StaleOffers(

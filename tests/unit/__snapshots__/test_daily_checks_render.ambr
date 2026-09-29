@@ -17,15 +17,21 @@
 # name: test_missing_followup_date_render[found]
   '''
   Reveniri restante: nu
-  Fără Data revenire: 13
+  📅 Fără Data revenire: 13
+  Nepreluate 1
   Roibu Valeria 12: <a href="https://bellesofa.meficrm.com/admin/leads/index/101">#101</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/102">#102</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/103">#103</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/104">#104</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/105">#105</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/106">#106</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/107">#107</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/108">#108</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/109">#109</a>, <a href="https://bellesofa.meficrm.com/admin/leads/index/110">#110</a> și încă 2
-  Fără responsabil 1
   '''
 # ---
 # name: test_missing_followup_date_render[none]
   '''
   Reveniri restante: nu
-  Fără Data revenire: 0
+  Fără Data revenire: nu
+  '''
+# ---
+# name: test_missing_followup_date_render[unavailable]
+  '''
+  Reveniri restante: nu
+  Date Data revenire indisponibile
   '''
 # ---
 # name: test_overdue_revenire_render[found]

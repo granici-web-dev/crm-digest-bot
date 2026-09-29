@@ -241,6 +241,7 @@ def make_snapshot_row(**overrides: Any) -> dict[str, Any]:
         "showroom": "București",
         "ofertat": False,
         "data_revenire": None,
+        "data_revenire_problem": None,
         "is_duplicate": False,
         "assigned_to_id": 12,
         "assigned_to_name": "Dragoi Mihaela",

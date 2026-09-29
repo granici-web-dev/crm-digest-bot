@@ -5,19 +5,12 @@ import pandas as pd
 from digest.config import AppConfig
 from digest.metrics.kpi import Period, kpis_from, lead_counts
 
-OPEN_CATEGORIES = ("ACTIVE", "ACTIVE_FOLLOWUP", "UNMAPPED")
-
 
 def overdue_revenire(lead_frame: pd.DataFrame, today: date, config: AppConfig) -> list[int]:
-    # docs/kpi-definitions.md, «Дополнительные метрики»: из LOST только причины с полем
-    # followup_field в status-mapping.yaml (Stand BY, бриф §3).
-    followup_reasons = [
-        reason_name
-        for reason_name, reason in config.status_mapping.categories.LOST.reasons.items()
-        if reason.followup_field is not None
-    ]
-    eligible = lead_frame["category"].isin(OPEN_CATEGORIES) | (
-        lead_frame["category"].eq("LOST") & lead_frame["loss_reason"].isin(followup_reasons)
+    # docs/kpi-definitions.md, «Дополнительные метрики»: открытые лиды и из LOST только причины
+    # с полем followup_field в status-mapping.yaml (Stand BY, бриф §3).
+    eligible = lead_frame["is_followup_status"] | lead_frame["category"].isin(
+        ("ACTIVE", "UNMAPPED")
     )
     revenire_day = lead_frame["data_revenire"]
     status_change_day = lead_frame["status_changed_at"].dt.tz_localize(None).dt.normalize()

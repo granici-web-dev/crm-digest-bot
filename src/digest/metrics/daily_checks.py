@@ -67,7 +67,7 @@ class OverdueRevenire:
 
 @dataclass(frozen=True)
 class MissingFollowupGroup:
-    # None: «Fără responsabil» (консультант с not_taken или без консультанта).
+    # None: лид не взят (консультант с not_taken или без консультанта).
     manager_name: str | None
     lead_count: int
     lead_ids: tuple[int, ...]
@@ -78,6 +78,21 @@ class MissingFollowupDate:
     lead_count: int
     groups: tuple[MissingFollowupGroup, ...]
     lead_ids: tuple[int, ...]
+    # Лиды охвата, у которых поле Data revenire не прочитано (нет поля, другое имя, не дата):
+    # пустым оно не считается, в блок они не входят.
+    unreadable_count: int
+    # Поле не прочитано ни у одного лида охвата: блок не считается вовсе.
+    field_unavailable: bool
+
+    def of_manager(self, manager_name: str) -> "MissingFollowupDate":
+        groups = tuple(group for group in self.groups if group.manager_name == manager_name)
+        return MissingFollowupDate(
+            sum(group.lead_count for group in groups),
+            groups,
+            tuple(lead_id for group in groups for lead_id in group.lead_ids),
+            self.unreadable_count,
+            self.field_unavailable,
+        )
 
 
 @dataclass(frozen=True)
@@ -143,21 +158,35 @@ def lead_id_tuple(lead_ids: pd.Series) -> tuple[int, ...]:
 def count_and_max_by_manager(
     leads: pd.DataFrame, values: pd.Series, config: AppConfig
 ) -> list[tuple[str | None, int, int, tuple[int, ...]]]:
-    # leads уже упорядочены oldest_first: groupby сохраняет порядок строк внутри группы.
+    # Группа это консультант по id, а не по имени: тёзки не сливаются, консультант вне
+    # managers.yaml получает свою строку. Имя берётся из лида. leads уже упорядочены
+    # oldest_first: groupby сохраняет порядок строк внутри группы.
+    manager_name = manager_names(leads, config)
     grouped = (
         pd.DataFrame(
             {
-                "manager_name": manager_names(leads, config),
+                "manager_id": leads["assigned_to_id"].where(manager_name.notna()),
+                "manager_name": manager_name,
                 "value": values,
                 "lead_id": leads["lead_id"],
             }
         )
-        .groupby("manager_name", dropna=False, sort=False)
-        .agg(size=("value", "size"), max=("value", "max"), lead_ids=("lead_id", lead_id_tuple))
+        .groupby("manager_id", dropna=False, sort=False)
+        .agg(
+            manager_name=("manager_name", "first"),
+            size=("value", "size"),
+            max=("value", "max"),
+            lead_ids=("lead_id", lead_id_tuple),
+        )
     )
     groups = [
-        (name_or_not_taken(manager_name), int(row["size"]), int(row["max"]), row["lead_ids"])
-        for manager_name, row in grouped.iterrows()
+        (
+            name_or_not_taken(row["manager_name"]),
+            int(row["size"]),
+            int(row["max"]),
+            row["lead_ids"],
+        )
+        for _, row in grouped.iterrows()
     ]
     return sorted(groups, key=lambda group: not_taken_first(group[0], group[1]))
 
@@ -230,15 +259,6 @@ def missing_followup_date(
 ) -> MissingFollowupDate:
     # docs/kpi-definitions.md, «Ежедневные проверки», d3 без Data revenire.
     status_mapping = config.status_mapping
-    followup_reasons = [
-        reason_name
-        for reason_name, reason in status_mapping.categories.LOST.reasons.items()
-        if reason.followup_field is not None
-    ]
-    category = lead_frame["category"]
-    in_followup = category.eq("ACTIVE_FOLLOWUP") | (
-        category.eq("LOST") & lead_frame["loss_reason"].isin(followup_reasons)
-    )
     created_from = datetime.combine(
         status_mapping.leads_created_from, time(), tzinfo=ZoneInfo(status_mapping.time.timezone)
     )
@@ -248,25 +268,30 @@ def missing_followup_date(
     status_set_at = lead_frame["status_changed_at"].fillna(lead_frame["created_at"])
     status_age_hours = (window_end - status_set_at).dt.total_seconds() / 3600
     min_age_hours = config.modules.overdue_revenire_params.missing_followup_min_age_hours
-    reported = (
-        in_followup
-        & lead_frame["data_revenire"].isna()
+    in_scope = (
+        lead_frame["is_followup_status"]
         & lead_frame["created_at"].ge(created_from)
         & status_age_hours.gt(min_age_hours)
     )
+    unreadable = in_scope & lead_frame["data_revenire_problem"].notna()
+    unreadable_count = int(unreadable.sum())
+    # Поле пропало или переименовано в mefi у всех: «nu» в блоке было бы неверной цифрой.
+    field_unavailable = unreadable_count > 0 and unreadable_count == int(in_scope.sum())
+    reported = in_scope & ~unreadable & lead_frame["data_revenire"].isna()
     leads = oldest_first(lead_frame[reported], status_set_at[reported])
-    names = manager_names(leads, config)
-    # Порядок managers.yaml, а не по числу лидов: строка не рейтинг худших.
-    file_order = [manager.name for manager in config.managers.managers]
-    unknown_names = sorted(set(names.dropna()) - set(file_order))
-    group_names: list[str | None] = [*file_order, *unknown_names, None]
-    groups = []
-    for manager_name in group_names:
-        in_group = names.isna() if manager_name is None else names.eq(manager_name)
-        if in_group.any():
-            group_ids = lead_id_tuple(leads.loc[in_group, "lead_id"])
-            groups.append(MissingFollowupGroup(manager_name, len(group_ids), group_ids))
-    return MissingFollowupDate(len(leads), tuple(groups), lead_id_tuple(leads["lead_id"]))
+    groups = tuple(
+        MissingFollowupGroup(manager_name, lead_count, lead_ids)
+        for manager_name, lead_count, _, lead_ids in count_and_max_by_manager(
+            leads, status_age_hours[leads.index], config
+        )
+    )
+    return MissingFollowupDate(
+        len(leads),
+        groups,
+        lead_id_tuple(leads["lead_id"]),
+        unreadable_count,
+        field_unavailable,
+    )
 
 
 def snapshot_period(analysis_date: date, config: AppConfig) -> Period:

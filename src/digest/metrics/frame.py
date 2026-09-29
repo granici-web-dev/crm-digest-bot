@@ -15,6 +15,7 @@ LEAD_FRAME_COLUMNS = (
     "showroom",
     "ofertat",
     "data_revenire",
+    "data_revenire_problem",
     "is_duplicate",
     "assigned_to_id",
     "assigned_to_name",
@@ -63,6 +64,16 @@ def prepare_lead_frame(rows: list[dict[str, Any]], config: AppConfig) -> pd.Data
     )
     lead_frame["is_excluded_from_useful"] = loss_reason.isin(reasons_excluded_from_useful)
     lead_frame["is_irelevant"] = loss_reason.eq("IRELEVANT")
+    # Статусы, у которых продавец обязан вести Data revenire: Revenire 1/2/3 и причины LOST с
+    # followup_field (Stand BY, бриф §3).
+    followup_reasons = [
+        reason_name
+        for reason_name, reason in categories.LOST.reasons.items()
+        if reason.followup_field is not None
+    ]
+    lead_frame["is_followup_status"] = category.eq("ACTIVE_FOLLOWUP") | (
+        category.eq("LOST") & loss_reason.isin(followup_reasons)
+    )
     lead_frame["is_nu_a_raspuns"] = loss_reason.eq("NU_RASPUNS")
     lead_frame["is_buget"] = loss_reason.eq("BUGET")
     lead_frame["is_produs_nepotrivit"] = loss_reason.eq("PRODUS_NEPOTRIVIT")

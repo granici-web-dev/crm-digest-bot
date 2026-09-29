@@ -33,6 +33,8 @@ metadata = MetaData(
 )
 
 LEAD_CATEGORIES = ("WON", "ACTIVE", "ACTIVE_FOLLOWUP", "LOST", "PARTNERSHIP", "UNMAPPED")
+# CustomFieldProblem.problem, которые read_custom_field и data_revenire_from дают для Data revenire.
+DATA_REVENIRE_PROBLEMS = ("missing", "name_mismatch", "unexpected_value")
 SNAPSHOT_RUN_STATUSES = ("running", "success", "failed", "preview", "superseded", "missed")
 SNAPSHOT_TRIGGERS = ("scheduled", "retry", "catch_up", "manual")
 CLIENTS_SNAPSHOT_STATUSES = ("success", "failed")
@@ -81,6 +83,8 @@ lead_snapshots = Table(
     Column("showroom", Text),
     Column("ofertat", Boolean),
     Column("data_revenire", Date),
+    # null: поле прочитано (дата или пусто).
+    Column("data_revenire_problem", Text),
     Column("is_duplicate", Boolean),
     Column("assigned_to_id", Integer),
     Column("assigned_to_name", Text),
@@ -93,6 +97,10 @@ lead_snapshots = Table(
     Column("contact_email_key", Text),
     PrimaryKeyConstraint("tenant_id", "snapshot_date", "lead_id"),
     CheckConstraint(f"category IN ({_sql_in_list(LEAD_CATEGORIES)})", name="category"),
+    CheckConstraint(
+        f"data_revenire_problem IN ({_sql_in_list(DATA_REVENIRE_PROBLEMS)})",
+        name="data_revenire_problem",
+    ),
 )
 
 client_snapshots = Table(

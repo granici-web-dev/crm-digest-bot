@@ -18,7 +18,7 @@ from digest.metrics.daily_checks import (
     UntouchedLeads,
 )
 from digest.metrics.frame import prepare_lead_frame
-from digest.reports.context import ReportContext
+from digest.reports.context import ModuleResult, ReportContext
 from digest.reports.lead_links import LeadLinks
 from digest.reports.modules.daily_checks import overdue_revenire_report
 from digest.reports.render import render
@@ -102,19 +102,29 @@ def test_overdue_revenire_ro_day_numerals(days: int, expected: str) -> None:
     assert f"Marc Andra 1 ({expected}): " in text
 
 
-# У Roibu 12 самых старых лидов: 10 ссылок и «și încă 2», у «Fără responsabil» ссылок нет.
+# У Roibu 12 самых старых лидов: 10 ссылок и «și încă 2», у не взятых ссылок нет.
 MISSING = MissingFollowupDate(
     lead_count=13,
     groups=(
-        MissingFollowupGroup("Roibu Valeria", 12, ROIBU_IDS),
         MissingFollowupGroup(None, 1, (501,)),
+        MissingFollowupGroup("Roibu Valeria", 12, ROIBU_IDS),
     ),
     lead_ids=(*ROIBU_IDS, 501),
+    unreadable_count=0,
+    field_unavailable=False,
 )
+MISSING_NONE = MissingFollowupDate(0, (), (), 0, False)
+MISSING_UNAVAILABLE = MissingFollowupDate(0, (), (), 5, True)
+
+
+def missing_links(missing: MissingFollowupDate) -> list[Markup]:
+    return LINKS.block_lines(missing.lead_ids, [group.lead_ids for group in missing.groups])
 
 
 @pytest.mark.parametrize(
-    "missing", [MISSING, MissingFollowupDate(0, (), ())], ids=["found", "none"]
+    "missing",
+    [MISSING, MISSING_NONE, MISSING_UNAVAILABLE],
+    ids=["found", "none", "unavailable"],
 )
 def test_missing_followup_date_render(
     missing: MissingFollowupDate, snapshot: SnapshotAssertion
@@ -125,12 +135,44 @@ def test_missing_followup_date_render(
         overdue=overdue,
         links=overdue_links(overdue),
         missing=missing,
-        missing_links=LINKS.block_lines(
-            missing.lead_ids, [group.lead_ids for group in missing.groups]
-        ),
+        missing_links=missing_links(missing),
     )
 
     assert text == snapshot
+
+
+def test_overdue_and_missing_blocks_each_link_ten_leads() -> None:
+    overdue_ids = tuple(range(301, 313))
+    overdue = OverdueRevenire(
+        12, 9, (OverdueGroup("Roibu Valeria", 12, 9, overdue_ids),), overdue_ids
+    )
+
+    text = render(
+        "overdue_revenire",
+        overdue=overdue,
+        links=overdue_links(overdue),
+        missing=MISSING,
+        missing_links=missing_links(MISSING),
+    )
+
+    overdue_block, missing_block = text.split("📅 Fără Data revenire: 13")
+    assert overdue_block.count("<a href=") == 10
+    assert missing_block.count("<a href=") == 10
+    assert overdue_block.count("și încă 2") == 1
+    assert missing_block.count("și încă 2") == 1
+
+
+def test_not_taken_label_is_the_same_in_both_blocks() -> None:
+    text = render(
+        "overdue_revenire",
+        overdue=OVERDUE,
+        links=overdue_links(OVERDUE),
+        missing=MISSING,
+        missing_links=missing_links(MISSING),
+    )
+
+    assert text.count("Nepreluate 1") == 2
+    assert "Fără responsabil" not in text
 
 
 def stale(
@@ -194,12 +236,13 @@ def test_same_weekday_compare_render(week_ago_date: date, snapshot: SnapshotAsse
     assert render("same_weekday_compare", comparison=comparison) == snapshot
 
 
-def d3_text(config: AppConfig) -> str:
+def d3_result(config: AppConfig, data_revenire_problem: str | None = None) -> ModuleResult:
     row = make_snapshot_row(
         lead_id=1,
         category="ACTIVE_FOLLOWUP",
         status_name="Revenire 2",
         created_at=datetime(2026, 9, 1, 12, 0, tzinfo=BUCHAREST),
+        data_revenire_problem=data_revenire_problem,
     )
     context = ReportContext(
         date(2026, 9, 25),
@@ -211,15 +254,30 @@ def d3_text(config: AppConfig) -> str:
         "sofabelle",
         make_lead_links(config.status_mapping),
     )
-    return overdue_revenire_report(prepare_lead_frame([row], config), context).text
+    return overdue_revenire_report(prepare_lead_frame([row], config), context)
 
 
 def test_d3_lists_missing_followup_date_when_param_is_on(app_config: AppConfig) -> None:
-    assert "Fără Data revenire: 1\nDragoi Mihaela 1: " in d3_text(app_config)
+    assert "📅 Fără Data revenire: 1\nDragoi Mihaela 1: " in d3_result(app_config).text
+
+
+def test_d3_alerts_ops_when_data_revenire_is_unreadable_for_every_lead(
+    app_config: AppConfig,
+) -> None:
+    result = d3_result(app_config, data_revenire_problem="missing")
+
+    assert "Date Data revenire indisponibile" in result.text
+    assert "Fără Data revenire" not in result.text
+    assert len(result.alerts) == 1
+    assert "Data revenire не прочитано ни у одного из 1 лидов" in result.alerts[0]
+
+
+def test_d3_has_no_alert_when_data_revenire_is_readable(app_config: AppConfig) -> None:
+    assert d3_result(app_config).alerts == ()
 
 
 def test_d3_omits_missing_followup_date_when_param_is_off() -> None:
     raw_config = raw_repository_config()
     raw_config["modules"]["daily"]["d3"]["params"]["missing_followup_date"] = False
 
-    assert "Data revenire" not in d3_text(AppConfig.model_validate(raw_config))
+    assert "Data revenire" not in d3_result(AppConfig.model_validate(raw_config)).text

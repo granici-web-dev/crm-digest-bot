@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Any
 
 from digest.config import AppConfig, LeadCategory
 from digest.snapshot import (
@@ -71,6 +72,59 @@ def test_showroom_name_mismatch_nulls_value_and_records_mismatch(app_config: App
 
     assert row["showroom"] is None
     assert problems == [CustomFieldProblem(14, "Showroom", "name_mismatch", "Oras")]
+
+
+def data_revenire_rows(
+    app_config: AppConfig, custom_fields_by_lead: list[list[dict[str, Any]]]
+) -> list[tuple[dict[str, Any], list[CustomFieldProblem]]]:
+    parsed, _ = parse_leads(
+        [
+            make_lead(id=lead_id, custom_fields=custom_fields)
+            for lead_id, custom_fields in enumerate(custom_fields_by_lead, start=1)
+        ]
+    )
+    return [
+        lead_to_snapshot_row(
+            lead, "sofabelle", SNAPSHOT_DATE, app_config.status_mapping, CONTACT_SECRET
+        )
+        for lead in parsed
+    ]
+
+
+def test_data_revenire_problem_distinguishes_empty_invalid_missing_and_renamed(
+    app_config: AppConfig,
+) -> None:
+    renamed = make_custom_fields(data_revenire="2026-10-01")
+    renamed[1]["name"] = "Data revenirii"
+    without_field = [field for field in make_custom_fields() if field["field_id"] != 5]
+
+    rows_and_problems = data_revenire_rows(
+        app_config,
+        [
+            make_custom_fields(data_revenire="2026-10-01"),
+            make_custom_fields(data_revenire=None),
+            make_custom_fields(data_revenire=""),
+            make_custom_fields(data_revenire="01.10.2026"),
+            without_field,
+            renamed,
+        ],
+    )
+
+    assert [
+        (row["data_revenire"], row["data_revenire_problem"]) for row, _ in rows_and_problems
+    ] == [
+        (date(2026, 10, 1), None),
+        (None, None),
+        (None, None),
+        (None, "unexpected_value"),
+        (None, "missing"),
+        (None, "name_mismatch"),
+    ]
+    assert [problems for _, problems in rows_and_problems[3:]] == [
+        [CustomFieldProblem(5, "Data revenire", "unexpected_value", "01.10.2026")],
+        [CustomFieldProblem(5, "Data revenire", "missing", None)],
+        [CustomFieldProblem(5, "Data revenire", "name_mismatch", "Data revenirii")],
+    ]
 
 
 def test_unknown_ofertat_value_is_null(app_config: AppConfig) -> None:

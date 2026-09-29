@@ -28,12 +28,21 @@ def overdue_revenire_report(lead_frame: pd.DataFrame, context: ReportContext) ->
     )
     missing = None
     missing_links: list[Markup] = []
+    alerts: tuple[str, ...] = ()
     if context.config.modules.overdue_revenire_params.missing_followup_date:
         missing = missing_followup_date(lead_frame, context.report_date, context.config)
-        # Отдельная строка со своим лимитом ссылок: иначе при 10+ просроченных она их не получит.
+        # Отдельный блок со своим лимитом ссылок (инвариант 7): иначе при 10+ просроченных он
+        # их не получит.
         missing_links = context.lead_links.block_lines(
             missing.lead_ids, [group.lead_ids for group in missing.groups]
         )
+        if missing.field_unavailable:
+            alerts = (
+                f"d3 за {context.report_date:%d.%m.%Y}: поле Data revenire не прочитано ни у "
+                f"одного из {missing.unreadable_count} лидов Revenire/Stand BY (поля нет, "
+                "переименовано или не дата), блок «Fără Data revenire» не посчитан. Проверить "
+                "custom_fields.data_revenire в status-mapping.yaml.",
+            )
     return ModuleResult(
         render(
             "overdue_revenire",
@@ -41,7 +50,8 @@ def overdue_revenire_report(lead_frame: pd.DataFrame, context: ReportContext) ->
             links=links,
             missing=missing,
             missing_links=missing_links,
-        )
+        ),
+        alerts=alerts,
     )
 
 

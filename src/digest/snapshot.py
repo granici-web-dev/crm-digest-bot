@@ -294,7 +294,8 @@ def data_revenire_from(
     fields_by_id: dict[int, MefiCustomField], reference: CustomFieldRef
 ) -> tuple[date | None, CustomFieldProblem | None]:
     value, problem = read_custom_field(fields_by_id, reference)
-    if value is None:
+    # Пустая строка это очищенное поле, как null, а не битая дата.
+    if value is None or value == "":
         return None, problem
     if isinstance(value, str):
         try:
@@ -340,6 +341,9 @@ def lead_to_snapshot_row(
         "showroom": showroom,
         "ofertat": ofertat,
         "data_revenire": data_revenire,
+        "data_revenire_problem": (
+            None if data_revenire_problem is None else data_revenire_problem.problem
+        ),
         "is_duplicate": lead.is_duplicate,
         "assigned_to_id": lead.assigned_to.id if lead.assigned_to else None,
         "assigned_to_name": lead.assigned_to.name if lead.assigned_to else None,

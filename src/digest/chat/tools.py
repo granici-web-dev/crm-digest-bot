@@ -31,7 +31,12 @@ from digest.metrics.chat_periods import (
     period_snapshot_date,
 )
 from digest.metrics.cockpit import manager_cockpit_table
-from digest.metrics.daily_checks import overdue_revenire_by_manager, untouched_leads
+from digest.metrics.daily_checks import (
+    MissingFollowupDate,
+    missing_followup_date,
+    overdue_revenire_by_manager,
+    untouched_leads,
+)
 from digest.metrics.extra import period_delta
 from digest.metrics.kpi import (
     COUNT_NAMES,
@@ -616,12 +621,35 @@ def manager_label(manager_name: str | None) -> str:
     return manager_name or text("not_taken")
 
 
+def missing_followup_content(missing: MissingFollowupDate, by_manager: bool) -> dict[str, Any]:
+    # Поле не прочитано у всех лидов: без цифры, иначе модель назвала бы «0 без даты».
+    if missing.field_unavailable:
+        return {"unavailable": True}
+    content: dict[str, Any] = {"lead_count": missing.lead_count}
+    if by_manager:
+        content["by_manager"] = [
+            {"manager": manager_label(group.manager_name), "lead_count": group.lead_count}
+            for group in missing.groups
+        ]
+    return content
+
+
 async def overdue_followups(data: ToolData, arguments: OverdueFollowupsArguments) -> ToolOutcome:
     snapshot_date = latest_snapshot_date(data)
     frame = await load_snapshot(data, snapshot_date)
     overdue = overdue_revenire_by_manager(frame, snapshot_date, data.config)
-    if arguments.manager == ALL_MANAGERS:
-        content: dict[str, Any] = {
+    # Как в d3: без параметра missing_followup_date поле необязательно, «без даты» не вопрос.
+    missing = (
+        missing_followup_date(frame, snapshot_date, data.config)
+        if data.config.modules.overdue_revenire_params.missing_followup_date
+        else None
+    )
+    all_managers = arguments.manager == ALL_MANAGERS
+    if not all_managers:
+        overdue = overdue.of_manager(arguments.manager)
+        missing = None if missing is None else missing.of_manager(arguments.manager)
+    content: dict[str, Any] = (
+        {
             "lead_count": overdue.lead_count,
             "max_days_overdue": overdue.max_days_overdue,
             "by_manager": [
@@ -633,14 +661,18 @@ async def overdue_followups(data: ToolData, arguments: OverdueFollowupsArguments
                 for group in overdue.groups
             ],
         }
-        return snapshot_outcome(content, snapshot_date, overdue.lead_ids)
-    of_manager = overdue.of_manager(arguments.manager)
-    content = {
-        "manager": arguments.manager,
-        "lead_count": of_manager.lead_count,
-        "max_days_overdue": of_manager.max_days_overdue,
-    }
-    return snapshot_outcome(content, snapshot_date, of_manager.lead_ids)
+        if all_managers
+        else {
+            "manager": arguments.manager,
+            "lead_count": overdue.lead_count,
+            "max_days_overdue": overdue.max_days_overdue,
+        }
+    )
+    lead_ids = overdue.lead_ids
+    if missing is not None:
+        content["missing_followup_date"] = missing_followup_content(missing, all_managers)
+        lead_ids = (*lead_ids, *missing.lead_ids)
+    return snapshot_outcome(content, snapshot_date, lead_ids)
 
 
 async def untouched_leads_tool(data: ToolData, arguments: UntouchedLeadsArguments) -> ToolOutcome:
