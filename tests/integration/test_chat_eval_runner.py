@@ -66,6 +66,6 @@ async def test_runner_grades_against_numbers_recomputed_from_snapshot(
 
     assert passed.grade.passed, passed.grade.reason
     assert not failed.grade.passed
-    assert failed.grade.reason == "статус unverified_numbers"
+    assert failed.grade.reason == "статус unverified_numbers, число «3»"
     async with engine.connect() as connection:
         assert await connection.scalar(select(func.count()).select_from(chat_questions)) == 0

@@ -1,3 +1,4 @@
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -79,14 +80,15 @@ def test_missing_number_fails() -> None:
     assert grade.reason == "нет числа counts.leads=42"
 
 
-def test_unverified_numbers_status_fails() -> None:
-    grade = grade_case(
-        funnel_case(["counts.leads"]),
+def test_unverified_numbers_status_fails_naming_the_number() -> None:
+    guarded = replace(
         answer("…", (("funnel", FUNNEL_ARGUMENTS),), status="unverified_numbers"),
-        [outcome(FUNNEL_CONTENT)],
+        unverified_number="17",
     )
 
-    assert grade.reason == "статус unverified_numbers"
+    grade = grade_case(funnel_case(["counts.leads"]), guarded, [outcome(FUNNEL_CONTENT)])
+
+    assert grade.reason == "статус unverified_numbers, число «17»"
 
 
 def test_reference_without_snapshot_says_question_is_outdated() -> None:

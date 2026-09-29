@@ -147,6 +147,12 @@ def model_text(answer: ChatAnswer) -> str:
     return answer.text if index < 0 else answer.text[:index]
 
 
+def status_reason(answer: ChatAnswer) -> str:
+    if answer.unverified_number is None:
+        return f"статус {answer.status}"
+    return f"статус {answer.status}, число «{answer.unverified_number}»"
+
+
 @dataclass(frozen=True)
 class Grade:
     passed: bool
@@ -166,7 +172,7 @@ def grade_case(
         return Grade(True, "")
     if case.expect == "no_data":
         if answer.status in GUARD_STATUSES:
-            return Grade(False, f"статус {answer.status}")
+            return Grade(False, status_reason(answer))
         if CURRENCY_AMOUNT.search(text):
             return Grade(False, "сумма в валюте в ответе")
         return Grade(True, "")
@@ -177,7 +183,7 @@ def grade_case(
         if reference is not None and reference.is_error:
             return Grade(False, f"эталонный вызов {expected.tool} с ошибкой: {reference.content}")
     if answer.status != "answered":
-        return Grade(False, f"статус {answer.status}")
+        return Grade(False, status_reason(answer))
     answer_numbers = {unsigned(normalized_number(token)) for token in number_tokens(text)}
     for expected, reference in zip(case.calls, references, strict=True):
         if matching_call(expected, answer.tool_calls) is None or reference is None:
