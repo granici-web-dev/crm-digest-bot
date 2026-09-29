@@ -1,15 +1,16 @@
 import asyncio
 import html
 import json
+import logging
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import date
 from string import Template
 from typing import Any
 
 from anthropic import AsyncAnthropic
-from anthropic.types import MessageParam, ToolChoiceParam, ToolResultBlockParam
+from anthropic.types import Message, MessageParam, ToolChoiceParam, ToolResultBlockParam
 
 from digest.chat.tools import (
     ALL_MANAGERS,
@@ -25,6 +26,8 @@ from digest.config import AppConfig
 from digest.db.schema import ChatQuestionStatus
 from digest.reports.lead_links import LeadLinks
 from digest.reports.render import RO_MONTHS, TEMPLATES_DIR, render, text
+
+logger = logging.getLogger(__name__)
 
 # Таймаут клиента на каждый запрос, а вопрос это до пяти запросов с повторами и снапшоты:
 # без общего дедлайна группа ждала бы ответа минутами.
@@ -70,6 +73,35 @@ RO_NUMERALS = {
 
 
 @dataclass(frozen=True)
+class TokenUsage:
+    # input_tokens как в usage API: только некэшированный вход. Запись и чтение кэша стоят
+    # ×1,25 и ×0,1 от входа, поэтому хранятся раздельно.
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_creation_input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+
+    @classmethod
+    def of(cls, response: Message) -> "TokenUsage":
+        usage = response.usage
+        # Поля кэша в ответе API необязательны: None значит «не было».
+        return cls(
+            usage.input_tokens,
+            usage.output_tokens,
+            usage.cache_creation_input_tokens or 0,
+            usage.cache_read_input_tokens or 0,
+        )
+
+    def __add__(self, other: "TokenUsage") -> "TokenUsage":
+        return TokenUsage(
+            self.input_tokens + other.input_tokens,
+            self.output_tokens + other.output_tokens,
+            self.cache_creation_input_tokens + other.cache_creation_input_tokens,
+            self.cache_read_input_tokens + other.cache_read_input_tokens,
+        )
+
+
+@dataclass(frozen=True)
 class ExecutedToolCall:
     name: str
     arguments: dict[str, Any]
@@ -101,8 +133,7 @@ class ChatAnswer:
     text: str
     status: ChatQuestionStatus
     tool_calls: tuple[ExecutedToolCall, ...]
-    input_tokens: int
-    output_tokens: int
+    usage: TokenUsage
     # Число и текст модели, отклонённые стражем в первой попытке: для алерта в ops и вывода
     # eval, в базу не пишутся. У answered они значат, что прошла повторная попытка.
     unverified_number: str | None = None
@@ -281,13 +312,33 @@ async def answer_question(
         return replace(answer, retried=True, retry_timed_out=True)
 
 
+def log_response(response: Message, request_round: int | str) -> None:
+    # По строке видно, читает ли второй раунд кэш: cache_read = 0 там значит инвалидацию префикса.
+    logger.info(
+        "anthropic response",
+        extra={
+            "round": request_round,
+            "stop_reason": response.stop_reason,
+            **asdict(TokenUsage.of(response)),
+        },
+    )
+
+
 def model_request(
     model: str, data: ToolData, messages: list[MessageParam], tool_choice: ToolChoiceParam
 ) -> dict[str, Any]:
     return {
         "model": model,
         "max_tokens": data.config.modules.chat.max_answer_tokens,
-        "system": system_prompt(data.today),
+        # Breakpoint на system кэширует tools и system вместе (порядок префикса tools → system →
+        # messages). TTL 5 минут: 1 час только по паузам в chat_questions после недели в Prod.
+        "system": [
+            {
+                "type": "text",
+                "text": system_prompt(data.today),
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
         "tools": tool_definitions(data.config),
         "tool_choice": tool_choice,
         # Маршрутизация по enum: рассуждение съело бы бюджет короткого ответа.
@@ -315,7 +366,8 @@ async def first_attempt(
         }
     ]
     calls: list[ExecutedToolCall] = []
-    input_tokens = output_tokens = 0
+    usage = TokenUsage()
+    request_round = 0
     max_tool_calls = data.config.modules.chat.max_tool_calls
     while True:
         response = await client.messages.create(
@@ -326,17 +378,12 @@ async def first_attempt(
                 {"type": "auto"} if len(calls) < max_tool_calls else {"type": "none"},
             )
         )
-        input_tokens += response.usage.input_tokens
-        output_tokens += response.usage.output_tokens
+        request_round += 1
+        log_response(response, request_round)
+        usage += TokenUsage.of(response)
         messages.append({"role": "assistant", "content": response.content})
         if response.stop_reason in ("max_tokens", "refusal"):
-            failed = ChatAnswer(
-                CANNOT_ANSWER_NOW_TEXT,
-                response.stop_reason,
-                tuple(calls),
-                input_tokens,
-                output_tokens,
-            )
+            failed = ChatAnswer(CANNOT_ANSWER_NOW_TEXT, response.stop_reason, tuple(calls), usage)
             return failed, messages
         if response.stop_reason != "tool_use":
             break
@@ -362,8 +409,7 @@ async def first_attempt(
         question,
         response_text(response.content),
         tuple(calls),
-        input_tokens,
-        output_tokens,
+        usage,
         data.lead_links,
         config_mask_names(data.config),
     )
@@ -388,19 +434,16 @@ async def guard_retry(
     response = await client.messages.create(
         **model_request(model, data, retry_messages, {"type": "none"})
     )
-    input_tokens = rejected.input_tokens + response.usage.input_tokens
-    output_tokens = rejected.output_tokens + response.usage.output_tokens
-    retried = replace(
-        rejected, input_tokens=input_tokens, output_tokens=output_tokens, retried=True
-    )
+    log_response(response, "guard_retry")
+    usage = rejected.usage + TokenUsage.of(response)
+    retried = replace(rejected, usage=usage, retried=True)
     if response.stop_reason != "end_turn":
         return retried
     second = checked_answer(
         question,
         response_text(response.content),
         rejected.tool_calls,
-        input_tokens,
-        output_tokens,
+        usage,
         data.lead_links,
         config_mask_names(data.config),
     )
@@ -437,8 +480,7 @@ def checked_answer(
     question: str,
     model_text: str,
     calls: tuple[ExecutedToolCall, ...],
-    input_tokens: int,
-    output_tokens: int,
+    usage: TokenUsage,
     lead_links: LeadLinks,
     config_names: frozenset[str],
 ) -> ChatAnswer:
@@ -447,12 +489,10 @@ def checked_answer(
     answered_calls = [call for call in calls if call.outcome.answered]
     if not answered_calls:
         if number_tokens(model_text):
-            return ChatAnswer(
-                render("chat_refusal"), "blocked_numbers", calls, input_tokens, output_tokens
-            )
+            return ChatAnswer(render("chat_refusal"), "blocked_numbers", calls, usage)
         if not model_text:
-            return ChatAnswer(render("chat_refusal"), "no_tool", calls, input_tokens, output_tokens)
-        return ChatAnswer(html.escape(model_text), "no_tool", calls, input_tokens, output_tokens)
+            return ChatAnswer(render("chat_refusal"), "no_tool", calls, usage)
+        return ChatAnswer(html.escape(model_text), "no_tool", calls, usage)
     signature_text = signature(list(calls))
     masked_name_pattern = name_mask_pattern(
         config_names.union(*(call.outcome.masked_names for call in answered_calls))
@@ -470,8 +510,7 @@ def checked_answer(
             UNVERIFIED_NUMBERS_TEXT,
             "unverified_numbers",
             calls,
-            input_tokens,
-            output_tokens,
+            usage,
             unverified,
             model_text,
         )
@@ -481,6 +520,5 @@ def checked_answer(
         f"{answer}\n\n{footer}" if footer else answer,
         "answered",
         calls,
-        input_tokens,
-        output_tokens,
+        usage,
     )

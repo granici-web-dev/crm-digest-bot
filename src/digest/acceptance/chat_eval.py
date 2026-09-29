@@ -19,6 +19,7 @@ from digest.chat.loop import (
     ChatAnswer,
     ExecutedToolCall,
     PreviousExchange,
+    TokenUsage,
     answer_question,
     call_label,
     normalized_number,
@@ -40,10 +41,29 @@ CONTACTS_TAG = "contacts"
 # Порог I4 появится, когда набор дорастёт до 50.
 I4_TAG = "i4"
 GUARD_STATUSES = frozenset({"unverified_numbers", "blocked_numbers"})
-# Цена за 1M токенов (вход, выход), USD. Для модели вне таблицы стоимость не печатается.
-PRICES_PER_MILLION_TOKENS: dict[str, tuple[float, float]] = {
-    "claude-sonnet-5": (2.0, 10.0),
-    "claude-sonnet-5-5": (2.0, 10.0),
+
+
+@dataclass(frozen=True)
+class TokenUsagePrices:
+    input: float
+    output: float
+    cache_creation_input: float
+    cache_read_input: float
+
+    def cost_usd(self, usage: TokenUsage) -> float:
+        return (
+            usage.input_tokens * self.input
+            + usage.output_tokens * self.output
+            + usage.cache_creation_input_tokens * self.cache_creation_input
+            + usage.cache_read_input_tokens * self.cache_read_input
+        ) / 1_000_000
+
+
+# Цена за 1M токенов, USD. Запись кэша 5m ×1,25 от входа, чтение ×0,1 (справочник prompt caching;
+# со счётом консоли Anthropic не сверено). Для модели вне таблицы стоимость не печатается.
+PRICES_PER_MILLION_TOKENS: dict[str, TokenUsagePrices] = {
+    "claude-sonnet-5": TokenUsagePrices(2.0, 10.0, 2.5, 0.2),
+    "claude-sonnet-5-5": TokenUsagePrices(2.0, 10.0, 2.5, 0.2),
 }
 CURRENCY_AMOUNT = re.compile(
     r"\d[\d.,\s ]*\s*(?:lei|ron|€|eur)\b|(?:€|eur|ron)\s*\d", re.IGNORECASE
@@ -353,8 +373,7 @@ class EvalSummary:
     i4: SetSummary
     contacts_passed: int
     contacts_total: int
-    input_tokens: int
-    output_tokens: int
+    usage: TokenUsage
     cost_usd: float | None
 
     @property
@@ -372,21 +391,15 @@ def summarize(results: list[CaseResult], model: str) -> EvalSummary:
     answers = [result.answer for result in results if result.answer is not None]
     m6 = [result for result in results if I4_TAG not in result.case.tags]
     contacts = [result for result in m6 if CONTACTS_TAG in result.case.tags]
-    input_tokens = sum(answer.input_tokens for answer in answers)
-    output_tokens = sum(answer.output_tokens for answer in answers)
+    usage = sum((answer.usage for answer in answers), TokenUsage())
     prices = PRICES_PER_MILLION_TOKENS.get(model)
     return EvalSummary(
         m6=set_summary(m6),
         i4=set_summary([result for result in results if I4_TAG in result.case.tags]),
         contacts_passed=sum(result.grade.passed for result in contacts),
         contacts_total=len(contacts),
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        cost_usd=(
-            None
-            if prices is None
-            else (input_tokens * prices[0] + output_tokens * prices[1]) / 1_000_000
-        ),
+        usage=usage,
+        cost_usd=None if prices is None else prices.cost_usd(usage),
     )
 
 
@@ -412,7 +425,7 @@ def eval_table_lines(results: list[CaseResult], summary: EvalSummary) -> list[st
     ]
     cost = "—" if summary.cost_usd is None else f"≈ ${summary.cost_usd:.2f}"
     by_tag = ", ".join(f"{tag} {count}" for tag, count in failures_by_tag(results).most_common())
-    m6, i4 = summary.m6, summary.i4
+    m6, i4, usage = summary.m6, summary.i4, summary.usage
     lines += [
         f"Итог M6 {m6.passed}/{m6.total}",
         f"Отказы на контакты {summary.contacts_passed}/{summary.contacts_total}",
@@ -420,7 +433,8 @@ def eval_table_lines(results: list[CaseResult], summary: EvalSummary) -> list[st
         f"Успешные повторы стража (M6) {m6.guard_retries}",
         f"Медиана M6 {seconds_label(m6.median_seconds)}",
         f"I4: {i4.passed}/{i4.total}",
-        f"Токены in/out {summary.input_tokens}/{summary.output_tokens}, {cost}",
+        f"Токены: вход {usage.input_tokens}, запись кэша {usage.cache_creation_input_tokens}, "
+        f"чтение кэша {usage.cache_read_input_tokens}, выход {usage.output_tokens}; {cost}",
         f"Провалы по тегам: {by_tag or 'нет'}",
         f"Ворота M6: {'пройдены' if summary.meets_gate else 'не пройдены'}",
     ]

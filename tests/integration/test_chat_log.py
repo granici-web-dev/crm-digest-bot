@@ -4,7 +4,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.chat.log import AskedQuestion, questions_since, record_question
-from digest.chat.loop import ChatAnswer, ExecutedToolCall
+from digest.chat.loop import ChatAnswer, ExecutedToolCall, TokenUsage
 from digest.chat.tools import ToolOutcome
 from digest.db.schema import chat_questions
 from factories import BUCHAREST
@@ -26,8 +26,7 @@ async def test_answered_question_is_logged_with_tools_and_tokens(engine: AsyncEn
                 ToolOutcome({}, is_error=False, snapshot_dates=(date(2026, 9, 23),)),
             ),
         ),
-        input_tokens=200,
-        output_tokens=40,
+        usage=TokenUsage(200, 40, 6500, 13000),
     )
 
     await record_question(engine, TENANT_ID, QUESTION, answer.status, answer.text, 850, answer)
@@ -41,6 +40,7 @@ async def test_answered_question_is_logged_with_tools_and_tokens(engine: AsyncEn
     ]
     assert row["snapshot_dates"] == [date(2026, 9, 23)]
     assert (row["input_tokens"], row["output_tokens"], row["duration_ms"]) == (200, 40, 850)
+    assert (row["cache_creation_input_tokens"], row["cache_read_input_tokens"]) == (6500, 13000)
     assert (row["chat_id"], row["user_id"], row["message_id"]) == (CHAT_ID, 5001, 77)
 
 

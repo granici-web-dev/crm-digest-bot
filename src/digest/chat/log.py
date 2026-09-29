@@ -118,8 +118,14 @@ async def record_question(
                     for call in answer.tool_calls
                 ],
                 snapshot_dates=snapshot_dates,
-                input_tokens=None if answer is None else answer.input_tokens,
-                output_tokens=None if answer is None else answer.output_tokens,
+                input_tokens=None if answer is None else answer.usage.input_tokens,
+                output_tokens=None if answer is None else answer.usage.output_tokens,
+                cache_creation_input_tokens=(
+                    None if answer is None else answer.usage.cache_creation_input_tokens
+                ),
+                cache_read_input_tokens=(
+                    None if answer is None else answer.usage.cache_read_input_tokens
+                ),
                 duration_ms=duration_ms,
                 status=status,
                 reply_message_id=reply_message_id,

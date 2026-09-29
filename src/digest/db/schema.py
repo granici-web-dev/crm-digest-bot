@@ -232,6 +232,8 @@ chat_questions = Table(
     Column("snapshot_dates", ARRAY(Date)),
     Column("input_tokens", Integer),
     Column("output_tokens", Integer),
+    Column("cache_creation_input_tokens", Integer),
+    Column("cache_read_input_tokens", Integer),
     Column("duration_ms", Integer, nullable=False),
     Column("status", Text, nullable=False),
     Column("created_at", TIMESTAMP(timezone=True), nullable=False, server_default=func.now()),

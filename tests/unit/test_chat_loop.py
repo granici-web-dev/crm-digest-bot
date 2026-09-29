@@ -14,11 +14,13 @@ from digest.chat.loop import (
     ChatAnswer,
     ExecutedToolCall,
     PreviousExchange,
+    TokenUsage,
     allowed_numbers,
     answer_question,
     checked_answer,
     config_mask_names,
     first_unverified_number,
+    model_request,
     name_mask_pattern,
     system_prompt,
 )
@@ -27,7 +29,7 @@ from digest.config import AppConfig
 from digest.metrics.frame import prepare_lead_frame
 from digest.reports.render import render, text
 from factories import BUCHAREST, make_lead_links, make_snapshot_row
-from fakes import scripted_anthropic, text_message, tool_use_message
+from fakes import anthropic_message, scripted_anthropic, text_message, tool_use_message
 
 TODAY = date(2026, 9, 23)
 MODEL = "claude-sonnet-5"
@@ -95,7 +97,7 @@ async def test_question_routes_to_tool_with_arguments(app_config: AppConfig) -> 
     tool_result = api.requests[1]["messages"][-1]["content"][0]
     assert tool_result["tool_use_id"] == "toolu_0"
     assert '"leads": 3' in tool_result["content"]
-    assert (answer.input_tokens, answer.output_tokens) == (200, 40)
+    assert (answer.usage.input_tokens, answer.usage.output_tokens) == (200, 40)
     assert answer.snapshot_dates == (TODAY,)
 
 
@@ -406,7 +408,92 @@ async def test_system_prompt_states_today_in_bucharest(app_config: AppConfig) ->
 
     await ask("Salut", api.client, MODEL, tool_data(app_config))
 
-    assert "Astăzi este 23.09.2026" in api.requests[0]["system"]
+    assert "Astăzi este 23.09.2026" in api.requests[0]["system"][0]["text"]
+
+
+async def test_cached_prefix_is_identical_for_different_questions_on_one_day(
+    app_config: AppConfig,
+) -> None:
+    # Три запроса первого вопроса (auto, auto, none в повторе стража) и вопрос с уточнением.
+    api = scripted_anthropic(
+        tool_use_message(FUNNEL_THIS_WEEK),
+        text_message("Au fost 3 lead-uri, cu 12% mai mult."),
+        text_message("Au fost 3 lead-uri."),
+        text_message("Bună ziua."),
+    )
+    data = tool_data(app_config)
+    await ask("Câte lead-uri?", api.client, MODEL, data)
+    await ask(
+        "Dar Cluj?",
+        api.client,
+        MODEL,
+        data,
+        PreviousExchange(1, "Câte lead-uri?", (FUNNEL_THIS_WEEK,)),
+    )
+
+    assert {json.dumps(request["tool_choice"]) for request in api.requests} == {
+        '{"type": "auto"}',
+        '{"type": "none"}',
+    }
+    prefixes = {json.dumps([request["tools"], request["system"]]) for request in api.requests}
+    assert len(prefixes) == 1
+    assert api.requests[0]["system"][-1]["cache_control"] == {"type": "ephemeral"}
+
+
+def test_cached_prefix_has_no_date_outside_system(app_config: AppConfig) -> None:
+    requests = [
+        model_request(MODEL, tool_data(app_config, today=today), [], {"type": "auto"})
+        for today in (TODAY, date(2026, 9, 24))
+    ]
+
+    assert requests[0]["tools"] == requests[1]["tools"]
+    assert requests[0]["system"] != requests[1]["system"]
+
+
+async def test_answer_sums_cache_tokens_across_rounds_and_guard_retry(
+    app_config: AppConfig,
+) -> None:
+    api = scripted_anthropic(
+        anthropic_message(
+            tool_use_message(FUNNEL_THIS_WEEK)["content"],
+            "tool_use",
+            input_tokens=90,
+            output_tokens=70,
+            cache_usage={"cache_creation_input_tokens": 6500, "cache_read_input_tokens": 0},
+        ),
+        anthropic_message(
+            text_message("Au fost 3 lead-uri, cu 12% mai mult.")["content"],
+            "end_turn",
+            input_tokens=500,
+            output_tokens=30,
+            cache_usage={"cache_creation_input_tokens": 0, "cache_read_input_tokens": 6500},
+        ),
+        anthropic_message(
+            text_message("Au fost 3 lead-uri.")["content"],
+            "end_turn",
+            input_tokens=560,
+            output_tokens=10,
+            cache_usage={"cache_creation_input_tokens": 0, "cache_read_input_tokens": 6500},
+        ),
+    )
+
+    answer = await ask("Câte lead-uri?", api.client, MODEL, tool_data(app_config))
+
+    assert answer.retried
+    assert answer.usage == TokenUsage(
+        input_tokens=90 + 500 + 560,
+        output_tokens=70 + 30 + 10,
+        cache_creation_input_tokens=6500,
+        cache_read_input_tokens=6500 + 6500,
+    )
+
+
+async def test_usage_without_cache_fields_counts_as_zero(app_config: AppConfig) -> None:
+    api = scripted_anthropic(text_message("Bună ziua."))
+
+    answer = await ask("Salut", api.client, MODEL, tool_data(app_config))
+
+    assert answer.usage == TokenUsage(100, 20, 0, 0)
 
 
 def test_system_prompt_compare_rule_without_periods() -> None:
@@ -477,7 +564,7 @@ async def test_month_without_year_resolves_to_last_august(app_config: AppConfig)
         tool_data(app_config, (date(2026, 8, 31), date(2026, 9, 27)), today=date(2026, 9, 27)),
     )
 
-    assert "Astăzi este 27.09.2026" in api.requests[0]["system"]
+    assert "Astăzi este 27.09.2026" in api.requests[0]["system"][0]["text"]
     tool_result = json.loads(api.requests[1]["messages"][-1]["content"][0]["content"])
     assert (tool_result["period"], tool_result["days"]) == ("august 2026", "01.08–31.08.2026")
     assert tool_result["snapshot_date"] == "31.08.2026"
@@ -630,8 +717,7 @@ def guarded(app_config: AppConfig, model_text: str, question: str = "?") -> str 
         question,
         model_text,
         (MISSING_FOLLOWUP_CALL,),
-        0,
-        0,
+        TokenUsage(),
         make_lead_links(app_config.status_mapping),
         config_mask_names(app_config),
     )
@@ -695,8 +781,7 @@ def test_guard_masks_campaign_label_digits(app_config: AppConfig) -> None:
             "?",
             model_text,
             (by_campaign,),
-            0,
-            0,
+            TokenUsage(),
             make_lead_links(app_config.status_mapping),
             config_mask_names(app_config),
         ).unverified_number
@@ -726,8 +811,7 @@ def test_numeric_campaign_label_is_checked_as_a_number(app_config: AppConfig) ->
             "?",
             model_text,
             (by_campaign,),
-            0,
-            0,
+            TokenUsage(),
             make_lead_links(app_config.status_mapping),
             config_mask_names(app_config),
         ).unverified_number
@@ -757,8 +841,7 @@ def test_source_name_in_results_allows_its_count_but_not_its_year(app_config: Ap
             "?",
             model_text,
             (by_source,),
-            0,
-            0,
+            TokenUsage(),
             make_lead_links(app_config.status_mapping),
             config_mask_names(app_config),
         ).unverified_number

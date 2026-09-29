@@ -251,6 +251,7 @@ def anthropic_message(
     stop_reason: str,
     input_tokens: int = 100,
     output_tokens: int = 20,
+    cache_usage: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     return {
         "id": "msg_test",
@@ -260,7 +261,11 @@ def anthropic_message(
         "content": content,
         "stop_reason": stop_reason,
         "stop_sequence": None,
-        "usage": {"input_tokens": input_tokens, "output_tokens": output_tokens},
+        "usage": {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            **(cache_usage or {}),
+        },
     }
 
 

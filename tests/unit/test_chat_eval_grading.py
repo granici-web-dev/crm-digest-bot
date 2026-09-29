@@ -4,6 +4,7 @@ from typing import Any
 import pytest
 
 from digest.acceptance.chat_eval import (
+    PRICES_PER_MILLION_TOKENS,
     CaseResult,
     ExpectedCall,
     GoldenCase,
@@ -13,7 +14,7 @@ from digest.acceptance.chat_eval import (
     summarize,
     value_at,
 )
-from digest.chat.loop import ChatAnswer, ExecutedToolCall
+from digest.chat.loop import ChatAnswer, ExecutedToolCall, TokenUsage
 from digest.chat.tools import ToolOutcome
 from digest.db.schema import ChatQuestionStatus
 
@@ -46,8 +47,7 @@ def answer(
         tuple(
             ExecutedToolCall(name, arguments, outcome(FUNNEL_CONTENT)) for name, arguments in calls
         ),
-        100,
-        20,
+        TokenUsage(100, 20),
     )
 
 
@@ -97,8 +97,7 @@ def zero_answer(text: str) -> ChatAnswer:
         text,
         "answered",
         (ExecutedToolCall("funnel", FUNNEL_ARGUMENTS, outcome(ZERO_CONTENT)),),
-        1,
-        1,
+        TokenUsage(1, 1),
     )
 
 
@@ -218,8 +217,7 @@ def test_change_sentence_requires_only_its_percent() -> None:
                     "compare_periods", {"metric": "leads"}, outcome({"change": change})
                 ),
             ),
-            1,
-            1,
+            TokenUsage(1, 1),
         ),
         [outcome({"change": change})],
     )
@@ -259,3 +257,21 @@ def test_i4_line_has_no_gate_until_fifty_questions() -> None:
 
     assert "I4: 9/12" in lines
     assert not any("48" in line or "50" in line for line in lines if "I4" in line)
+
+
+def test_eval_cost_prices_cache_write_and_read_separately() -> None:
+    usage = TokenUsage(1_000_000, 100_000, 1_000_000, 1_000_000)
+
+    cost = PRICES_PER_MILLION_TOKENS["claude-sonnet-5"].cost_usd(usage)
+
+    assert cost == pytest.approx(2.00 + 1.00 + 2.50 + 0.20)
+
+
+def test_eval_summary_prints_input_cache_write_cache_read_and_output() -> None:
+    cached = replace(answer("—"), usage=TokenUsage(1000, 200, 6500, 13000))
+    results = [CaseResult(funnel_case([]), Grade(True, ""), 1.0, cached)] * 2
+
+    lines = eval_table_lines(results, summarize(results, "claude-sonnet-5"))
+
+    # 2000 × 2 + 400 × 10 + 13 000 × 2,5 + 26 000 × 0,2 = 45 700 на миллион.
+    assert "Токены: вход 2000, запись кэша 13000, чтение кэша 26000, выход 400; ≈ $0.05" in lines
