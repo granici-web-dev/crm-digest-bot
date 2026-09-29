@@ -408,6 +408,13 @@ async def test_system_prompt_states_today_in_bucharest(app_config: AppConfig) ->
     assert "Astăzi este 23.09.2026" in api.requests[0]["system"]
 
 
+def test_system_prompt_compare_rule_without_periods() -> None:
+    # Eval 29.09: «cu perioadele» модель читала как просьбу повторить значения рядом с change.
+    [rule] = [line for line in system_prompt(TODAY).splitlines() if "câmpul change" in line]
+    assert "cu perioadele" not in rule
+    assert "nu le repeta" in rule
+
+
 def test_prompt_asks_for_consultant_only_where_tool_requires_one(app_config: AppConfig) -> None:
     # Eval 29.09: на «без Data revenire» модель спрашивала консультанта, хотя
     # overdue_followups принимает toti.
