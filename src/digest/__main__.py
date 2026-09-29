@@ -5,15 +5,20 @@ from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from digest.acceptance.privacy import audit_lines, audit_privacy
 from digest.app import create_report_deps, run_app, seed_defaults
-from digest.config import load_app_config
+from digest.config import AppConfig, load_app_config
 from digest.db.engine import create_database_engine
 from digest.delivery.ops import OpsChannel, notify_ops
 from digest.delivery.telegram import create_bot
 from digest.log_format import configure_logging
 from digest.mefi.client import MefiClient, create_mefi_http_client
+from digest.reports.lead_links import LeadLinks
+from digest.reports.modules import IMPLEMENTED_MODULES
 from digest.reports.periods import REPORT_LEVELS, ReportLevel
-from digest.reports.runner import run_report
+from digest.reports.runner import ReportReader, run_report
 from digest.settings import Settings
 from digest.snapshot import SnapshotSources, describe_error, run_daily_snapshot
 
@@ -32,7 +37,50 @@ def parse_arguments(argv: list[str] | None) -> argparse.Namespace:
     # Без --date: mefi отдаёт только текущее состояние, снапшот под прошлой датой исказил бы
     # разницу снапшотов (CLAUDE.md, инвариант 3).
     commands.add_parser("snapshot", help="снять снапшот лидов mefi за сегодня вручную")
+    audit = commands.add_parser("audit", help="проверки приёмки по данным базы")
+    audit_targets = audit.add_subparsers(dest="target", required=True)
+    privacy = audit_targets.add_parser(
+        "privacy", help="перерисовать отчёты за дни и проверить тексты на контакты (M8)"
+    )
+    privacy.add_argument("--days", type=int, default=14)
+    privacy.add_argument(
+        "--end", type=date.fromisoformat, help="последний день, по умолчанию сегодня"
+    )
+    privacy.add_argument("--out", type=Path, help="записать таблицу и итог в файл")
     return parser.parse_args(argv)
+
+
+def create_report_reader(
+    engine: AsyncEngine, config: AppConfig, app_settings: Settings
+) -> ReportReader:
+    return ReportReader(
+        engine,
+        config,
+        app_settings.tenant_id,
+        IMPLEMENTED_MODULES,
+        LeadLinks.from_mefi_base_url(app_settings.mefi_base_url, config.status_mapping.lead_links),
+    )
+
+
+def print_and_save(lines: list[str], out: Path | None) -> None:
+    for line in lines:
+        print(line)
+    if out is not None:
+        out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+async def run_privacy_audit(
+    app_settings: Settings, days: int, end: date | None, out: Path | None
+) -> int:
+    config = load_app_config(CONFIG_DIR)
+    engine = create_database_engine(app_settings.database_url.get_secret_value())
+    end = end or datetime.now(ZoneInfo(config.status_mapping.time.timezone)).date()
+    try:
+        audit = await audit_privacy(create_report_reader(engine, config, app_settings), end, days)
+    finally:
+        await engine.dispose()
+    print_and_save(audit_lines(audit), out)
+    return 1 if audit.findings or audit.raw_findings else 0
 
 
 async def run_manual_report(
@@ -123,6 +171,10 @@ def main(argv: list[str] | None = None) -> int:
         )
     if arguments.command == "snapshot":
         return asyncio.run(run_manual_snapshot(app_settings))
+    if arguments.command == "audit":
+        return asyncio.run(
+            run_privacy_audit(app_settings, arguments.days, arguments.end, arguments.out)
+        )
     return asyncio.run(run_service(app_settings))
 
 
