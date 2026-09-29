@@ -67,12 +67,11 @@ class MonthlySourceConversion:
 
     @property
     def leads_with_campaign(self) -> int:
-        without_campaign = self.by_campaign.without_key
-        return self.leads_total - (0 if without_campaign is None else without_campaign.counts.leads)
+        return self.by_campaign.leads_with_key
 
     @property
     def campaign_share(self) -> float | None:
-        return ratio(self.leads_with_campaign, self.leads_total)
+        return self.by_campaign.key_share
 
 
 @dataclass(frozen=True)

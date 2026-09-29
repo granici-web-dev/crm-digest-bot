@@ -14,6 +14,7 @@ from digest.metrics.kpi import (
     count_flags,
     counts_from_sums,
     kpis_from,
+    ratio,
 )
 
 BreakdownColumn = Literal["source_name", "utm_campanie"]
@@ -44,6 +45,15 @@ class LeadBreakdown:
     # Лиды без значения не сворачиваются в other: это вопрос заполнения поля в mefi.
     without_key: UnkeyedBreakdownRow | None
     total: UnkeyedBreakdownRow
+
+    @property
+    def leads_with_key(self) -> int:
+        without_key_leads = 0 if self.without_key is None else self.without_key.counts.leads
+        return self.total.counts.leads - without_key_leads
+
+    @property
+    def key_share(self) -> float | None:
+        return ratio(self.leads_with_key, self.total.counts.leads)
 
 
 def unkeyed_row(counts: LeadCounts) -> UnkeyedBreakdownRow:
