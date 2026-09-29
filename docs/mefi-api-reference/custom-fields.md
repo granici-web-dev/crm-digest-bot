@@ -9,6 +9,7 @@
 | Field key | Type | Display name | Description | Use in our project |
 |---|---|---|---|---|
 | `form-cf-14` | select | Showroom | Which showroom the lead is associated with | **Critical:** showroom dimension for analytics |
+| `form-cf-4` | select | Modalitate contact | Preferred contact channel (Mail / Telefon / Whatsapp / SmS); появилось 29.09.2026, заполнено у 4 из 100 последних лидов | Stored in raw (`raw_custom_fields.keep`), not a contact itself; not used in reports yet |
 | `form-cf-5` | date_picker | Data revenire | Follow-up date (YYYY-MM-DD) | Activity tracking |
 | `form-cf-20` | select | Ofertat | Has offer been sent? (✅DA / ❌NU) | **Critical:** offer-sent flag (alternative to status 3) |
 | `form-cf-7` | textarea | Informatii | General info | — |

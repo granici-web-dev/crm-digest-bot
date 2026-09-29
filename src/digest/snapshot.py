@@ -28,6 +28,7 @@ from digest.db.schema import client_snapshots, lead_snapshots, snapshot_runs
 from digest.mefi.client import (
     MefiClient,
     MefiClientsDump,
+    MefiKeyRejected,
     MefiLeadsDump,
     MefiRateLimitExceeded,
     MefiSearchUnsuccessful,
@@ -126,6 +127,8 @@ class SnapshotOutcome:
     status: SnapshotRunStatus
     # False: success за дату уже был, этот вызов лиды не снимал.
     newly_taken: bool
+    # False: клиентов за дату нет, Contract Cantitate в d1 будет «—».
+    clients_taken: bool
     # Текст для служебного бота: сбой клиентов, незнакомые ключи, битый шоурум клиента.
     clients_alert: str | None
 
@@ -154,6 +157,9 @@ def describe_error(error: BaseException) -> str:
     # str() у ValidationError и ошибок SQLAlchemy содержит тело ответа или строки raw,
     # поэтому наружу только тип и поля, в которых нет данных клиентов.
     error_type = type(error).__name__
+    # Отозванный ключ чинит человек, не код: ему нужен текст, что делать, а не имя класса.
+    if isinstance(error, MefiKeyRejected):
+        return str(error)
     if isinstance(error, ValidationError):
         return f"{error_type}: {validation_reason(error)}"
     if isinstance(error, httpx.HTTPStatusError):
@@ -676,7 +682,7 @@ async def snapshot_clients(
     tenant_id: str,
     snapshot_date: date,
     run_id: int,
-) -> str | None:
+) -> tuple[bool, str | None]:
     this_run = snapshot_runs.c.id == run_id
     try:
         # День в запас: в какой таймзоне mefi режет дни фильтра, неизвестно.
@@ -691,7 +697,7 @@ async def snapshot_clients(
             ).one()
             # Превью, которое вытеснил прогон 19:00, клиентов уже не пишет: строки даты его.
             if run.clients_status == "success" or run.status not in SNAPSHOT_RUN_STATUSES:
-                return None
+                return run.clients_status == "success", None
             counters, findings = await write_client_snapshot(
                 connection, dump, tenant_id, snapshot_date, client_settings
             )
@@ -727,7 +733,7 @@ async def snapshot_clients(
         )
         if not isinstance(error, Exception):
             raise
-        return clients_alert_text(
+        return False, clients_alert_text(
             snapshot_date,
             describe_error(error),
             [],
@@ -744,7 +750,7 @@ async def snapshot_clients(
             "clients_skipped": counters.clients_skipped,
         },
     )
-    return clients_alert_text(snapshot_date, None, counters.clients_unknown_keys, findings)
+    return True, clients_alert_text(snapshot_date, None, counters.clients_unknown_keys, findings)
 
 
 @dataclass(frozen=True)
@@ -798,13 +804,13 @@ async def run_daily_snapshot(
             extra={"snapshot_date": snapshot_date.isoformat(), "run_id": success_run.id},
         )
         if success_run.clients_status == "success":
-            return SnapshotOutcome(success_run.id, "success", False, None)
+            return SnapshotOutcome(success_run.id, "success", False, True, None)
         # Лиды уже есть, клиенты в прошлой попытке упали: повтор догружает только клиентов.
         return SnapshotOutcome(
             success_run.id,
             "success",
             False,
-            await snapshot_clients(
+            *await snapshot_clients(
                 engine,
                 sources.clients_client,
                 status_mapping.clients,
@@ -823,7 +829,7 @@ async def run_daily_snapshot(
         run_id,
         run_status,
         True,
-        await snapshot_clients(
+        *await snapshot_clients(
             engine,
             sources.clients_client,
             status_mapping.clients,

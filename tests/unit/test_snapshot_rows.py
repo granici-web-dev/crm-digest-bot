@@ -214,6 +214,23 @@ def test_lead_raw_keeps_only_whitelisted_custom_fields(app_config: AppConfig) ->
     assert "+40711111177" not in str(row["raw"])
 
 
+def test_modalitate_contact_is_kept_in_raw_without_problem(app_config: AppConfig) -> None:
+    custom_fields = [
+        *make_custom_fields(),
+        {"field_id": 4, "name": "Modalitate contact", "type": "select", "value": "Whatsapp"},
+    ]
+    parsed, _ = parse_leads([make_lead(custom_fields=custom_fields)])
+
+    row, problems = lead_to_snapshot_row(
+        parsed[0], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping, CONTACT_SECRET
+    )
+
+    assert problems == []
+    assert {"field_id": 4, "name": "Modalitate contact", "type": "select", "value": "Whatsapp"} in (
+        row["raw"]["custom_fields"]
+    )
+
+
 def test_unknown_lead_custom_field_is_recorded_and_not_stored(app_config: AppConfig) -> None:
     custom_fields = [
         *make_custom_fields(),

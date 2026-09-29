@@ -40,6 +40,42 @@ class MefiSearchUnsuccessful(Exception):
         super().__init__(f"mefi вернул success: false на странице {page_number}")
 
 
+@dataclass(frozen=True)
+class MefiApiKey:
+    scope: str
+    env_var: str
+
+
+LEADS_API_KEY = MefiApiKey("leads:read", "MEFI_API_KEY")
+CLIENTS_API_KEY = MefiApiKey("clients:read", "MEFI_CLIENTS_API_KEY")
+# Текст отказа mefi идёт в служебный бот как есть; длиннее это уже не сообщение, а дамп.
+REJECTION_MESSAGE_LIMIT = 200
+
+
+class MefiKeyRejected(Exception):
+    def __init__(self, api_key: MefiApiKey, status_code: int, mefi_message: str | None) -> None:
+        reason = f"HTTP {status_code}" if mefi_message is None else mefi_message
+        super().__init__(
+            f"mefi отклонил ключ {api_key.scope} ({reason}): создайте новый ключ на странице API "
+            f"mefi и замените {api_key.env_var} в .env, затем перезапустите бота"
+        )
+
+
+def api_key_for_path(path: str) -> MefiApiKey:
+    return CLIENTS_API_KEY if path.startswith("/clients") else LEADS_API_KEY
+
+
+def rejection_message(response: httpx.Response) -> str | None:
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    message = body.get("message") if isinstance(body, dict) else None
+    if not isinstance(message, str) or not message.strip():
+        return None
+    return message.strip()[:REJECTION_MESSAGE_LIMIT]
+
+
 class RequestPacer:
     def __init__(
         self,
@@ -268,6 +304,10 @@ class MefiClient:
                     "duration_ms": duration_ms,
                 },
             )
+            if response.status_code in (httpx.codes.UNAUTHORIZED, httpx.codes.FORBIDDEN):
+                raise MefiKeyRejected(
+                    api_key_for_path(path), response.status_code, rejection_message(response)
+                )
             response.raise_for_status()
             page = MefiSearchPage.model_validate_json(response.content)
             if not page.success:

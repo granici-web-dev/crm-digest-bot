@@ -46,6 +46,8 @@ custom_fields:
     ofertat_yes: "✅DA"                    # точное значение из mefi, эмодзи без пробела
     ofertat_no: "❌NU"                     # иное значение → алерт, лид не считается ofertat
   data_revenire: { field_id: 5, name: "Data revenire" }   # date_picker, "YYYY-MM-DD" или null
+  # select: Mail | Telefon | Whatsapp | SmS; способ связи, не контакт. В отчётах пока нет.
+  modalitate_contact: { field_id: 4, name: "Modalitate contact" }
   utm:
     - { field_id: 38, name: "UTM_Source" }
     - { field_id: 39, name: "UTM_Campanie" }
@@ -56,7 +58,7 @@ custom_fields:
 # продавца о клиенте, в нём бывают телефоны: не пишутся. Источник H (этап 4) читает текущий
 # текст заметок из API. field_id вне keep и drop → алерт, поле не пишется.
 raw_custom_fields:
-  keep: [5, 14, 20, 38, 39, 40, 41]
+  keep: [4, 5, 14, 20, 38, 39, 40, 41]
   drop:
     - { field_id: 7,  name: "Informatii" }
     - { field_id: 8,  name: "Revenire 1 (Data+Info)" }

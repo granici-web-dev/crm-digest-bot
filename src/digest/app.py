@@ -266,10 +266,17 @@ async def take_late_snapshot(
     if not await dates_without_success_snapshot(deps.engine, deps.tenant_id, [today]):
         return
     outcome = await take_snapshot(deps, snapshot_sources, local_now, "catch_up")
-    if outcome is not None and outcome.newly_taken and outcome.status == "success":
-        await notify_ops(
-            deps.ops, f"Снапшот за {today:%d.%m.%Y} снят с опозданием в {local_now:%H:%M}."
+    if outcome is None or not outcome.newly_taken or outcome.status != "success":
+        return
+    # По этому сообщению отчёт запускают вручную: без клиентов Contract Cantitate уйдёт «—».
+    if outcome.clients_taken:
+        text = f"Снапшот за {today:%d.%m.%Y} снят с опозданием в {local_now:%H:%M}."
+    else:
+        text = (
+            f"Снапшот лидов за {today:%d.%m.%Y} снят с опозданием в {local_now:%H:%M}, "
+            "клиенты не сняты: Contract Cantitate в d1 будет «—»."
         )
+    await notify_ops(deps.ops, text)
 
 
 async def catch_up_level(

@@ -121,6 +121,7 @@ class CustomFields(StrictConfigModel):
     showroom: CustomFieldRef
     ofertat: OfertatField
     data_revenire: CustomFieldRef
+    modalitate_contact: CustomFieldRef
     utm: list[CustomFieldRef]
 
     @model_validator(mode="after")

@@ -11,6 +11,7 @@ from pydantic import SecretStr
 from digest.mefi.client import (
     ClientsRangeShortfall,
     MefiClient,
+    MefiKeyRejected,
     MefiRateLimitExceeded,
     RequestPacer,
     create_mefi_http_client,
@@ -109,6 +110,38 @@ async def test_five_consecutive_429_fail_the_search(mefi_client: MefiClient) -> 
         await mefi_client.search_all_leads()
 
     assert raised.value.rate_limited_count == 5
+
+
+@respx.mock
+async def test_revoked_leads_key_names_key_and_env_var_without_retry(
+    mefi_client: MefiClient,
+) -> None:
+    route = respx.post(SEARCH_URL).respond(
+        401, json={"success": False, "message": "Autentificare eșuată"}
+    )
+
+    with pytest.raises(MefiKeyRejected) as raised:
+        await mefi_client.search_all_leads()
+
+    assert route.call_count == 1
+    assert str(raised.value) == (
+        "mefi отклонил ключ leads:read (Autentificare eșuată): создайте новый ключ на странице "
+        "API mefi и замените MEFI_API_KEY в .env, затем перезапустите бота"
+    )
+    assert "test-key" not in str(raised.value)
+
+
+@respx.mock
+async def test_forbidden_clients_key_without_message_names_clients_key(
+    mefi_client: MefiClient,
+) -> None:
+    respx.post(CLIENTS_SEARCH_URL).respond(403, text="<html>Forbidden</html>")
+
+    with pytest.raises(MefiKeyRejected) as raised:
+        await mefi_client.search_all_clients(date(2026, 9, 29))
+
+    assert str(raised.value).startswith("mefi отклонил ключ clients:read (HTTP 403): ")
+    assert "MEFI_CLIENTS_API_KEY" in str(raised.value)
 
 
 @respx.mock

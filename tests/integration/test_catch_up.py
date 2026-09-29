@@ -193,6 +193,42 @@ async def test_late_snapshot_is_taken_after_retry_time_and_announced(
     assert harness.ops_texts == ["Снапшот за 28.09.2026 снят с опозданием в 21:47."]
 
 
+async def test_late_snapshot_without_clients_says_clients_not_taken(
+    harness: Harness, snapshot_sources: SnapshotSources, mefi_mock: respx.MockRouter
+) -> None:
+    mefi_mock.post(f"{BASE_URL}/leads/search").respond(
+        json=make_search_page(recorded_search_leads())
+    )
+    mefi_mock.post(f"{BASE_URL}/clients/search").respond(status_code=500)
+
+    await take_late_snapshot(harness.deps, snapshot_sources, MONDAY_EVENING)
+
+    clients_alert, late_message = harness.ops_texts
+    assert clients_alert.startswith("Снапшот клиентов mefi за 28.09.2026 не удался")
+    assert late_message == (
+        "Снапшот лидов за 28.09.2026 снят с опозданием в 21:47, клиенты не сняты: "
+        "Contract Cantitate в d1 будет «—»."
+    )
+
+
+async def test_revoked_leads_key_alert_says_what_to_do(
+    harness: Harness, snapshot_sources: SnapshotSources, mefi_mock: respx.MockRouter
+) -> None:
+    mefi_mock.post(f"{BASE_URL}/leads/search").respond(
+        401, json={"success": False, "message": "Autentificare eșuată"}
+    )
+
+    await take_late_snapshot(harness.deps, snapshot_sources, MONDAY_EVENING)
+
+    assert harness.ops_texts == [
+        "Снапшот за 28.09.2026 21:47 не удался: mefi отклонил ключ leads:read "
+        "(Autentificare eșuată): создайте новый ключ на странице API mefi и замените "
+        "MEFI_API_KEY в .env, затем перезапустите бота."
+    ]
+    [run] = await snapshot_run_rows(harness.deps.engine)
+    assert run["status"] == "failed"
+
+
 async def test_late_snapshot_leaves_fresh_running_row_alone(
     harness: Harness, snapshot_sources: SnapshotSources, mefi_mock: respx.MockRouter
 ) -> None:
