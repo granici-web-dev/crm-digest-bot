@@ -158,6 +158,13 @@ chat:             # режим вопросов; включается целик
       lead-urile fără sursă sau fără campanie; la campanii, leads_with_key este numărul
       lead-urilor cu campanie, iar key_share ponderea lor. Numele surselor și campaniilor se scriu
       exact ca în rezultat. Opțional pentru un singur showroom.
+    repeat_clients: >-
+      Clienții care revin într-o lună: din clienții lunii (clients), câți sunt clienți anteriori
+      (repeat, share), pe motiv (by_reason: telefon sau e-mail al unui client anterior din CRM,
+      ori sursa Client Fidel) și pe showroom (by_showroom; showroom_count dă câte showroom-uri au
+      clienți). Clienții de dinainte de CRM (înainte de 2026) fără sursa Client Fidel nu se văd,
+      deci procentul este subestimat. won_without_converted_at sunt lead-uri Clienți fără dată de
+      conversie, neincluse. Doar pe lună.
   # Описания параметров по имени, для каждого инструмента с таким параметром.
   parameters:
     period_a: Perioada evaluată, de obicei cea mai recentă (de ex. august în „august față de iulie”).

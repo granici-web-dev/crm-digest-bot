@@ -53,6 +53,7 @@ from digest.metrics.kpi import (
     lead_counts,
     lead_counts_by_showroom,
 )
+from digest.metrics.monthly import RepeatClientCounts, monthly_repeat_clients
 from digest.metrics.weekly import (
     LossReasons,
     converted_count,
@@ -76,6 +77,7 @@ ALL_SHOWROOMS = "toate"
 ALL_MANAGERS = "toti"
 CONTRACTS_METRIC = "contracts"
 COMPARABLE_METRICS: tuple[str, ...] = (*COUNT_NAMES, *KPI_NAMES, CONTRACTS_METRIC)
+MONTH_PERIODS: tuple[ChatPeriod, ...] = ("luna_curenta", "luna_trecuta")
 
 FrameLoader = Callable[[date], Awaitable[pd.DataFrame]]
 
@@ -261,6 +263,21 @@ class SourceBreakdownArguments(ToolArguments):
     showroom: str
 
 
+class RepeatClientsArguments(ToolArguments):
+    period: PeriodArgument
+
+    @field_validator("period", mode="after")
+    @classmethod
+    def period_is_month(
+        cls, value: ChatPeriod | DayArgument | MonthArgument
+    ) -> ChatPeriod | DayArgument | MonthArgument:
+        if isinstance(value, DayArgument) or (
+            isinstance(value, str) and value not in MONTH_PERIODS
+        ):
+            raise ValueError(text("repeat_clients_months_only"))
+        return value
+
+
 class OverdueFollowupsArguments(ToolArguments):
     manager: str
 
@@ -277,6 +294,7 @@ ARGUMENT_MODELS: dict[ChatToolName, type[ToolArguments]] = {
     "overdue_followups": OverdueFollowupsArguments,
     "untouched_leads": UntouchedLeadsArguments,
     "source_breakdown": SourceBreakdownArguments,
+    "repeat_clients": RepeatClientsArguments,
 }
 
 
@@ -303,18 +321,19 @@ def strict_object(properties: dict[str, Any]) -> dict[str, Any]:
 
 # Strict-режим не поддерживает pattern и minimum/maximum: месяц двумя целыми, год и границы дат
 # проверяет pydantic.
+DAY_PERIOD_FORM = strict_object({"day": {"type": "string", "format": "date"}})
+MONTH_PERIOD_FORM = strict_object(
+    {
+        "year": {"type": "integer"},
+        "month": {"type": "integer", "enum": list(range(1, 13))},
+    }
+)
 PERIOD_PROPERTY: dict[str, Any] = {
-    "anyOf": [
-        enum_property(CHAT_PERIODS),
-        strict_object({"day": {"type": "string", "format": "date"}}),
-        strict_object(
-            {
-                "year": {"type": "integer"},
-                "month": {"type": "integer", "enum": list(range(1, 13))},
-            }
-        ),
-    ]
+    "anyOf": [enum_property(CHAT_PERIODS), DAY_PERIOD_FORM, MONTH_PERIOD_FORM]
 }
+# Инструменты со своим набором периодов получают подмножество: модель не видит формы, которые
+# pydantic всё равно отклонит.
+MONTH_PERIOD_PROPERTY: dict[str, Any] = {"anyOf": [enum_property(MONTH_PERIODS), MONTH_PERIOD_FORM]}
 
 
 def tool_definitions(config: AppConfig) -> list[ToolParam]:
@@ -340,6 +359,7 @@ def tool_definitions(config: AppConfig) -> list[ToolParam]:
             "by": enum_property(BREAKDOWN_COLUMNS),
             "showroom": showrooms,
         },
+        "repeat_clients": {"period": MONTH_PERIOD_PROPERTY},
     }
     parameter_descriptions = config.modules.chat.parameters
     return [
@@ -766,6 +786,49 @@ async def source_breakdown(data: ToolData, arguments: SourceBreakdownArguments) 
     )
 
 
+def repeat_numbers(counts: RepeatClientCounts) -> dict[str, Any]:
+    return {
+        "clients": counts.clients,
+        "repeat": counts.repeat,
+        "share": percent_one_decimal(counts.share),
+    }
+
+
+async def repeat_clients(data: ToolData, arguments: RepeatClientsArguments) -> ToolOutcome:
+    frame = await period_frame(data, arguments.period)
+    # Месяц от первого дня периода, а не от snapshot_date: подменный снапшот следующего месяца
+    # сдвинул бы окно.
+    repeat = monthly_repeat_clients(frame.frame, frame.first_day, data.config)
+    showrooms = {
+        showroom: counts for showroom, counts in repeat.by_showroom.items() if counts.clients
+    }
+    return outcome(
+        {
+            **period_header(frame),
+            **repeat_numbers(repeat.company),
+            "by_reason": [
+                {"reason": text("repeat_by_contact"), "client_count": repeat.company.by_contact},
+                {
+                    "reason": ", ".join(data.config.status_mapping.sources.repeat_client),
+                    "client_count": repeat.company.by_source,
+                },
+            ],
+            "by_showroom": [
+                {
+                    "showroom": showroom or text("without_showroom"),
+                    **repeat_numbers(counts),
+                    "by_contact": counts.by_contact,
+                    "by_source": counts.by_source,
+                }
+                for showroom, counts in showrooms.items()
+            ],
+            "showroom_count": sum(1 for showroom in showrooms if showroom is not None),
+            "won_without_converted_at": repeat.won_without_converted_at,
+        },
+        frame,
+    )
+
+
 def snapshot_outcome(
     content: dict[str, Any], snapshot_date: date, lead_ids: tuple[int, ...]
 ) -> ToolOutcome:
@@ -906,6 +969,7 @@ TOOL_FUNCTIONS: Mapping[ChatToolName, ToolFunction] = {
     "overdue_followups": overdue_followups,
     "untouched_leads": untouched_leads_tool,
     "source_breakdown": source_breakdown,
+    "repeat_clients": repeat_clients,
 }
 
 

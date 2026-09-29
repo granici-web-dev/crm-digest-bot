@@ -23,7 +23,11 @@ from digest.metrics.daily import daily_window
 from digest.metrics.daily_checks import overdue_revenire_by_manager, untouched_leads
 from digest.metrics.frame import prepare_lead_frame
 from digest.metrics.kpi import COUNT_NAMES, kpis_from, lead_counts, lead_counts_by_showroom
-from digest.metrics.monthly import monthly_funnel, monthly_source_conversion
+from digest.metrics.monthly import (
+    monthly_funnel,
+    monthly_repeat_clients,
+    monthly_source_conversion,
+)
 from digest.metrics.weekly import (
     converted_count,
     converted_count_by_showroom,
@@ -453,6 +457,77 @@ async def test_source_breakdown_campaign_label_hides_phone(
     assert outcome.masked_names == ("Promo 30",)
 
 
+async def test_repeat_clients_matches_m11_for_closed_month(
+    etalon_config: AppConfig, lead_frame: pd.DataFrame
+) -> None:
+    content = await run("repeat_clients", {"period": "luna_trecuta"}, etalon_config, lead_frame)
+
+    m11 = monthly_repeat_clients(lead_frame, END_OF_MAY, etalon_config)
+    assert content["clients"] == m11.company.clients > 0
+    assert content["repeat"] == m11.company.repeat
+    assert content["share"] == percent_one_decimal(m11.company.share)
+    assert [reason["client_count"] for reason in content["by_reason"]] == [
+        m11.company.by_contact,
+        m11.company.by_source,
+    ]
+    by_showroom = {row["showroom"]: row for row in content["by_showroom"]}
+    for showroom, counts in m11.by_showroom.items():
+        if showroom is not None and counts.clients:
+            assert by_showroom[showroom]["clients"] == counts.clients
+    assert content["showroom_count"] == sum(
+        1 for showroom, counts in m11.by_showroom.items() if showroom and counts.clients
+    )
+    assert content["won_without_converted_at"] == m11.won_without_converted_at
+
+
+async def test_repeat_clients_substituted_snapshot_keeps_period_month(
+    etalon_config: AppConfig, lead_frame: pd.DataFrame
+) -> None:
+    outcome = await run_tool(
+        "repeat_clients",
+        {"period": "luna_trecuta"},
+        tool_data(etalon_config, lead_frame, SNAPSHOT_DATES[1:]),
+    )
+
+    may_clients = monthly_repeat_clients(lead_frame, END_OF_MAY, etalon_config).company.clients
+    june_clients = monthly_repeat_clients(lead_frame, TODAY, etalon_config).company.clients
+    assert may_clients != june_clients
+    assert outcome.content["clients"] == may_clients
+    assert outcome.content["missing_snapshot_for"] == "31.05.2026"
+
+
+@pytest.mark.parametrize("period", ["saptamana_trecuta", "ultimele_30_zile", {"day": "2026-05-15"}])
+async def test_repeat_clients_rejects_week_period(
+    etalon_config: AppConfig, lead_frame: pd.DataFrame, period: Any
+) -> None:
+    outcome = await run_tool(
+        "repeat_clients", {"period": period}, tool_data(etalon_config, lead_frame)
+    )
+
+    assert outcome.is_error
+    assert "se numără pe lună" in outcome.content["error"]
+
+
+async def test_repeat_clients_result_has_no_contact_keys(
+    etalon_config: AppConfig, lead_frame: pd.DataFrame
+) -> None:
+    clients = lead_frame.copy()
+    won = clients.index[clients["is_clienti"]][:2]
+    clients.loc[won, "contact_phone_key"] = "+40700000001"
+    clients.loc[won, "contact_email_key"] = "client1@example.com"
+    clients.loc[won[0], "converted_at"] = clients.loc[won[0], "converted_at"] - timedelta(days=1)
+
+    outcome = await run_tool(
+        "repeat_clients", {"period": "luna_trecuta"}, tool_data(etalon_config, clients)
+    )
+
+    serialized = json.dumps(outcome.content, ensure_ascii=False)
+    assert outcome.content["by_reason"][0]["client_count"] >= 1
+    assert "+40" not in serialized
+    assert "@" not in serialized
+    assert "_key" not in serialized
+
+
 def followup_frame(config: AppConfig, **overrides: Any) -> pd.DataFrame:
     rows = [
         make_snapshot_row(
@@ -557,6 +632,7 @@ def all_tool_calls(config: AppConfig) -> list[tuple[str, dict[str, Any]]]:
                 },
             ),
         ]
+    calls += [("repeat_clients", {"period": period}) for period in ("luna_curenta", "luna_trecuta")]
     calls += [
         ("manager_kpi", {"manager": name, "period": period})
         for name, period in product(managers, CHAT_PERIODS)
@@ -831,6 +907,19 @@ async def test_compare_periods_accepts_day_and_month(
 
     assert not outcome.is_error, outcome.content
     assert outcome.scope == "Perioada: 15.05.2026 vs mai 2026"
+
+
+def test_tool_definitions_period_enums_per_tool(app_config: AppConfig) -> None:
+    definitions = {definition["name"]: definition for definition in tool_definitions(app_config)}
+
+    def period_forms(tool: str) -> list[Any]:
+        schema: Any = definitions[tool]["input_schema"]
+        return cast(list[Any], schema["properties"]["period"]["anyOf"])
+
+    named, month = period_forms("repeat_clients")
+    assert named["enum"] == ["luna_curenta", "luna_trecuta"]
+    assert set(month["properties"]) == {"year", "month"}
+    assert len(period_forms("source_breakdown")) == 3
 
 
 def test_period_schema_is_anyof_of_enum_day_and_month(app_config: AppConfig) -> None:

@@ -407,6 +407,7 @@ ChatToolName = Literal[
     "overdue_followups",
     "untouched_leads",
     "source_breakdown",
+    "repeat_clients",
 ]
 
 
