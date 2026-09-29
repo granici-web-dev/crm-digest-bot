@@ -179,6 +179,21 @@ async def test_manager_kpi_matches_etalon_consultant(
         "irr": "17,1%",
     }
     assert set(content["meets_target"]) == set(etalon_config.kpi.targets)
+    # Цели config/kpi.yaml: SCR 2/63 = 3,17% против 10% это −6,8 pp; ACR и IRR ниже потолка.
+    vs_target = content["vs_target"]
+    assert {name: gap for name, gap in vs_target.items() if name != "cdr"} == {
+        "scr": "−6,8 pp",
+        "l2o": "−13,5 pp",
+        "o2c": "−11,3 pp",
+        "plr": "+25,0 pp",
+        "sc": "−14,4 pp",
+        "pfr": "+1,1 pp",
+        "acr": "−20,0 pp",
+        "irr": "−2,9 pp",
+    }
+    assert vs_target["cdr"].startswith("−7,")
+    assert (content["targets_met"], content["targets_total"]) == (2, 9)
+    assert [name for name, met in content["meets_target"].items() if met] == ["acr", "irr"]
 
 
 async def test_compare_periods_matches_lead_counts_of_both_windows(
@@ -206,7 +221,10 @@ async def test_compare_periods_matches_lead_counts_of_both_windows(
     )
     # 93 lead-uri în ultima săptămână din mai față de 300 în mai: 93 / 300 − 1 = −69,0%.
     assert (week_leads, month_leads) == (93, 300)
-    assert content["change"] == "25.05–31.05.2026 față de 01.05–31.05.2026: −69,0%"
+    assert content["change"] == "25.05–31.05.2026 față de 01.05–31.05.2026: −207 (−69,0%)"
+    assert (content["difference"], content["direction"]) == (207, "scădere")
+    assert (content["period_a"]["day_count"], content["period_a"]["days_with_data"]) == (7, 7)
+    assert (content["period_b"]["day_count"], content["period_b"]["days_with_data"]) == (31, 31)
 
 
 async def test_compare_periods_of_kpi_gives_no_relative_change(
@@ -226,7 +244,14 @@ async def test_compare_periods_of_kpi_gives_no_relative_change(
 
     month_counts = lead_counts(lead_frame, may(etalon_config), END_OF_MAY, etalon_config)
     assert content["period_b"]["value"] == percent_one_decimal(kpis_from(month_counts).scr)
-    assert content["change"] is None
+    week = chat_period_window("saptamana_trecuta", TODAY, etalon_config.status_mapping.time)
+    week_scr = kpis_from(lead_counts(lead_frame, week, END_OF_MAY, etalon_config)).scr
+    month_scr = kpis_from(month_counts).scr
+    assert week_scr is not None
+    assert month_scr is not None
+    assert round((week_scr - month_scr) * 100, 1) == -1.8
+    assert content["change"] == "25.05–31.05.2026 față de 01.05–31.05.2026: −1,8 pp"
+    assert (content["difference"], content["direction"]) == ("1,8 pp", "scădere")
 
 
 async def test_loss_reasons_match_metrics(
@@ -243,9 +268,19 @@ async def test_loss_reasons_match_metrics(
     reasons = etalon_config.status_mapping.categories.LOST.reasons
     assert content["total"] == losses.total > 0
     assert content["by_reason"] == {
-        reasons[key].label: losses.reason_total(key) for key in losses.reasons_by_count
+        reasons[key].label: {
+            "lead_count": losses.reason_total(key),
+            "share": percent_one_decimal(losses.reason_total(key) / losses.total),
+        }
+        for key in losses.reasons_by_count
     }
+    # 65 irelevante из 270 потерь мая = 24,1%.
+    assert content["total"] == 270
+    assert content["by_reason"]["Irelevant"] == {"lead_count": 65, "share": "24,1%"}
     assert sum(showroom["total"] for showroom in content["by_showroom"].values()) == losses.total
+    assert content["showroom_count"] == sum(
+        1 for key in losses.by_showroom if key is not None and losses.showroom_total(key)
+    )
 
 
 async def test_loss_reasons_for_showroom_match_metrics(
@@ -257,6 +292,11 @@ async def test_loss_reasons_for_showroom_match_metrics(
 
     losses = loss_reasons_in_window(lead_frame, may(etalon_config), etalon_config)
     assert content["total"] == losses.showroom_total("Cluj")
+    assert {reason["lead_count"] for reason in content["by_reason"].values()} <= set(
+        losses.by_showroom["Cluj"].values()
+    )
+    for reason in content["by_reason"].values():
+        assert reason["share"] == percent_one_decimal(reason["lead_count"] / content["total"])
 
 
 async def test_overdue_followups_match_metrics(
@@ -269,6 +309,9 @@ async def test_overdue_followups_match_metrics(
     assert [group["lead_count"] for group in content["by_manager"]] == [
         group.lead_count for group in overdue.groups
     ]
+    assert content["manager_count"] == sum(
+        1 for group in overdue.groups if group.manager_name is not None
+    )
 
 
 async def test_overdue_followups_for_one_manager(
@@ -319,13 +362,22 @@ async def test_overdue_followups_include_leads_without_data_revenire(
     dragoi = await run_tool("overdue_followups", {"manager": "Dragoi Mihaela"}, data)
     roibu = await run_tool("overdue_followups", {"manager": "Roibu Valeria"}, data)
 
+    followup_statuses = ["Revenire 1", "Revenire 2", "Revenire 3", "Stand BY"]
     assert everyone.content["missing_followup_date"] == {
+        "statuses": followup_statuses,
         "lead_count": 2,
+        "manager_count": 1,
         "by_manager": [{"manager": "Dragoi Mihaela", "lead_count": 2}],
     }
     assert everyone.lead_ids == (1, 2)
-    assert dragoi.content["missing_followup_date"] == {"lead_count": 2}
-    assert roibu.content["missing_followup_date"] == {"lead_count": 0}
+    assert dragoi.content["missing_followup_date"] == {
+        "statuses": followup_statuses,
+        "lead_count": 2,
+    }
+    assert roibu.content["missing_followup_date"] == {
+        "statuses": followup_statuses,
+        "lead_count": 0,
+    }
     assert roibu.lead_ids == ()
 
 
@@ -361,6 +413,11 @@ async def test_untouched_leads_match_metrics(
     assert [group["lead_count"] for group in content["by_manager"]] == [
         group.lead_count for group in untouched.groups
     ]
+    assert content["manager_count"] == sum(
+        1 for group in untouched.groups if group.manager_name is not None
+    )
+    assert untouched.oldest_age_hours is not None
+    assert content["oldest_age_days"] == untouched.oldest_age_hours // 24
 
 
 def all_tool_calls(config: AppConfig) -> list[tuple[str, dict[str, Any]]]:
@@ -428,6 +485,8 @@ async def test_partial_period_states_snapshot_date(
 
     assert outcome.snapshot_notes == ("Date din snapshotul din 02.06.2026",)
     assert outcome.content["data_as_of"] == "02.06.2026"
+    # Неделя 01.06–03.06, снапшот за 02.06: два дня из трёх с данными.
+    assert (outcome.content["day_count"], outcome.content["days_with_data"]) == (3, 2)
 
 
 async def test_closed_period_with_its_snapshot_has_no_note(

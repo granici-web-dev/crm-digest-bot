@@ -4,7 +4,12 @@ from typing import Any
 import pytest
 
 from digest.config import AppConfig
-from digest.metrics.extra import cohort_conversion, overdue_revenire, period_delta
+from digest.metrics.extra import (
+    cohort_conversion,
+    overdue_revenire,
+    period_delta,
+    value_difference,
+)
 from digest.metrics.frame import prepare_lead_frame
 from digest.metrics.kpi import Period
 from factories import BUCHAREST, make_snapshot_row
@@ -98,3 +103,21 @@ def test_delta_is_relative_and_none_from_zero_or_null(
     current: float | None, previous: float | None, delta: float | None
 ) -> None:
     assert period_delta(current, previous) == pytest.approx(delta)
+
+
+@pytest.mark.parametrize(
+    ("value", "baseline", "difference"),
+    [(19, 92, -73), (92, 19, 73), (5, 5, 0), (None, 5, None), (5, None, None)],
+)
+def test_value_difference_is_value_minus_baseline(
+    value: int | None, baseline: int | None, difference: int | None
+) -> None:
+    assert value_difference(value, baseline) == difference
+
+
+def test_value_difference_of_kpi_shares_is_in_points() -> None:
+    # SCR 3,2% против цели 10%: −6,8 процентного пункта, а не −68%.
+    difference = value_difference(2 / 63, 0.10)
+
+    assert difference is not None
+    assert round(difference * 100, 1) == -6.8

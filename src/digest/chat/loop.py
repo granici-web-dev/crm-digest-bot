@@ -2,7 +2,7 @@ import html
 import json
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from string import Template
 from typing import Any
@@ -19,6 +19,7 @@ from digest.chat.tools import (
     run_tool,
     tool_definitions,
 )
+from digest.config import AppConfig
 from digest.db.schema import ChatQuestionStatus
 from digest.reports.lead_links import LeadLinks
 from digest.reports.render import TEMPLATES_DIR, render, text
@@ -94,7 +95,11 @@ class ChatAnswer:
     tool_calls: tuple[ExecutedToolCall, ...]
     input_tokens: int
     output_tokens: int
+    # Число и текст модели, отклонённые стражем в первой попытке: для алерта в ops и вывода
+    # eval, в базу не пишутся. У answered они значат, что прошла повторная попытка.
     unverified_number: str | None = None
+    rejected_text: str | None = None
+    retried: bool = False
 
     @property
     def snapshot_dates(self) -> tuple[date, ...]:
@@ -132,6 +137,25 @@ def normalized_number(token: str) -> str:
 def number_tokens(text: str) -> list[str]:
     numerals = [word for word in WORD.findall(text) if numeral_value(word) is not None]
     return [*NUMBER.findall(text), *numerals]
+
+
+def mefi_name_pattern(config: AppConfig) -> re.Pattern[str]:
+    # Цифры в именах mefi («Revenire 2», «BIFE 2026») это часть имени, а не число: без маски
+    # статус в результате разрешил бы голую «2» во всём ответе, а статус в ответе давал отказ.
+    status_mapping = config.status_mapping
+    names = {
+        *status_mapping.category_by_status,
+        *(source for group in status_mapping.sources.model_dump().values() for source in group),
+        *status_mapping.showrooms,
+        *(manager.name for manager in config.managers.managers),
+    }
+    with_digits = sorted(
+        (name for name in names if any(character.isdigit() for character in name)),
+        key=len,
+        reverse=True,
+    )
+    alternatives = [rf"(?<!\w){re.escape(name)}(?!\w)" for name in with_digits]
+    return re.compile("|".join(alternatives) or "(?!)", re.IGNORECASE)
 
 
 def allowed_numbers(signature_text: str, sources: Iterable[str]) -> set[str]:
@@ -245,10 +269,56 @@ async def answer_question(
             )
         messages.append({"role": "user", "content": results})
 
-    model_text = "".join(block.text for block in response.content if block.type == "text").strip()
-    return checked_answer(
-        question, model_text, tuple(calls), input_tokens, output_tokens, data.lead_links
+    mefi_names = mefi_name_pattern(data.config)
+    model_text = response_text(response.content)
+    answer = checked_answer(
+        question, model_text, tuple(calls), input_tokens, output_tokens, data.lead_links, mefi_names
     )
+    if answer.status != "unverified_numbers" or answer.unverified_number is None:
+        return answer
+    # Одна просьба переписать без отклонённого числа (shape chat-derived-numbers, «Согласовано»):
+    # те же результаты в истории, новых вызовов нет.
+    messages.append({"role": "assistant", "content": response.content})
+    messages.append(
+        {"role": "user", "content": text("guard_retry", number=answer.unverified_number)}
+    )
+    retry = await client.messages.create(
+        model=model,
+        max_tokens=chat_settings.max_answer_tokens,
+        system=system_prompt(data.today),
+        tools=tools,
+        tool_choice={"type": "none"},
+        thinking={"type": "disabled"},
+        messages=messages,
+    )
+    input_tokens += retry.usage.input_tokens
+    output_tokens += retry.usage.output_tokens
+    retried = (
+        checked_answer(
+            question,
+            response_text(retry.content),
+            tuple(calls),
+            input_tokens,
+            output_tokens,
+            data.lead_links,
+            mefi_names,
+        )
+        if retry.stop_reason == "end_turn"
+        else answer
+    )
+    return replace(
+        retried,
+        status="answered" if retried.status == "answered" else "unverified_numbers",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        unverified_number=answer.unverified_number,
+        rejected_text=answer.rejected_text,
+        retried=True,
+    )
+
+
+def response_text(content: Iterable[Any]) -> str:
+    return "".join(block.text for block in content if block.type == "text").strip()
 
 
 def links_line(calls: tuple[ExecutedToolCall, ...], lead_links: LeadLinks) -> str:
@@ -269,6 +339,7 @@ def checked_answer(
     input_tokens: int,
     output_tokens: int,
     lead_links: LeadLinks,
+    mefi_names: re.Pattern[str],
 ) -> ChatAnswer:
     # Инвариант 2 держит код: без отработавшего вызова инструмента цифр нет, с ним каждое число
     # ответа должно найтись в его результатах, в вопросе или в подписи.
@@ -283,9 +354,13 @@ def checked_answer(
         return ChatAnswer(html.escape(model_text), "no_tool", calls, input_tokens, output_tokens)
     signature_text = signature(list(calls))
     allowed = allowed_numbers(
-        signature_text, [question, *(outcome_text(call.outcome) for call in answered_calls)]
+        mefi_names.sub(" ", signature_text),
+        [
+            mefi_names.sub(" ", source)
+            for source in (question, *(outcome_text(call.outcome) for call in answered_calls))
+        ],
     )
-    unverified = first_unverified_number(model_text, allowed)
+    unverified = first_unverified_number(mefi_names.sub(" ", model_text), allowed)
     if unverified is not None:
         return ChatAnswer(
             UNVERIFIED_NUMBERS_TEXT,
@@ -294,6 +369,7 @@ def checked_answer(
             input_tokens,
             output_tokens,
             unverified,
+            model_text,
         )
     answer = html.escape(model_text)
     footer = "\n".join(part for part in (signature_text, links_line(calls, lead_links)) if part)

@@ -1,4 +1,4 @@
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date
 from typing import Annotated, Any
@@ -37,7 +37,7 @@ from digest.metrics.daily_checks import (
     overdue_revenire_by_manager,
     untouched_leads,
 )
-from digest.metrics.extra import period_delta
+from digest.metrics.extra import period_delta, value_difference
 from digest.metrics.kpi import (
     COUNT_NAMES,
     LeadCounts,
@@ -47,6 +47,7 @@ from digest.metrics.kpi import (
     lead_counts_by_showroom,
 )
 from digest.metrics.weekly import (
+    LossReasons,
     converted_count,
     converted_count_by_showroom,
     loss_reasons_in_window,
@@ -55,7 +56,10 @@ from digest.reports.lead_links import LeadLinks
 from digest.reports.render import (
     RO_MONTHS,
     percent_one_decimal,
+    points_one_decimal,
+    signed_count,
     signed_percent_one_decimal,
+    signed_points_one_decimal,
     target_label,
     text,
 )
@@ -358,6 +362,8 @@ def period_title(period: ChatPeriodChoice, days: str) -> str:
 @dataclass(frozen=True)
 class PeriodFrame:
     period: ChatPeriodChoice
+    first_day: date
+    last_day: date
     label: str
     window: Period
     snapshot_date: date
@@ -405,6 +411,8 @@ async def period_frame(
         raise NoDataError(text("no_data_yet", days=label, snapshot=date_label(snapshot_date)))
     return PeriodFrame(
         period,
+        first_day,
+        last_day,
         label,
         chat_period_window(period, data.today, data.config.status_mapping.time),
         snapshot_date,
@@ -422,6 +430,12 @@ def period_header(period_frame: PeriodFrame) -> dict[str, Any]:
             else period_title(period_frame.period, period_frame.label)
         ),
         "days": period_frame.label,
+        # Дни считает код: модель, посчитав их сама, называла число, которого нет в результате.
+        "day_count": (period_frame.last_day - period_frame.first_day).days + 1,
+        "days_with_data": (
+            (period_frame.data_as_of or period_frame.last_day) - period_frame.first_day
+        ).days
+        + 1,
         "snapshot_date": date_label(period_frame.snapshot_date),
         "data_as_of": (
             None if period_frame.data_as_of is None else date_label(period_frame.data_as_of)
@@ -493,6 +507,7 @@ async def manager_kpi(data: ToolData, arguments: ManagerKpiArguments) -> ToolOut
     table = manager_cockpit_table(frame.frame, frame.window, frame.snapshot_date, data.config)
     row = table[table["name"].eq(arguments.manager)].iloc[0]
     targets = data.config.kpi.targets
+    meets_target = {name: row[f"{name}_meets_target"] for name in targets}
     return outcome(
         {
             **period_header(frame),
@@ -503,10 +518,20 @@ async def manager_kpi(data: ToolData, arguments: ManagerKpiArguments) -> ToolOut
                 name: target_label(data.config.kpi.target_value(name), target.direction)
                 for name, target in targets.items()
             },
-            "meets_target": {name: row[f"{name}_meets_target"] for name in targets},
+            "meets_target": meets_target,
+            "targets_met": sum(value is True for value in meets_target.values()),
+            "targets_total": len(targets),
+            "vs_target": {
+                name: target_gap(row[name], data.config.kpi.target_value(name)) for name in targets
+            },
         },
         frame,
     )
+
+
+def target_gap(kpi: float | None, target_value: float) -> str | None:
+    gap = value_difference(kpi, target_value)
+    return None if gap is None else signed_points_one_decimal(gap)
 
 
 def count_value(
@@ -531,14 +556,64 @@ def compared_period_title(period_frame: PeriodFrame) -> str:
     return period_frame.label
 
 
-def change_text(frame_a: PeriodFrame, frame_b: PeriodFrame, delta: float | None) -> str:
-    # Направление формулирует код, модель цитирует: иначе она путает, что с чем сравнивается.
+def direction_text(difference: float) -> str:
+    if difference > 0:
+        return text("direction_up")
+    if difference < 0:
+        return text("direction_down")
+    return text("direction_same")
+
+
+def count_comparison(
+    frame_a: PeriodFrame, frame_b: PeriodFrame, count_a: int, count_b: int
+) -> dict[str, Any]:
+    # Направление и разницу формулирует код, модель цитирует: иначе она путает, что с чем
+    # сравнивается, и считает разницу сама.
     title_a, title_b = compared_period_title(frame_a), compared_period_title(frame_b)
-    if delta is None:
-        return text("change_from_zero", period_a=title_a, period_b=title_b)
-    return text(
-        "change", period_a=title_a, period_b=title_b, change=signed_percent_one_decimal(delta)
+    difference = value_difference(count_a, count_b)
+    assert difference is not None
+    delta = period_delta(count_a, count_b)
+    change = (
+        text(
+            "change_from_zero",
+            period_a=title_a,
+            period_b=title_b,
+            difference=signed_count(difference),
+        )
+        if delta is None
+        else text(
+            "change_with_difference",
+            period_a=title_a,
+            period_b=title_b,
+            difference=signed_count(difference),
+            change=signed_percent_one_decimal(delta),
+        )
     )
+    return {
+        "difference": abs(difference),
+        "direction": direction_text(difference),
+        "change": change,
+    }
+
+
+def kpi_comparison(
+    frame_a: PeriodFrame, frame_b: PeriodFrame, kpi_a: float | None, kpi_b: float | None
+) -> dict[str, Any]:
+    difference = value_difference(kpi_a, kpi_b)
+    if difference is None:
+        return {"difference": None, "direction": None, "change": None}
+    # Относительное изменение доли читалось бы как изменение в пунктах: только пункты. Направление
+    # по округлённой разнице, чтобы «0,0 pp» не шло с «creștere».
+    return {
+        "difference": points_one_decimal(difference),
+        "direction": direction_text(round(difference * 100, 1)),
+        "change": text(
+            "change_in_points",
+            period_a=compared_period_title(frame_a),
+            period_b=compared_period_title(frame_b),
+            difference=signed_points_one_decimal(difference),
+        ),
+    }
 
 
 async def compare_periods(data: ToolData, arguments: ComparePeriodsArguments) -> ToolOutcome:
@@ -548,32 +623,39 @@ async def compare_periods(data: ToolData, arguments: ComparePeriodsArguments) ->
     metric = arguments.metric
     values: tuple[int | str, int | str]
     if metric in KPI_NAMES:
-        values = (
-            percent_one_decimal(kpi_value(frame_a, metric, showroom, data.config)),
-            percent_one_decimal(kpi_value(frame_b, metric, showroom, data.config)),
-        )
-        # Относительное изменение доли читалось бы как изменение в пунктах: не отдаём.
-        change = None
+        kpi_a = kpi_value(frame_a, metric, showroom, data.config)
+        kpi_b = kpi_value(frame_b, metric, showroom, data.config)
+        values = (percent_one_decimal(kpi_a), percent_one_decimal(kpi_b))
+        comparison = kpi_comparison(frame_a, frame_b, kpi_a, kpi_b)
     else:
         count_a = count_value(frame_a, metric, showroom, data.config)
         count_b = count_value(frame_b, metric, showroom, data.config)
         values = (count_a, count_b)
-        change = change_text(frame_a, frame_b, period_delta(count_a, count_b))
+        comparison = count_comparison(frame_a, frame_b, count_a, count_b)
     return outcome(
         {
             "metric": metric,
             "showroom": showroom,
             "period_a": {**period_header(frame_a), "value": values[0]},
             "period_b": {**period_header(frame_b), "value": values[1]},
-            "change": change,
+            **comparison,
         },
         frame_a,
         frame_b,
     )
 
 
-def nonzero_reasons(by_reason: dict[str, int], labels: dict[str, str]) -> dict[str, int]:
-    return {labels[reason]: count for reason, count in by_reason.items() if count}
+def showroom_reasons(
+    losses: LossReasons, showroom: str | None, labels: dict[str, str]
+) -> dict[str, dict[str, Any]]:
+    return {
+        labels[reason]: {
+            "lead_count": count,
+            "share": percent_one_decimal(losses.showroom_reason_share(showroom, reason)),
+        }
+        for reason, count in losses.by_showroom[showroom].items()
+        if count
+    }
 
 
 async def loss_reasons(data: ToolData, arguments: LossReasonsArguments) -> ToolOutcome:
@@ -587,20 +669,29 @@ async def loss_reasons(data: ToolData, arguments: LossReasonsArguments) -> ToolO
     if showroom is None:
         content: dict[str, Any] = {
             "total": losses.total,
-            "by_reason": {labels[key]: losses.reason_total(key) for key in losses.reasons_by_count},
+            "by_reason": {
+                labels[key]: {
+                    "lead_count": losses.reason_total(key),
+                    "share": percent_one_decimal(losses.reason_share(key)),
+                }
+                for key in losses.reasons_by_count
+            },
+            "showroom_count": sum(
+                1 for key in losses.by_showroom if key is not None and losses.showroom_total(key)
+            ),
             "by_showroom": {
                 (key or text("without_showroom")): {
                     "total": losses.showroom_total(key),
-                    "by_reason": nonzero_reasons(by_reason, labels),
+                    "by_reason": showroom_reasons(losses, key, labels),
                 }
-                for key, by_reason in losses.by_showroom.items()
+                for key in losses.by_showroom
                 if losses.showroom_total(key)
             },
         }
     else:
         content = {
             "total": losses.showroom_total(showroom),
-            "by_reason": nonzero_reasons(losses.by_showroom[showroom], labels),
+            "by_reason": showroom_reasons(losses, showroom, labels),
         }
     return outcome({**period_header(frame), "showroom": showroom, **content}, frame)
 
@@ -621,12 +712,39 @@ def manager_label(manager_name: str | None) -> str:
     return manager_name or text("not_taken")
 
 
-def missing_followup_content(missing: MissingFollowupDate, by_manager: bool) -> dict[str, Any]:
+def followup_statuses(config: AppConfig) -> list[str]:
+    # Те же статусы, что флаг is_followup_status кадра (metrics/frame.py). Имена целиком: модель,
+    # сокращавшая их до «Revenire 1/2/3», писала цифры, которых нет в результате.
+    categories = config.status_mapping.categories
+    return [
+        *categories.ACTIVE_FOLLOWUP.statuses,
+        *(
+            status
+            for reason in categories.LOST.reasons.values()
+            if reason.followup_field is not None
+            for status in reason.statuses
+        ),
+    ]
+
+
+def consultant_group_count(manager_names: Iterable[str | None]) -> int:
+    return sum(1 for manager_name in manager_names if manager_name is not None)
+
+
+def missing_followup_content(
+    missing: MissingFollowupDate, by_manager: bool, config: AppConfig
+) -> dict[str, Any]:
     # Поле не прочитано у всех лидов: без цифры, иначе модель назвала бы «0 без даты».
     if missing.field_unavailable:
         return {"unavailable": True}
-    content: dict[str, Any] = {"lead_count": missing.lead_count}
+    content: dict[str, Any] = {
+        "statuses": followup_statuses(config),
+        "lead_count": missing.lead_count,
+    }
     if by_manager:
+        content["manager_count"] = consultant_group_count(
+            group.manager_name for group in missing.groups
+        )
         content["by_manager"] = [
             {"manager": manager_label(group.manager_name), "lead_count": group.lead_count}
             for group in missing.groups
@@ -652,6 +770,7 @@ async def overdue_followups(data: ToolData, arguments: OverdueFollowupsArguments
         {
             "lead_count": overdue.lead_count,
             "max_days_overdue": overdue.max_days_overdue,
+            "manager_count": consultant_group_count(group.manager_name for group in overdue.groups),
             "by_manager": [
                 {
                     "manager": manager_label(group.manager_name),
@@ -670,7 +789,9 @@ async def overdue_followups(data: ToolData, arguments: OverdueFollowupsArguments
     )
     lead_ids = overdue.lead_ids
     if missing is not None:
-        content["missing_followup_date"] = missing_followup_content(missing, all_managers)
+        content["missing_followup_date"] = missing_followup_content(
+            missing, all_managers, data.config
+        )
         lead_ids = (*lead_ids, *missing.lead_ids)
     return snapshot_outcome(content, snapshot_date, lead_ids)
 
@@ -686,6 +807,12 @@ async def untouched_leads_tool(data: ToolData, arguments: UntouchedLeadsArgument
             "lookback_days": params.lookback_days,
             "lead_count": untouched.lead_count,
             "oldest_age_hours": untouched.oldest_age_hours,
+            "oldest_age_days": (
+                None if untouched.oldest_age_hours is None else untouched.oldest_age_hours // 24
+            ),
+            "manager_count": consultant_group_count(
+                group.manager_name for group in untouched.groups
+            ),
             "by_manager": [
                 {
                     "manager": manager_label(group.manager_name),

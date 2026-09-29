@@ -23,8 +23,13 @@
 {% macro no_data_yet(days, snapshot) %}Nu există încă date pentru {{ days }}: ultimul snapshot este din {{ snapshot }}.{% endmacro %}
 {% macro period_scope(titles) %}Perioada: {{ titles | join(" vs ") }}{% endmacro %}
 {% macro snapshot_scope(day) %}Snapshot: {{ day }}{% endmacro %}
-{% macro change(period_a, period_b, change) %}{{ period_a }} față de {{ period_b }}: {{ change }}{% endmacro %}
-{% macro change_from_zero(period_a, period_b) %}{{ period_a }} față de {{ period_b }}: nu se calculează, baza este 0{% endmacro %}
+{% macro change_with_difference(period_a, period_b, difference, change) %}{{ period_a }} față de {{ period_b }}: {{ difference }} ({{ change }}){% endmacro %}
+{% macro change_from_zero(period_a, period_b, difference) %}{{ period_a }} față de {{ period_b }}: {{ difference }}; procentul nu se calculează, baza este 0{% endmacro %}
+{% macro change_in_points(period_a, period_b, difference) %}{{ period_a }} față de {{ period_b }}: {{ difference }}{% endmacro %}
+{% macro direction_up() %}creștere{% endmacro %}
+{% macro direction_down() %}scădere{% endmacro %}
+{% macro direction_same() %}fără schimbare{% endmacro %}
+{% macro guard_retry(number) %}Numărul „{{ number }}” nu apare în rezultatele instrumentelor. Rescrie răspunsul fără el.{% endmacro %}
 {% macro sheet_day_showroom() %}Zi × showroom{% endmacro %}
 {% macro sheet_day_showroom_source() %}Zi × showroom × sursă{% endmacro %}
 {% macro sheet_showroom_source() %}Showroom × sursă{% endmacro %}

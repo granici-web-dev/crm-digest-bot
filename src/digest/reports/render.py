@@ -47,6 +47,23 @@ def signed_percent_one_decimal(value: float) -> str:
     return ("+" if value > 0 else "−") + percent_one_decimal(abs(value))
 
 
+def signed_count(value: int) -> str:
+    if value == 0:
+        return "0"
+    return ("+" if value > 0 else "−") + str(abs(value))
+
+
+def points_one_decimal(value: float) -> str:
+    # Разница долей: «2,1 pp», а не «2,1%», чтобы её не читали как относительное изменение.
+    return f"{abs(value) * 100:.1f} pp".replace(".", ",")
+
+
+def signed_points_one_decimal(value: float) -> str:
+    if round(value * 100, 1) == 0:
+        return points_one_decimal(0)
+    return ("+" if value > 0 else "−") + points_one_decimal(value)
+
+
 LINE_BREAKING_CATEGORIES = frozenset({"Cc", "Zl", "Zp"})
 PHONE_LIKE = re.compile(r"[0-9]{7,}")
 PHONE_SEPARATORS = re.compile(r"[\s\-.()+]")

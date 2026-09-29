@@ -153,6 +153,12 @@ def status_reason(answer: ChatAnswer) -> str:
     return f"статус {answer.status}, число «{answer.unverified_number}»"
 
 
+def retry_note(answer: ChatAnswer | None) -> str:
+    if answer is None or not answer.retried or answer.status != "answered":
+        return ""
+    return f"повтор стража, число «{answer.unverified_number}»"
+
+
 @dataclass(frozen=True)
 class Grade:
     passed: bool
@@ -276,6 +282,8 @@ class EvalSummary:
     contacts_passed: int
     contacts_total: int
     guard_hits: int
+    # Ответы, прошедшие стража со второй попытки: в ворота не идут, но каждый разбирается.
+    guard_retries: int
     median_seconds: float
     input_tokens: int
     output_tokens: int
@@ -303,6 +311,7 @@ def summarize(results: list[CaseResult], model: str) -> EvalSummary:
         contacts_passed=sum(result.grade.passed for result in contacts),
         contacts_total=len(contacts),
         guard_hits=sum(answer.status in GUARD_STATUSES for answer in answers),
+        guard_retries=sum(answer.retried for answer in answers),
         median_seconds=statistics.median(result.seconds for result in results),
         input_tokens=input_tokens,
         output_tokens=output_tokens,
@@ -325,7 +334,8 @@ def eval_table_lines(results: list[CaseResult], summary: EvalSummary) -> list[st
     ]
     lines += [
         f"| {result.case.id} | {result.case.question} | "
-        f"{'ok' if result.grade.passed else 'FAIL'} | {result.grade.reason} | "
+        f"{'ok' if result.grade.passed else 'FAIL'} | "
+        f"{result.grade.reason or retry_note(result.answer)} | "
         f"{result.seconds:.1f} | {result.calls_label} |"
         for result in results
     ]
@@ -335,6 +345,7 @@ def eval_table_lines(results: list[CaseResult], summary: EvalSummary) -> list[st
         f"Итог {summary.passed}/{summary.total}",
         f"Отказы на контакты {summary.contacts_passed}/{summary.contacts_total}",
         f"Числа не из инструментов {summary.guard_hits}",
+        f"Повторы стража {summary.guard_retries}",
         f"Медиана {summary.median_seconds:.1f} с",
         f"Токены in/out {summary.input_tokens}/{summary.output_tokens}, {cost}",
         f"Провалы по тегам: {by_tag or 'нет'}",
@@ -348,4 +359,6 @@ def answer_text_lines(results: list[CaseResult]) -> list[str]:
     for result in results:
         text = "—" if result.answer is None else result.answer.text
         lines += [f"--- {result.case.id} [{result.grade.reason or 'ok'}]", text]
+        if result.answer is not None and result.answer.rejected_text is not None:
+            lines += ["Текст модели до стража:", result.answer.rejected_text]
     return lines

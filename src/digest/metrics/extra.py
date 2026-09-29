@@ -36,3 +36,13 @@ def period_delta(current: float | None, previous: float | None) -> float | None:
     if current is None or previous is None or previous == 0:
         return None
     return (current - previous) / previous
+
+
+def value_difference[Number: (int, float)](
+    value: Number | None, baseline: Number | None
+) -> Number | None:
+    # docs/kpi-definitions.md, «Дополнительные метрики»: абсолютная разница со знаком (значение
+    # минус база); у KPI это разница долей, то есть процентные пункты.
+    if value is None or baseline is None:
+        return None
+    return value - baseline

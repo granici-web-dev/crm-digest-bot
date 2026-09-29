@@ -8,15 +8,18 @@ import pytest
 from digest.chat.loop import (
     CANNOT_ANSWER_NOW_TEXT,
     UNVERIFIED_NUMBERS_TEXT,
+    ExecutedToolCall,
     PreviousExchange,
     allowed_numbers,
     answer_question,
+    checked_answer,
     first_unverified_number,
+    mefi_name_pattern,
 )
-from digest.chat.tools import ToolData
+from digest.chat.tools import ToolData, ToolOutcome
 from digest.config import AppConfig
 from digest.metrics.frame import prepare_lead_frame
-from digest.reports.render import render
+from digest.reports.render import render, text
 from factories import BUCHAREST, make_lead_links, make_snapshot_row
 from fakes import scripted_anthropic, text_message, tool_use_message
 
@@ -127,9 +130,11 @@ async def test_out_of_scope_answer_without_numbers_is_sent(app_config: AppConfig
     assert "<i>" not in answer.text
 
 
-async def test_number_absent_from_tool_results_is_blocked(app_config: AppConfig) -> None:
+async def test_second_unverified_answer_is_refused(app_config: AppConfig) -> None:
     api = scripted_anthropic(
-        tool_use_message(FUNNEL_THIS_WEEK), text_message("Au fost 3 lead-uri, cu 12% mai mult.")
+        tool_use_message(FUNNEL_THIS_WEEK),
+        text_message("Au fost 3 lead-uri, cu 12% mai mult."),
+        text_message("Au fost 3 lead-uri, adică 12% în plus."),
     )
 
     answer = await answer_question("Câte lead-uri?", api.client, MODEL, tool_data(app_config))
@@ -137,6 +142,44 @@ async def test_number_absent_from_tool_results_is_blocked(app_config: AppConfig)
     assert answer.status == "unverified_numbers"
     assert answer.text == UNVERIFIED_NUMBERS_TEXT
     assert answer.unverified_number == "12%"
+    assert answer.rejected_text == "Au fost 3 lead-uri, cu 12% mai mult."
+    assert answer.retried
+
+
+async def test_guard_retry_sends_answer_without_invented_number(app_config: AppConfig) -> None:
+    api = scripted_anthropic(
+        tool_use_message(FUNNEL_THIS_WEEK),
+        text_message("Au fost 3 lead-uri, cu 12% mai mult."),
+        text_message("Au fost 3 lead-uri."),
+    )
+
+    answer = await answer_question("Câte lead-uri?", api.client, MODEL, tool_data(app_config))
+
+    assert answer.status == "answered"
+    assert answer.text.startswith("Au fost 3 lead-uri.\n\n<i>Perioada:")
+    assert (answer.unverified_number, answer.retried) == ("12%", True)
+    assert answer.rejected_text == "Au fost 3 lead-uri, cu 12% mai mult."
+    retry_request = api.requests[-1]
+    assert retry_request["tool_choice"] == {"type": "none"}
+    assert retry_request["messages"][-2]["content"][0]["text"] == (
+        "Au fost 3 lead-uri, cu 12% mai mult."
+    )
+    assert retry_request["messages"][-1] == {
+        "role": "user",
+        "content": text("guard_retry", number="12%"),
+    }
+    assert len(api.requests) == 3
+
+
+async def test_answer_that_passes_guard_is_not_retried(app_config: AppConfig) -> None:
+    api = scripted_anthropic(
+        tool_use_message(FUNNEL_THIS_WEEK), text_message("Au fost 3 lead-uri.")
+    )
+
+    answer = await answer_question("Câte lead-uri?", api.client, MODEL, tool_data(app_config))
+
+    assert (answer.status, answer.retried, answer.unverified_number) == ("answered", False, None)
+    assert len(api.requests) == 2
 
 
 async def test_numbers_from_question_and_period_dates_are_allowed(app_config: AppConfig) -> None:
@@ -290,7 +333,9 @@ async def test_number_guard_ignores_lead_numbers_in_links_line(app_config: AppCo
 
 async def test_lead_number_written_by_model_is_blocked(app_config: AppConfig) -> None:
     api = scripted_anthropic(
-        tool_use_message(("untouched_leads", {})), text_message("Cel mai vechi este #900001.")
+        tool_use_message(("untouched_leads", {})),
+        text_message("Cel mai vechi este #900001."),
+        text_message("Cel mai vechi este #900001."),
     )
 
     answer = await answer_question(
@@ -388,7 +433,9 @@ async def test_previous_exchange_precedes_question_in_one_user_turn(app_config: 
 async def test_number_from_previous_answer_is_blocked(app_config: AppConfig) -> None:
     # Прошлый ответ был «7 lead-uri»; текущий вызов по Cluj семёрку не содержит.
     api = scripted_anthropic(
-        tool_use_message(FUNNEL_CLUJ), text_message("În Cluj 0 lead-uri, în București 7.")
+        tool_use_message(FUNNEL_CLUJ),
+        text_message("În Cluj 0 lead-uri, în București 7."),
+        text_message("În Cluj 0 lead-uri, în București 7."),
     )
 
     answer = await answer_question(
@@ -457,3 +504,53 @@ def test_articles_and_nouă_are_not_numerals() -> None:
     allowed = allowed_numbers(SIGNATURE, [])
 
     assert first_unverified_number("Un lead are o ofertă nouă, una singură.", allowed) is None
+
+
+MISSING_FOLLOWUP_CALL = ExecutedToolCall(
+    "overdue_followups",
+    {"manager": "toti"},
+    ToolOutcome(
+        {
+            "snapshot_date": "23.09.2026",
+            "missing_followup_date": {
+                "statuses": ["Revenire 1", "Revenire 2", "Revenire 3", "Stand BY"],
+                "lead_count": 7,
+            },
+        },
+        is_error=False,
+        scope="Snapshot: 23.09.2026",
+        snapshot_dates=(TODAY,),
+    ),
+)
+
+
+def guarded(app_config: AppConfig, model_text: str, question: str = "?") -> str | None:
+    answer = checked_answer(
+        question,
+        model_text,
+        (MISSING_FOLLOWUP_CALL,),
+        0,
+        0,
+        make_lead_links(app_config.status_mapping),
+        mefi_name_pattern(app_config),
+    )
+    return answer.unverified_number
+
+
+def test_status_name_digits_are_not_numbers(app_config: AppConfig) -> None:
+    assert guarded(app_config, "7 lead-uri în Revenire 1, Revenire 2 sau revenire 3.") is None
+
+
+def test_status_name_in_results_does_not_allow_its_bare_digit(app_config: AppConfig) -> None:
+    assert guarded(app_config, "7 lead-uri în Revenire 2, dintre care 2 vechi.") == "2"
+
+
+def test_bare_digit_after_status_mask_is_still_rejected(app_config: AppConfig) -> None:
+    assert guarded(app_config, "3 lead-uri în Revenire 1.") == "3"
+
+
+def test_only_whole_mefi_names_are_masked(app_config: AppConfig) -> None:
+    # «Revenire 1/2/3» не имя статуса: после «Revenire 1» остаются голые 2 и 3.
+    assert guarded(app_config, "7 lead-uri în Revenire 1/2/3.") == "2"
+    assert guarded(app_config, "Sursa BIFE 2026 are 7 lead-uri.") is None
+    assert guarded(app_config, "Revenire 12 are 7 lead-uri.") == "12"

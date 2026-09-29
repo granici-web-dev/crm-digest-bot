@@ -329,7 +329,9 @@ async def test_unverified_number_is_blocked_and_alert_names_it(
     enabled_chat: AsyncEngine, app_config: AppConfig
 ) -> None:
     api = scripted_anthropic(
-        tool_use(FUNNEL_TODAY), text_message("Azi au fost 3 lead-uri din 17 posibile.")
+        tool_use(FUNNEL_TODAY),
+        text_message("Azi au fost 3 lead-uri din 17 posibile."),
+        text_message("Azi au fost 3 lead-uri, 17 posibile."),
     )
     harness = ChatHarness(enabled_chat, app_config, api)
 
@@ -338,10 +340,34 @@ async def test_unverified_number_is_blocked_and_alert_names_it(
     assert harness.replies == [UNVERIFIED_NUMBERS_TEXT]
     [alert] = harness.ops_texts
     assert "«17»" in alert
+    assert "повтор не помог" in alert
     assert "câte lead-uri azi?" in alert
     assert "funnel()" in alert
+    assert alert.endswith("Текст модели: Azi au fost 3 lead-uri din 17 posibile.")
     [row] = await logged_questions(enabled_chat)
     assert row["status"] == "unverified_numbers"
+
+
+async def test_guard_retry_answer_reaches_group_and_ops_gets_rejected_text(
+    enabled_chat: AsyncEngine, app_config: AppConfig
+) -> None:
+    rejected_text = "Azi au fost 3 lead-uri din 17 posibile. " + "Detalii. " * 80
+    api = scripted_anthropic(
+        tool_use(FUNNEL_TODAY),
+        text_message(rejected_text),
+        text_message("Azi au fost 3 lead-uri."),
+    )
+    harness = ChatHarness(enabled_chat, app_config, api)
+
+    await harness.send(f"{MENTION} câte lead-uri azi?")
+
+    [reply] = harness.replies
+    assert reply.startswith("Azi au fost 3 lead-uri.\n\n")
+    [alert] = harness.ops_texts
+    assert "страж отклонил число «17», повтор прошёл, ответ отправлен" in alert
+    assert alert.endswith("Текст модели: " + rejected_text.strip()[:500])
+    [row] = await logged_questions(enabled_chat)
+    assert row["status"] == "answered"
 
 
 async def test_numbers_without_tool_are_not_sent_to_group(

@@ -102,6 +102,15 @@ class LossReasons:
     def showroom_total(self, showroom: str | None) -> int:
         return sum(self.by_showroom[showroom].values())
 
+    def reason_share(self, reason: str) -> float | None:
+        # docs/kpi-definitions.md, «Дополнительные метрики»: доля причины от всех потерь.
+        total = self.total
+        return None if total == 0 else self.reason_total(reason) / total
+
+    def showroom_reason_share(self, showroom: str | None, reason: str) -> float | None:
+        total = self.showroom_total(showroom)
+        return None if total == 0 else self.by_showroom[showroom][reason] / total
+
     @property
     def reasons_by_count(self) -> tuple[str, ...]:
         counted = [reason for reason in self.reasons if self.reason_total(reason)]

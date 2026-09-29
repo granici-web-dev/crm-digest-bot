@@ -16,6 +16,7 @@ from digest.metrics.frame import prepare_lead_frame
 from digest.metrics.kpi import LeadCounts
 from digest.metrics.weekly import (
     LEAD_ROW_COLUMNS,
+    LossReasons,
     converted_count,
     converted_count_by_showroom,
     irrelevant_rows,
@@ -604,3 +605,25 @@ def test_irrelevant_rows_reject_threshold_that_admits_key_without_leads(
 
     with pytest.raises(ValueError, match="IRR не определён"):
         irrelevant_rows({"Site": no_leads}, None, 0, 5, app_config)
+
+
+def test_reason_share_is_part_of_all_losses_and_of_showroom_losses() -> None:
+    losses = LossReasons(
+        reasons=("NU_RASPUNS", "BUGET"),
+        by_showroom={
+            "Cluj": {"NU_RASPUNS": 3, "BUGET": 1},
+            None: {"NU_RASPUNS": 1, "BUGET": 0},
+        },
+    )
+
+    assert losses.reason_share("NU_RASPUNS") == 4 / 5
+    assert losses.reason_share("BUGET") == 1 / 5
+    assert losses.showroom_reason_share("Cluj", "BUGET") == 1 / 4
+    assert losses.showroom_reason_share(None, "NU_RASPUNS") == 1
+
+
+def test_reason_share_without_losses_is_none() -> None:
+    losses = LossReasons(reasons=("BUGET",), by_showroom={"Cluj": {"BUGET": 0}})
+
+    assert losses.reason_share("BUGET") is None
+    assert losses.showroom_reason_share("Cluj", "BUGET") is None

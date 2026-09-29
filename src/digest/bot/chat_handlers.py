@@ -76,12 +76,22 @@ def replied_bot_message_id(message: Message, me: User) -> int | None:
     return replied.message_id
 
 
+REJECTED_TEXT_ALERT_LIMIT = 500
+
+
 def answer_alert(question: AskedQuestion, answer: ChatAnswer) -> str | None:
     calls = ", ".join(call_label(call) for call in answer.tool_calls) or "без инструментов"
-    if answer.status == "unverified_numbers":
+    if answer.unverified_number is not None:
+        outcome = (
+            "повтор прошёл, ответ отправлен"
+            if answer.status == "answered"
+            else "повтор не помог, ответ не отправлен"
+        )
+        # Инструменты не отдают данных клиентов, поэтому текст модели в ops допустим.
+        rejected_text = (answer.rejected_text or "")[:REJECTED_TEXT_ALERT_LIMIT]
         return (
-            f"Chat: ответ не отправлен, число «{answer.unverified_number}» не найдено в "
-            f"результатах. Вопрос: {question.text}. Инструменты: {calls}."
+            f"Chat: страж отклонил число «{answer.unverified_number}», {outcome}. "
+            f"Вопрос: {question.text}. Инструменты: {calls}. Текст модели: {rejected_text}"
         )
     if answer.status in ("max_tokens", "refusal"):
         return f"Chat: ответ модели не получен ({answer.status}). Вопрос: {question.text}."

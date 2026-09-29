@@ -119,6 +119,8 @@
 | Просроченные revenire | лиды с кастомным `Data revenire < today` (строго, ADR-004) и без изменения статуса после этой даты (`status_changed_at` null или раньше `Data revenire`). Категории: ACTIVE, ACTIVE_FOLLOWUP, LOST · STAND BY, UNMAPPED; WON, PARTNERSHIP и остальные причины LOST не входят |
 | Когортная конверсия | `CLIENTI из лидов месяца M на дату D / USEFUL месяца M` — считается по снапшоту на D |
 | Дельта к периоду | `(X_now − X_prev) / X_prev`; при `X_prev = 0` → «n/a» |
+| Разница к периоду или цели | `X − база` со знаком (`value_difference`); у KPI в процентных пунктах; база или X null → нет значения. Чат: `compare_periods` (`difference`, `direction`, `change`), `manager_kpi` (`vs_target`) |
+| Доля причины потерь | `потери причины / все потери` периода (`LossReasons.reason_share`), в разрезе шоурума от потерь шоурума (`showroom_reason_share`); 0 потерь → нет значения. Чат: `loss_reasons` |
 
 ## Ежедневные проверки (d2–d6, shape `docs/shapes/2026-09-25-daily-d2-d6.md`)
 

@@ -20,7 +20,13 @@ from digest.reports.modules.weekly import (
     showroom_source_table,
     week_range_label,
 )
-from digest.reports.render import change_label, percent, signed_percent_one_decimal
+from digest.reports.render import (
+    change_label,
+    percent,
+    signed_count,
+    signed_percent_one_decimal,
+    signed_points_one_decimal,
+)
 from factories import BUCHAREST, make_lead_links, make_snapshot_row, raw_repository_config
 
 SUNDAY = date(2026, 9, 27)
@@ -384,3 +390,18 @@ def test_manager_touches_text_without_data(app_config: AppConfig) -> None:
     text = touches_text(app_config, [(SUNDAY, [followup_lead(1, "Revenire 1")])])
 
     assert text == "<b>📞 Atingeri consultanți: fără date</b>"
+
+
+@pytest.mark.parametrize(
+    ("value", "label"),
+    [(0.021, "+2,1 pp"), (-0.0684, "−6,8 pp"), (0.0004, "0,0 pp"), (-0.0004, "0,0 pp")],
+)
+def test_signed_points_have_sign_only_when_rounded_value_is_not_zero(
+    value: float, label: str
+) -> None:
+    assert signed_points_one_decimal(value) == label
+
+
+@pytest.mark.parametrize(("value", "label"), [(73, "+73"), (-73, "−73"), (0, "0")])
+def test_signed_count(value: int, label: str) -> None:
+    assert signed_count(value) == label

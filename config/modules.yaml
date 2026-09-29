@@ -120,26 +120,35 @@ chat:             # режим вопросов; включается целик
       Pâlnia de vânzări pentru o perioadă: lead-uri, lead-uri utile, irelevante, vizite în showroom,
       oferte, clienți, nu a răspuns, buget, produs nepotrivit, contracte semnate și KPI (SCR, L2O,
       O2C, CDR, PLR, SC, PFR, ACR, IRR). Lead-urile sunt cele create în perioadă, cu statusul din
-      snapshot. Opțional pentru un singur showroom.
+      snapshot. day_count și days_with_data dau numărul de zile ale perioadei și câte au date.
+      Opțional pentru un singur showroom.
     manager_kpi: >-
       KPI-urile unui consultant pentru o perioadă: numărătorile pâlniei, cei 9 KPI și dacă ținta
-      fiecărui KPI este atinsă.
+      fiecărui KPI este atinsă. targets_met din targets_total dă câte ținte sunt atinse; vs_target
+      dă diferența fiecărui KPI față de țintă, în puncte procentuale, cu semn.
     compare_periods: >-
       Compară o singură metrică între două perioade (de ex. lead-uri săptămâna aceasta față de
       săptămâna trecută). period_a este perioada evaluată (de obicei cea mai recentă), period_b
-      este baza comparației. Câmpul change dă direcția gata formulată („august 2026 față de iulie
-      2026: +17,4%”); o citezi exact. Opțional pentru un singur showroom.
+      este baza comparației. Câmpul change dă schimbarea gata formulată („august 2026 față de iulie
+      2026: +12 (+17,4%)”, la KPI în puncte procentuale); o citezi exact. difference este
+      diferența fără semn, direction este creștere, scădere sau fără schimbare. day_count și
+      days_with_data dau numărul de zile ale fiecărei perioade și câte au date. Opțional pentru
+      un singur showroom.
     loss_reasons: >-
       Lead-uri pierdute într-o perioadă, pe motive (Nu a răspuns, Buget, Produs nepotrivit etc.)
-      și pe showroom. Opțional pentru un singur showroom.
+      și pe showroom. La fiecare motiv, share este ponderea lui în total (în showroom, din totalul
+      showroom-ului); showroom_count dă câte showroom-uri au pierderi. Opțional pentru un singur
+      showroom.
     overdue_followups: >-
-      Lead-uri cu Data revenire depășită, pe consultant, cu numărul maxim de zile de întârziere.
-      Câmpul missing_followup_date dă lead-urile în Revenire 1/2/3 sau Stand BY fără Data
-      revenire; unavailable înseamnă că Data revenire nu a putut fi citită din CRM și nu dai
-      un număr pentru ea. Opțional pentru un singur consultant.
+      Lead-uri cu Data revenire depășită, pe consultant, cu numărul maxim de zile de întârziere;
+      manager_count dă câți consultanți au întârzieri. Câmpul missing_followup_date dă lead-urile
+      fără Data revenire aflate într-unul din statusurile din lista statuses (numele se scriu
+      întregi, exact ca în listă); unavailable înseamnă că Data revenire nu a putut fi citită din
+      CRM și nu dai un număr pentru ea. Opțional pentru un singur consultant.
     untouched_leads: >-
       Lead-uri noi neatinse de consultant (fără schimbare de status, contact sau ofertă) după
-      pragul de ore, pe consultant, din ultimele zile.
+      pragul de ore, pe consultant, din ultimele zile. oldest_age_days este vârsta celui mai vechi
+      în zile întregi; manager_count dă câți consultanți au lead-uri neatinse.
   # Описания параметров по имени, для каждого инструмента с таким параметром.
   parameters:
     period_a: Perioada evaluată, de obicei cea mai recentă (de ex. august în „august față de iulie”).

@@ -8,8 +8,10 @@ from test_report_runner import REPORT_DATE, TENANT_ID, store_snapshot, todays_le
 from digest.acceptance.chat_eval import (
     ExpectedCall,
     GoldenCase,
+    answer_text_lines,
     memoized_frame_loader,
     run_chat_eval,
+    summarize,
 )
 from digest.chat.tools import ToolData
 from digest.config import AppConfig
@@ -55,17 +57,28 @@ async def test_runner_grades_against_numbers_recomputed_from_snapshot(
         text_message("Ieri au intrat 2 lead-uri."),
         tool_use_message(("funnel", YESTERDAY_FUNNEL)),
         text_message("Ieri au intrat 3 lead-uri."),
+        text_message("Ieri au intrat 3 lead-uri noi."),
+        tool_use_message(("funnel", YESTERDAY_FUNNEL)),
+        text_message("Ieri au intrat 4 lead-uri."),
+        text_message("Ieri au intrat 2 lead-uri."),
     )
 
-    passed, failed = await run_chat_eval(
-        [yesterday_case("right"), yesterday_case("wrong")],
+    results = await run_chat_eval(
+        [yesterday_case("right"), yesterday_case("wrong"), yesterday_case("retried")],
         anthropic.client,
         "claude-sonnet-5",
         data,
     )
 
+    passed, failed, retried = results
     assert passed.grade.passed, passed.grade.reason
     assert not failed.grade.passed
     assert failed.grade.reason == "статус unverified_numbers, число «3»"
+    assert retried.grade.passed, retried.grade.reason
+    summary = summarize(results, "claude-sonnet-5")
+    assert (summary.passed, summary.guard_hits, summary.guard_retries) == (2, 1, 2)
+    lines = answer_text_lines(results)
+    assert lines.count("Текст модели до стража:") == 2
+    assert "Ieri au intrat 4 lead-uri." in lines
     async with engine.connect() as connection:
         assert await connection.scalar(select(func.count()).select_from(chat_questions)) == 0
