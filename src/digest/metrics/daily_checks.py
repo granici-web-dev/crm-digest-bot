@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -12,8 +13,15 @@ from digest.metrics.daily import (
     daily_window,
     lead_row_flags,
 )
-from digest.metrics.extra import overdue_revenire
-from digest.metrics.kpi import Period, count_flags, lead_counts_by_showroom
+from digest.metrics.extra import overdue_revenire, value_difference
+from digest.metrics.kpi import (
+    Period,
+    converted_in_period,
+    count_flags,
+    lead_counts,
+    lead_counts_by_showroom,
+    ratio,
+)
 
 EARLIEST_TIMESTAMP = pd.Timestamp.min.tz_localize("UTC")
 
@@ -125,6 +133,22 @@ class SameWeekdayComparison:
     leads_week_ago: int
     contracts: int
     contracts_week_ago: int
+
+
+TrendDirection = Literal["up", "down", "flat"]
+
+
+@dataclass(frozen=True)
+class RollingContractRate:
+    window_days: int
+    contracts: int
+    useful: int
+    rate: float | None
+    previous_contracts: int
+    previous_useful: int
+    previous_rate: float | None
+    difference_pp: float | None
+    direction: TrendDirection | None
 
 
 def manager_names(leads: pd.DataFrame, config: AppConfig) -> pd.Series:
@@ -412,4 +436,52 @@ def same_weekday_comparison(
     leads_week_ago, contracts_week_ago = leads_and_contracts(week_ago_date)
     return SameWeekdayComparison(
         week_ago_date, leads, leads_week_ago, contracts, contracts_week_ago
+    )
+
+
+def trend_direction(difference_pp: float | None, threshold_pp: float) -> TrendDirection | None:
+    if difference_pp is None:
+        return None
+    if abs(difference_pp) < threshold_pp:
+        return "flat"
+    return "up" if difference_pp > 0 else "down"
+
+
+def rolling_contract_rate(
+    lead_frame: pd.DataFrame, report_date: date, config: AppConfig
+) -> RollingContractRate:
+    # docs/kpi-definitions.md, «Ежедневные проверки», d7: не когорта, а темп. Договоры по
+    # converted_at и USEFUL по created_at за одни и те же ежедневные окна, оба окна по одному кадру.
+    params = config.modules.rolling_contract_rate_params
+    time_settings = config.status_mapping.time
+    window_days = params.window_days
+
+    def contracts_and_useful(last_day: date) -> tuple[int, int]:
+        window = Period(
+            daily_window(last_day - timedelta(days=window_days - 1), time_settings).start,
+            daily_window(last_day, time_settings).end,
+        )
+        useful = lead_counts(lead_frame, window, last_day, config).useful
+        return len(converted_in_period(lead_frame, window)), useful
+
+    contracts, useful = contracts_and_useful(report_date)
+    previous_contracts, previous_useful = contracts_and_useful(
+        report_date - timedelta(days=window_days)
+    )
+    rate = ratio(contracts, useful)
+    previous_rate = ratio(previous_contracts, previous_useful)
+    difference = value_difference(rate, previous_rate)
+    # Округление до 1e-9 п.п.: 6 % − 4 % в float это 1,9999999999999996 п.п., и порог 2,0
+    # на границе давал бы «=».
+    difference_pp = None if difference is None else round(difference * 100, 9)
+    return RollingContractRate(
+        window_days,
+        contracts,
+        useful,
+        rate,
+        previous_contracts,
+        previous_useful,
+        previous_rate,
+        difference_pp,
+        trend_direction(difference_pp, params.trend_threshold_pp),
     )

@@ -5,6 +5,7 @@ from digest.metrics.daily_checks import (
     anomalies,
     missing_followup_date,
     overdue_revenire_by_manager,
+    rolling_contract_rate,
     same_weekday_comparison,
     stale_offers,
     untouched_leads,
@@ -79,3 +80,8 @@ def anomalies_report(lead_frame: pd.DataFrame, context: ReportContext) -> Module
 def same_weekday_compare_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
     comparison = same_weekday_comparison(lead_frame, context.report_date, context.config)
     return ModuleResult(render("same_weekday_compare", comparison=comparison))
+
+
+def rolling_contract_rate_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
+    result = rolling_contract_rate(lead_frame, context.report_date, context.config)
+    return ModuleResult(render("rolling_contract_rate", result=result))

@@ -1,0 +1,4 @@
+{% set arrows = {"up": " ↑", "down": " ↓", "flat": " ="} %}
+📈 Rata contractelor, {{ result.window_days | count_noun("zi", "zile") }}: {{ result.rate | percent1 }} ({{ result.contracts | count_noun("contract", "contracte") }} / {{ result.useful | count_noun("lead util", "lead-uri utile") }})
+{{ result.window_days | count_noun("zi", "zile") }} anterioare: {{ result.previous_rate | percent1 }} ({{ result.previous_contracts }} / {{ result.previous_useful }}){{ arrows[result.direction] if result.direction else "" }}
+<i>Contracte după data semnării, lead-uri utile create în aceleași zile. Nu este SCR-ul lunii.</i>

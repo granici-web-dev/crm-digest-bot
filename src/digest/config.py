@@ -376,6 +376,11 @@ class AnomalyParams(StrictConfigModel):
     irelevant_spike_min: PositiveInt
 
 
+class RollingContractRateParams(StrictConfigModel):
+    window_days: PositiveInt
+    trend_threshold_pp: PositiveFloat
+
+
 class ScrBySourceCampaignParams(StrictConfigModel):
     min_source_leads: PositiveInt
     min_campaign_leads: PositiveInt
@@ -464,6 +469,7 @@ class ModuleRegistry(StrictConfigModel):
     _untouched_leads_params: UntouchedLeadsParams = PrivateAttr()
     _overdue_revenire_params: OverdueRevenireParams = PrivateAttr()
     _anomaly_params: AnomalyParams = PrivateAttr()
+    _rolling_contract_rate_params: RollingContractRateParams = PrivateAttr()
     _scr_levels_params: ScrLevelsParams = PrivateAttr()
     _scr_by_source_campaign_params: ScrBySourceCampaignParams = PrivateAttr()
     _irr_by_campaign_params: IrrByCampaignParams = PrivateAttr()
@@ -480,6 +486,10 @@ class ModuleRegistry(StrictConfigModel):
     @property
     def anomaly_params(self) -> AnomalyParams:
         return self._anomaly_params
+
+    @property
+    def rolling_contract_rate_params(self) -> RollingContractRateParams:
+        return self._rolling_contract_rate_params
 
     @property
     def scr_levels_params(self) -> ScrLevelsParams:
@@ -555,6 +565,9 @@ class ModuleRegistry(StrictConfigModel):
             "overdue_revenire", OverdueRevenireParams
         )
         self._anomaly_params = self.parsed_params("anomalies", AnomalyParams)
+        self._rolling_contract_rate_params = self.parsed_params(
+            "rolling_contract_rate", RollingContractRateParams
+        )
         self._scr_levels_params = self.parsed_params("scr_with_targets", ScrLevelsParams)
         self._scr_by_source_campaign_params = self.parsed_params(
             "scr_by_source_campaign", ScrBySourceCampaignParams

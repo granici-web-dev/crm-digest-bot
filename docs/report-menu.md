@@ -124,24 +124,28 @@ Lead-uri azi: 11 (joia trecută: 8) · Contracte: 1 (0)
 Лидов сегодня: 11 (в прошлый четверг: 8) · Контрактов: 1 (0)
 ```
 
-### d7 · O cifră de trend: conversia pe ultimele 30 de zile / Одна цифра тренда: конверсия за 30 дней
+### d7 · Rata contractelor, 30 de zile / Темп договоров за 30 дней
 
 Тег: now
 
-**RO:** Ca să nu așteptați sfârșitul lunii.
+**RO:** Contracte semnate în ultimele 30 de zile față de lead-urile utile din aceleași zile. Ca să nu așteptați sfârșitul lunii.
 
-**RU:** Чтобы не ждать конца месяца.
+**RU:** Договоры, подписанные за последние 30 дней, к полезным лидам тех же дней. Чтобы не ждать конца месяца. Не SCR месяца: SCR это когорта лидов, здесь темп.
 
 Пример RO:
 
 ```
-SCR 30 zile: 9,2% (cele 30 anterioare: 7,8%) ↑
+📈 Rata contractelor, 30 de zile: 7,6% (28 de contracte / 367 de lead-uri utile)
+30 de zile anterioare: 12,1% (36 / 298) ↓
+Contracte după data semnării, lead-uri utile create în aceleași zile. Nu este SCR-ul lunii.
 ```
 
 Пример RU:
 
 ```
-SCR за 30 дней: 9,2% (предыдущие 30: 7,8%) ↑
+📈 Темп договоров за 30 дней: 7,6% (28 договоров / 367 полезных лидов)
+Предыдущие 30 дней: 12,1% (36 / 298) ↓
+Договоры по дате подписания, полезные лиды, созданные в те же дни. Это не SCR месяца.
 ```
 
 ### d8 · Alertă imediată la o problemă critică / Мгновенный алерт при критичной проблеме

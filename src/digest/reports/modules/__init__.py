@@ -6,6 +6,7 @@ from digest.reports.context import ModuleResult, ReportContext
 from digest.reports.modules.daily_checks import (
     anomalies_report,
     overdue_revenire_report,
+    rolling_contract_rate_report,
     same_weekday_compare_report,
     stale_offers_report,
     untouched_leads_report,
@@ -42,6 +43,7 @@ IMPLEMENTED_MODULES: dict[str, ReportModuleFunction] = {
     "d4": stale_offers_report,
     "d5": anomalies_report,
     "d6": same_weekday_compare_report,
+    "d7": rolling_contract_rate_report,
     "w1": weekly_leads_report,
     "w2": showroom_visits_report,
     "w3": weekly_funnel_report,

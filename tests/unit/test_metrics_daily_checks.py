@@ -13,6 +13,7 @@ from digest.metrics.daily_checks import (
     MissingFollowupGroup,
     OverdueGroup,
     OverdueRevenire,
+    RollingContractRate,
     SameWeekdayComparison,
     StaleOffers,
     UntouchedGroup,
@@ -20,8 +21,10 @@ from digest.metrics.daily_checks import (
     anomalies,
     missing_followup_date,
     overdue_revenire_by_manager,
+    rolling_contract_rate,
     same_weekday_comparison,
     stale_offers,
+    trend_direction,
     untouched_leads,
 )
 from digest.metrics.frame import prepare_lead_frame
@@ -581,6 +584,169 @@ def test_same_weekday_window_crosses_dst(app_config: AppConfig) -> None:
     assert (result.leads, result.leads_week_ago) == (2, 1)
 
 
+# d7
+
+
+def at(day: date, hour: int, minute: int = 0) -> datetime:
+    return datetime(day.year, day.month, day.day, hour, minute, tzinfo=BUCHAREST)
+
+
+def contract(lead_id: int, converted_at: datetime, **overrides: Any) -> dict[str, Any]:
+    fields: dict[str, Any] = {
+        "category": "WON",
+        "status_name": "Clienți",
+        "created_at": datetime(2026, 5, 1, 12, 0, tzinfo=BUCHAREST),
+    }
+    return make_snapshot_row(lead_id=lead_id, converted_at=converted_at, **(fields | overrides))
+
+
+def test_rolling_contract_rate_counts_contracts_by_converted_at_and_useful_by_created_at(
+    app_config: AppConfig,
+) -> None:
+    this_window = datetime(2026, 9, 10, 12, 0, tzinfo=BUCHAREST)
+    previous_window = datetime(2026, 8, 10, 12, 0, tzinfo=BUCHAREST)
+    rows = [
+        # Договор окна от лида, созданного до обоих окон: в знаменатель не входит.
+        contract(1, this_window),
+        # Лид окна, подписан в окне: и в числителе, и в знаменателе.
+        contract(2, this_window, created_at=this_window),
+        new_lead(3, this_window),
+        new_lead(4, this_window),
+        new_lead(5, this_window, category="LOST", loss_reason="IRELEVANT", status_name="IRELEVANT"),
+        contract(6, previous_window),
+        new_lead(7, previous_window),
+        new_lead(8, previous_window),
+    ]
+
+    result = rolling_contract_rate(frame(rows, app_config), REPORT_DATE, app_config)
+
+    assert (result.contracts, result.useful, result.rate) == (2, 3, 2 / 3)
+    assert (result.previous_contracts, result.previous_useful, result.previous_rate) == (1, 2, 0.5)
+    assert (result.difference_pp, result.direction) == (16.666666667, "up")
+
+
+def test_rolling_window_starts_at_1900_of_day_before_first_day(app_config: AppConfig) -> None:
+    # Отчёт 25.09: текущие 30 окон [26.08 19:00, 25.09 19:00), прошлые [27.07 19:00, 26.08 19:00).
+    first_day_start = datetime(2026, 8, 26, 19, 0, tzinfo=BUCHAREST)
+    previous_start = datetime(2026, 7, 27, 19, 0, tzinfo=BUCHAREST)
+    rows = [
+        new_lead(1, first_day_start - timedelta(minutes=1)),
+        new_lead(2, first_day_start),
+        new_lead(3, WINDOW_END - timedelta(minutes=1)),
+        new_lead(4, WINDOW_END),
+        new_lead(5, previous_start),
+        new_lead(6, previous_start - timedelta(minutes=1)),
+    ]
+
+    result = rolling_contract_rate(frame(rows, app_config), REPORT_DATE, app_config)
+
+    assert (result.useful, result.previous_useful) == (2, 2)
+
+
+def test_rolling_numerator_equals_sum_of_d6_contracts(app_config: AppConfig) -> None:
+    rows = [
+        contract(lead_id, at(REPORT_DATE - timedelta(days=days_back), hour))
+        for lead_id, (days_back, hour) in enumerate(
+            [(0, 10), (0, 19), (3, 18), (15, 19), (29, 18), (29, 19), (30, 18), (30, 19), (45, 9)]
+        )
+    ]
+    lead_frame = frame(rows, app_config)
+
+    result = rolling_contract_rate(lead_frame, REPORT_DATE, app_config)
+
+    d6_contracts = sum(
+        same_weekday_comparison(
+            lead_frame, REPORT_DATE - timedelta(days=days_back), app_config
+        ).contracts
+        for days_back in range(30)
+    )
+    assert result.contracts == d6_contracts == 6
+
+
+def test_partnership_contract_counts_useful_does_not(app_config: AppConfig) -> None:
+    this_window = datetime(2026, 9, 10, 12, 0, tzinfo=BUCHAREST)
+    rows = [
+        contract(
+            1, this_window, created_at=this_window, category="PARTNERSHIP", status_name="DESIGNER"
+        ),
+        new_lead(2, this_window),
+    ]
+
+    result = rolling_contract_rate(frame(rows, app_config), REPORT_DATE, app_config)
+
+    assert (result.contracts, result.useful) == (1, 1)
+
+
+def test_rolling_window_across_dst_has_thirty_daily_windows(app_config: AppConfig) -> None:
+    # 25.10.2026 переход на зимнее время: окно дня 25.10 длится 25 часов, начало 30 окон
+    # отчёта 10.11 это 11.10 19:00 по летнему времени.
+    rows = [
+        new_lead(1, datetime(2026, 10, 11, 18, 59, tzinfo=BUCHAREST)),
+        new_lead(2, datetime(2026, 10, 11, 19, 0, tzinfo=BUCHAREST)),
+        new_lead(3, datetime(2026, 10, 25, 18, 30, tzinfo=BUCHAREST)),
+        new_lead(4, datetime(2026, 11, 10, 18, 59, tzinfo=BUCHAREST)),
+    ]
+
+    result = rolling_contract_rate(frame(rows, app_config), date(2026, 11, 10), app_config)
+
+    assert (result.useful, result.previous_useful) == (3, 1)
+
+
+@pytest.mark.parametrize(
+    ("difference_pp", "direction"),
+    [(1.99, "flat"), (-1.99, "flat"), (2.0, "up"), (-2.0, "down"), (None, None)],
+)
+def test_direction_flat_below_threshold_and_arrow_at_threshold(
+    difference_pp: float | None, direction: str | None
+) -> None:
+    assert trend_direction(difference_pp, 2.0) == direction
+
+
+@pytest.mark.parametrize(("previous_useful", "direction"), [(50, "up"), (49, "flat")])
+def test_rate_difference_at_threshold_is_not_lost_to_float_error(
+    app_config: AppConfig, previous_useful: int, direction: str
+) -> None:
+    # 3/50 − 2/50 это ровно 2,0 п.п.; 3/50 − 2/49 это 1,92 п.п.
+    this_window = datetime(2026, 9, 10, 12, 0, tzinfo=BUCHAREST)
+    previous_window = datetime(2026, 8, 10, 12, 0, tzinfo=BUCHAREST)
+    current = [
+        contract(lead_id, this_window, created_at=this_window)
+        if lead_id < 3
+        else new_lead(lead_id, this_window)
+        for lead_id in range(50)
+    ]
+    previous = [
+        contract(100 + lead_id, previous_window, created_at=previous_window)
+        if lead_id < 2
+        else new_lead(100 + lead_id, previous_window)
+        for lead_id in range(previous_useful)
+    ]
+
+    result = rolling_contract_rate(frame(current + previous, app_config), REPORT_DATE, app_config)
+
+    assert result.direction == direction
+
+
+def test_zero_useful_gives_no_rate_and_no_direction(app_config: AppConfig) -> None:
+    rows = [
+        contract(1, datetime(2026, 9, 10, 12, 0, tzinfo=BUCHAREST)),
+        new_lead(2, datetime(2026, 8, 10, 12, 0, tzinfo=BUCHAREST)),
+    ]
+
+    result = rolling_contract_rate(frame(rows, app_config), REPORT_DATE, app_config)
+
+    assert (result.contracts, result.useful, result.rate) == (1, 0, None)
+    assert (result.previous_rate, result.difference_pp, result.direction) == (0.0, None, None)
+
+
+def test_previous_zero_useful_gives_no_direction(app_config: AppConfig) -> None:
+    rows = [new_lead(1, datetime(2026, 9, 10, 12, 0, tzinfo=BUCHAREST))]
+
+    result = rolling_contract_rate(frame(rows, app_config), REPORT_DATE, app_config)
+
+    assert (result.rate, result.previous_rate, result.direction) == (0.0, None, None)
+
+
 # d3: без Data revenire
 
 REVENIRE_1 = {"category": "ACTIVE_FOLLOWUP", "status_name": "Revenire 1"}
@@ -763,6 +929,9 @@ def test_every_check_is_empty_on_empty_frame(app_config: AppConfig) -> None:
     assert anomalies(lead_frame, REPORT_DATE, app_config) == Anomalies(7, None, ())
     assert same_weekday_comparison(lead_frame, REPORT_DATE, app_config) == SameWeekdayComparison(
         date(2026, 9, 18), 0, 0, 0, 0
+    )
+    assert rolling_contract_rate(lead_frame, REPORT_DATE, app_config) == RollingContractRate(
+        30, 0, 0, None, 0, 0, None, None, None
     )
 
 

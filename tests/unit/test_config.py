@@ -340,6 +340,8 @@ def test_repository_marks_marketing_sofa_as_not_taken(app_config: AppConfig) -> 
             },
         ),
         ("d5", {"site_zero_min_average": 2, "site_average_days": 0, "irelevant_spike_min": 5}),
+        ("d7", {"window_days": 0, "trend_threshold_pp": 2.0}),
+        ("d7", {"window_days": 30, "trend_threshold_pp": 0}),
     ],
 )
 def test_module_params_are_validated_at_load(module_id: str, params: dict[str, Any]) -> None:
@@ -358,6 +360,8 @@ def test_repository_module_params(app_config: AppConfig) -> None:
     assert untouched.touch_tolerance_seconds == 60
     assert (anomalies.site_zero_min_average, anomalies.irelevant_spike_min) == (2, 5)
     assert anomalies.site_average_days == 7
+    rolling = app_config.modules.rolling_contract_rate_params
+    assert (rolling.window_days, rolling.trend_threshold_pp) == (30, 2.0)
 
 
 def test_module_with_params_must_be_in_registry() -> None:

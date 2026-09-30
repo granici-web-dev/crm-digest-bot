@@ -287,7 +287,7 @@ async def test_repeated_target_state_is_noop(harness: SettingsHarness) -> None:
     [
         ("m1", "nu e disponibil: sursa B"),
         ("m6", "nu e disponibil: KPI necalibrat"),
-        ("d7", "în lucru"),
+        ("d8", "în lucru"),
     ],
 )
 async def test_unavailable_module_is_not_switched(

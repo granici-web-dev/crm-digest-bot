@@ -26,7 +26,9 @@ daily:            # окно 19:00 вчера → 19:00 сегодня; врем
   # 646 лидов с Site за восемь месяцев, меньше трёх в день: порог 3 почти не срабатывал бы.
   d5: { name: anomalies, label: "Anomalii ale zilei",              sources: [A], enabled: true,  params: { site_zero_min_average: 2, site_average_days: 7, irelevant_spike_min: 5 } }
   d6: { name: same_weekday_compare, label: "Comparație cu aceeași zi",   sources: [A], enabled: true }
-  d7: { name: scr_rolling_30, label: "Conversie 30 de zile",         sources: [A], enabled: false }
+  # Порог 2,0 п.п. (около 7 договоров на объёме сентября 2026): 1,0 мигал «=»/«↓» 9 раз за месяц
+  # (docs/shapes/2026-09-30-d7.md, «Замер»).
+  d7: { name: rolling_contract_rate, label: "Rată contracte 30 de zile",  sources: [A], enabled: true,  params: { window_days: 30, trend_threshold_pp: 2.0 } }
   d8: { name: instant_alerts, label: "Alertă imediată",         sources: [A], enabled: false, params: { site_zero_by: "15:00" } }
 
 weekly:           # пн–вс, отправка в понедельник; время в таблице schedules

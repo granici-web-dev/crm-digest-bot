@@ -12,6 +12,7 @@ from digest.metrics.daily_checks import (
     MissingFollowupGroup,
     OverdueGroup,
     OverdueRevenire,
+    RollingContractRate,
     SameWeekdayComparison,
     StaleOffers,
     UntouchedGroup,
@@ -234,6 +235,21 @@ def test_same_weekday_compare_render(week_ago_date: date, snapshot: SnapshotAsse
     comparison = SameWeekdayComparison(week_ago_date, 11, 8, 1, 0)
 
     assert render("same_weekday_compare", comparison=comparison) == snapshot
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        RollingContractRate(30, 28, 367, 28 / 367, 36, 298, 36 / 298, -4.5, "down"),
+        RollingContractRate(30, 1, 50, 0.02, 1, 40, 0.025, -0.5, "flat"),
+        RollingContractRate(30, 0, 0, None, 3, 60, 0.05, None, None),
+    ],
+    ids=["down", "flat", "no_useful"],
+)
+def test_rolling_contract_rate_render(
+    result: RollingContractRate, snapshot: SnapshotAssertion
+) -> None:
+    assert render("rolling_contract_rate", result=result) == snapshot
 
 
 def d3_result(config: AppConfig, data_revenire_problem: str | None = None) -> ModuleResult:

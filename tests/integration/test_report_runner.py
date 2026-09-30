@@ -145,7 +145,7 @@ def link(lead_id: int) -> str:
     return f'<a href="https://bellesofa.meficrm.com/admin/leads/index/{lead_id}">#{lead_id}</a>'
 
 
-async def test_daily_report_contains_d1_to_d6_in_order(harness: Harness) -> None:
+async def test_daily_report_contains_d1_to_d7_in_order(harness: Harness) -> None:
     created_at = datetime(2026, 9, 25, 10, 0, tzinfo=BUCHAREST)
     await store_snapshot(
         harness.deps.engine,
@@ -176,6 +176,8 @@ async def test_daily_report_contains_d1_to_d6_in_order(harness: Harness) -> None
             "Oferte blocate >14 zile: nu",
             "Anomalii: nu",
             "Lead-uri azi: 2 (vinerea trecută: 0) · Contracte: 0 (0)",
+            "📈 Rata contractelor, 30 de zile: 0,0% (0 de contracte / 2 lead-uri utile)\n"
+            "30 de zile anterioare: — (0 / 0)\n",
         )
     ]
     assert block_starts == sorted(block_starts)
