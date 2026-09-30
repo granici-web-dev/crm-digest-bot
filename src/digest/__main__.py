@@ -9,6 +9,14 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from digest.acceptance.baseline import (
+    BaselineRow,
+    baseline_rows,
+    comparison_lines,
+    markdown_lines,
+    parse_baseline_lines,
+    touch_week,
+)
 from digest.acceptance.chat_eval import (
     TIMED_TOOL_CALL,
     UnknownCaseIdError,
@@ -26,11 +34,14 @@ from digest.app import create_anthropic_client, create_report_deps, run_app, see
 from digest.chat.tools import ToolData
 from digest.config import AppConfig, load_app_config
 from digest.db.engine import create_database_engine
-from digest.db.lead_frame import load_lead_frame, success_snapshot_dates
+from digest.db.lead_frame import SnapshotMissingError, load_lead_frame, success_snapshot_dates
 from digest.delivery.ops import OpsChannel, notify_ops
 from digest.delivery.telegram import create_bot
 from digest.log_format import configure_logging
 from digest.mefi.client import MefiClient, create_mefi_http_client
+from digest.metrics.daily import PreviousSnapshot
+from digest.metrics.monthly import first_day_of_month
+from digest.metrics.touches import touch_snapshot_dates
 from digest.reports.lead_links import LeadLinks
 from digest.reports.modules import IMPLEMENTED_MODULES
 from digest.reports.periods import REPORT_LEVELS, ReportLevel
@@ -72,6 +83,12 @@ def parse_arguments(argv: list[str] | None) -> argparse.Namespace:
     chat.add_argument("--file", type=Path, default=GOLDEN_FILE)
     chat.add_argument("--only", help="id вопросов через запятую; уточнения тянут свой вопрос")
     chat.add_argument("--out", type=Path, help="записать таблицу и итог в файл, без ответов")
+    baseline = commands.add_parser(
+        "baseline", help="базовая линия по снапшоту даты (docs/baseline-2026-09.md)"
+    )
+    baseline.add_argument("--date", type=date.fromisoformat, required=True)
+    baseline.add_argument("--out", type=Path, help="записать таблицу в файл")
+    baseline.add_argument("--compare", type=Path, help="прошлый файл baseline для сравнения")
     return parser.parse_args(argv)
 
 
@@ -219,6 +236,52 @@ async def run_chat_eval_command(
     return 0 if summary.meets_gate else 1
 
 
+async def run_baseline(
+    app_settings: Settings,
+    report_date: date,
+    out: Path | None,
+    compare: tuple[Path, list[BaselineRow]] | None,
+) -> int:
+    config = load_app_config(CONFIG_DIR)
+    engine = create_database_engine(app_settings.database_url.get_secret_value())
+
+    async def load_frame(snapshot_date: date) -> pd.DataFrame:
+        return await load_lead_frame(engine, app_settings.tenant_id, snapshot_date, config)
+
+    load = memoized_frame_loader(load_frame)
+    try:
+        success_dates = await success_snapshot_dates(engine, app_settings.tenant_id)
+        lead_frame = await load(report_date)
+        month_dates = [
+            day for day in success_dates if first_day_of_month(report_date) <= day <= report_date
+        ]
+        month_frames = {day: await load(day) for day in month_dates}
+        touch_snapshots = tuple(
+            [
+                PreviousSnapshot(day, await load(day))
+                for day in touch_snapshot_dates(success_dates, *touch_week(report_date))
+            ]
+        )
+    except SnapshotMissingError:
+        print(f"Нет успешного снапшота за {report_date:%d.%m.%Y}: baseline не посчитан.")
+        return 2
+    finally:
+        await engine.dispose()
+    lines = markdown_lines(
+        baseline_rows(lead_frame, month_frames, touch_snapshots, report_date, config),
+        report_date,
+        config,
+    )
+    print_and_save(lines, out)
+    if compare is not None:
+        compare_path, base = compare
+        print()
+        print(f"Сравнение с {compare_path}")
+        for line in comparison_lines(base, parse_baseline_lines(lines)):
+            print(line)
+    return 0
+
+
 async def run_service(app_settings: Settings) -> int:
     config = load_app_config(CONFIG_DIR)
     engine = create_database_engine(app_settings.database_url.get_secret_value())
@@ -247,6 +310,17 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(
             run_privacy_audit(app_settings, arguments.days, arguments.end, arguments.out)
         )
+    if arguments.command == "baseline":
+        # Файл сравнения читается до базы: опечатка в пути не должна стоить загрузки снапшотов.
+        compare = (
+            None
+            if arguments.compare is None
+            else (
+                arguments.compare,
+                parse_baseline_lines(arguments.compare.read_text(encoding="utf-8").splitlines()),
+            )
+        )
+        return asyncio.run(run_baseline(app_settings, arguments.date, arguments.out, compare))
     return asyncio.run(run_service(app_settings))
 
 

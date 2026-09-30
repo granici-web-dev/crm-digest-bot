@@ -10,6 +10,7 @@
 | M7 сбой источника | чек-лист `m7-source-failure.md` на временной базе M9 | отчёт в тестовой группе с пометкой, алерт в ops |
 | M8 приватность | `uv run python -m digest audit privacy --days 14 [--end YYYY-MM-DD] [--out …]` | 0 нарушений в текстах и базе, код возврата 0 |
 | M9 восстановление | `deploy/restore-drill.sh [--keep]` | все шаги ok, счётчики совпали |
+| Базовая линия | `uv run python -m digest baseline --date YYYY-MM-DD [--out docs/acceptance/baseline-<дата>.md] [--compare прошлый-файл]` | не ворота: строки `docs/baseline-2026-09.md` по снапшоту даты; `--compare` печатает «база → сейчас → Δ», проценты в п.п.; нет снапшота даты → код 2 |
 
 Перед `eval` и `audit` на ноутбуке: `docker compose up -d postgres` и `uv run alembic upgrade head`. `eval chat` ходит в живой Anthropic API (≈ $0,5 за прогон, печатает фактическую стоимость); Telegram, ops и `chat_questions` не трогает. `audit privacy` перерисовывает отчёты по снапшотам базы и ничего не отправляет. На сервере M9 делается при деплое, в рамках I5.
 
