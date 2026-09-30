@@ -362,11 +362,11 @@ def contact_repeat_flags(clients: pd.DataFrame) -> pd.Series:
 
 
 def month_clients(lead_frame: pd.DataFrame, report_date: date, config: AppConfig) -> pd.DataFrame:
-    window = month_window(report_date, config.status_mapping.time)
-    converted_at = lead_frame["converted_at"]
-    in_window = converted_at.ge(window.start) & converted_at.lt(window.end)
+    converted = converted_in_period(
+        lead_frame, month_window(report_date, config.status_mapping.time)
+    )
     reasons = repeat_client_reasons(lead_frame, config)
-    return lead_frame[lead_frame["is_clienti"] & in_window].assign(
+    return converted[converted["is_clienti"]].assign(
         repeat_reason=reasons, is_repeat=reasons.notna()
     )
 

@@ -429,9 +429,7 @@ def same_weekday_comparison(
     def leads_and_contracts(day: date) -> tuple[int, int]:
         window = daily_window(day, time_settings)
         leads = int(lead_row_flags(lead_frame, window, config)[list(LEAD_ROWS)].to_numpy().sum())
-        converted_at = lead_frame["converted_at"]
-        contracts = int((converted_at.ge(window.start) & converted_at.lt(window.end)).sum())
-        return leads, contracts
+        return leads, len(converted_in_period(lead_frame, window))
 
     leads, contracts = leads_and_contracts(report_date)
     leads_week_ago, contracts_week_ago = leads_and_contracts(week_ago_date)
