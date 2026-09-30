@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.acceptance.chat_eval import (
     TIMED_TOOL_CALL,
+    UnknownCaseIdError,
     answer_text_lines,
     eval_table_lines,
     load_golden_cases,
@@ -178,13 +179,17 @@ async def run_manual_snapshot(app_settings: Settings) -> int:
 async def run_chat_eval_command(
     app_settings: Settings, golden_file: Path, only: str | None, out: Path | None
 ) -> int:
+    cases = load_golden_cases(golden_file)
+    if only:
+        try:
+            cases = with_dependencies(cases, set(only.split(",")))
+        except UnknownCaseIdError as error:
+            print(error)
+            return 2
     client = create_anthropic_client(app_settings)
     if client is None:
         print("ANTHROPIC_API_KEY не задан: eval chat ходит в живой Anthropic API.")
         return 2
-    cases = load_golden_cases(golden_file)
-    if only:
-        cases = with_dependencies(cases, set(only.split(",")))
     config = load_app_config(CONFIG_DIR)
     engine = create_database_engine(app_settings.database_url.get_secret_value())
     reader = create_report_reader(engine, config, app_settings)

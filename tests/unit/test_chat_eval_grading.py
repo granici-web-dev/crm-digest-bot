@@ -3,20 +3,24 @@ from typing import Any
 
 import pytest
 
+from digest.__main__ import GOLDEN_FILE, run_chat_eval_command
 from digest.acceptance.chat_eval import (
     PRICES_PER_MILLION_TOKENS,
     CaseResult,
     ExpectedCall,
     GoldenCase,
     Grade,
+    UnknownCaseIdError,
     eval_table_lines,
     grade_case,
     summarize,
     value_at,
+    with_dependencies,
 )
 from digest.chat.loop import ChatAnswer, ExecutedToolCall, TokenUsage
 from digest.chat.tools import ToolOutcome
 from digest.db.schema import ChatQuestionStatus
+from digest.settings import Settings
 
 FUNNEL_ARGUMENTS = {"period": "saptamana_trecuta", "showroom": "București"}
 FUNNEL_CONTENT = {"counts": {"leads": 42}, "kpis": {"scr": "9,6%"}}
@@ -290,3 +294,28 @@ def test_eval_summary_prints_input_cache_write_cache_read_and_output() -> None:
 
     # 2000 × 2 + 400 × 10 + 13 000 × 2,5 + 26 000 × 0,2 = 45 700 на миллион.
     assert "Токены: вход 2000, запись кэша 13000, чтение кэша 26000, выход 400; ≈ $0.05" in lines
+
+
+def test_unknown_only_id_names_similar_ids() -> None:
+    cases = [
+        funnel_case([]).model_copy(update={"id": case_id})
+        for case_id in ("funnel-last-week", "funnel-last-month", "repeat-august")
+    ]
+
+    with pytest.raises(UnknownCaseIdError) as error:
+        with_dependencies(cases, {"funnel-last-weak", "funnel-last-week", "zzz"})
+
+    assert str(error.value) == (
+        "--only: нет вопросов с id funnel-last-weak (похожие: funnel-last-week, "
+        "funnel-last-month); zzz (похожих нет)"
+    )
+
+
+async def test_eval_command_with_unknown_only_id_exits_2_before_api(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Settings без валидации: до выбора вопросов команда не трогает ни ключ, ни базу.
+    exit_code = await run_chat_eval_command(Settings.model_construct(), GOLDEN_FILE, "zzz", None)
+
+    assert exit_code == 2
+    assert capsys.readouterr().out == "--only: нет вопросов с id zzz (похожих нет)\n"

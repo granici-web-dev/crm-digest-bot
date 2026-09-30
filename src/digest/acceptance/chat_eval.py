@@ -1,4 +1,5 @@
 import asyncio
+import difflib
 import re
 import statistics
 import time
@@ -125,8 +126,24 @@ def load_golden_cases(path: Path) -> list[GoldenCase]:
     return cases
 
 
+class UnknownCaseIdError(ValueError):
+    pass
+
+
+def unknown_case_ids_message(unknown: list[str], known: list[str]) -> str:
+    parts = []
+    for case_id in unknown:
+        similar = difflib.get_close_matches(case_id, known, n=3)
+        hint = f"похожие: {', '.join(similar)}" if similar else "похожих нет"
+        parts.append(f"{case_id} ({hint})")
+    return f"--only: нет вопросов с id {'; '.join(parts)}"
+
+
 def with_dependencies(cases: list[GoldenCase], only: set[str]) -> list[GoldenCase]:
     by_id = {case.id: case for case in cases}
+    unknown = sorted(only - by_id.keys())
+    if unknown:
+        raise UnknownCaseIdError(unknown_case_ids_message(unknown, list(by_id)))
     selected: set[str] = set()
     for case_id in only:
         current: str | None = case_id
