@@ -8,9 +8,11 @@ from digest.config import AppConfig, TimeSettings
 from digest.metrics.breakdown import LeadBreakdown, lead_breakdown
 from digest.metrics.cockpit import meets_target
 from digest.metrics.daily import daily_window
+from digest.metrics.extra import cohort_conversion
 from digest.metrics.kpi import (
     LeadCounts,
     Period,
+    converted_in_period,
     kpis_from,
     lead_counts,
     lead_counts_by_showroom,
@@ -175,10 +177,7 @@ class CohortRow:
     median_days: float | None
     age_days: float
     in_progress: bool
-
-    @property
-    def conversion(self) -> float | None:
-        return kpis_from(self.counts).scr
+    conversion: float | None
 
     def share_within(self, days: int) -> float | None:
         # docs/kpi-definitions.md, «Когорты и цикл сделки (m9)»: знаменатель USEFUL, как у SCR.
@@ -429,11 +428,13 @@ def cohort_row(
 ) -> CohortRow:
     # docs/kpi-definitions.md, «Когорты и цикл сделки (m9)». Возраст когорты между концами окон:
     # при возрасте ≥ N суток каждый лид когорты прожил не меньше N суток, корзина ≤N полная.
+    # Разность timestamp(), а не datetime: вычитание datetime с одним tzinfo даёт время по
+    # часам, и через переход на летнее время когорта казалась бы на час старше, чем дни лидов.
     time_settings = config.status_mapping.time
     window = month_window(month, time_settings)
     age_days = (
-        month_window(report_date, time_settings).end - window.end
-    ).total_seconds() / SECONDS_PER_DAY
+        month_window(report_date, time_settings).end.timestamp() - window.end.timestamp()
+    ) / SECONDS_PER_DAY
     leads = leads_in_period(lead_frame, window)
     clients = leads[leads["is_clienti"] & leads["converted_at"].notna()]
     days = days_to_contract(clients)
@@ -446,6 +447,7 @@ def cohort_row(
         median_or_none(days),
         age_days,
         age_days < buckets[-1],
+        cohort_conversion(lead_frame, window, config),
     )
 
 
@@ -474,10 +476,7 @@ def monthly_cohort_conversion(
     time_settings = config.status_mapping.time
     months = trend_months(report_date)
     report_window = month_window(report_date, time_settings)
-    converted_at = lead_frame["converted_at"]
-    converted = lead_frame[
-        converted_at.ge(report_window.start) & converted_at.lt(report_window.end)
-    ]
+    converted = converted_in_period(lead_frame, report_window)
     six_months = leads_in_period(
         lead_frame, Period(month_window(months[0], time_settings).start, report_window.end)
     )

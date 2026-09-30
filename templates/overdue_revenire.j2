@@ -1,11 +1,9 @@
 {% from "_names.j2" import manager %}
-{# Румынское числительное: 1 zi, 2–19 zile, от 20 «de zile» (по двум последним цифрам: 100 de zile, 101 zile). #}
-{% macro days(count) %}{{ count }} {% if count == 1 %}zi{% elif count % 100 == 0 or count % 100 >= 20 %}de zile{% else %}zile{% endif %}{% endmacro %}
 {# links: строка ссылок на каждую группу, пустая, если лиды группы не попали в лимит блока. #}
 {% if overdue.lead_count %}
-<b>⏰ Reveniri restante: {{ overdue.lead_count }}</b> (cea mai veche: {{ days(overdue.max_days_overdue) }})
+<b>⏰ Reveniri restante: {{ overdue.lead_count }}</b> (cea mai veche: {{ overdue.max_days_overdue | count_noun("zi", "zile") }})
 {% for group in overdue.groups %}
-{{ manager(group.manager_name) }} {{ group.lead_count }} ({{ days(group.max_days_overdue) }}){% if links[loop.index0] %}: {{ links[loop.index0] }}{% endif %}
+{{ manager(group.manager_name) }} {{ group.lead_count }} ({{ group.max_days_overdue | count_noun("zi", "zile") }}){% if links[loop.index0] %}: {{ links[loop.index0] }}{% endif %}
 
 {% endfor %}
 {% else %}

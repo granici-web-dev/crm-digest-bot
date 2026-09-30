@@ -3,11 +3,11 @@
 <code>{{ line }}</code>
 {% endfor %}
 {% if cycle.contracts %}
-Ciclu contract, {{ month_name }}: {{ cycle.contracts }} {{ "contract" if cycle.contracts == 1 else "contracte" }}, median {{ cycle_median }} zile, 75% până la {{ cycle_p75 }} zile, {{ cycle.share_within_fast | percent }} în ≤{{ fast_cycle_days }} zile.
+Ciclu contract, {{ month_name }}: {{ cycle.contracts | count_noun("contract", "contracte") }}, median {{ cycle_median | count_noun("zi", "zile") }}, 75% până la {{ cycle_p75 | count_noun("zi", "zile") }}, {{ cycle.share_within_fast | percent }} în ≤{{ fast_cycle_days | count_noun("zi", "zile") }}.
 {% else %}
 Ciclu contract, {{ month_name }}: niciun contract.
 {% endif %}
-<i>{{ in_progress_mark }} cohortă mai tânără de {{ longest_bucket }} de zile: clienții și mediana încă cresc; «—» = prea devreme pentru coloană. Zile = mediana de la creare la contract.</i>
+<i>{{ in_progress_mark }} cohortă mai tânără de {{ longest_bucket | count_noun("zi", "zile") }}: clienții și mediana încă cresc; «—» = prea devreme pentru coloană. Zile = mediana de la creare la contract.</i>
 {% if clients_without_converted_at %}
-<i>{{ clients_without_converted_at }} lead-uri Clienți fără dată de conversie nu sunt în coloanele de zile.</i>
+<i>{{ clients_without_converted_at | count_noun("lead", "lead-uri") }} Clienți fără dată de conversie {{ "nu este" if clients_without_converted_at == 1 else "nu sunt" }} în coloanele de zile.</i>
 {% endif %}

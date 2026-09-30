@@ -53,6 +53,13 @@ def leads_in_period(lead_frame: pd.DataFrame, period: Period) -> pd.DataFrame:
     return lead_frame[in_period & ~lead_frame["is_excluded_from_leads"]]
 
 
+def converted_in_period(lead_frame: pd.DataFrame, period: Period) -> pd.DataFrame:
+    # docs/kpi-definitions.md, «Месячное окно», m3: контракт периода по converted_at в
+    # [start, end), не по когорте лидов; без исключений LEADS, как «Contracte» m3 и цикл m9.
+    converted_at = lead_frame["converted_at"]
+    return lead_frame[converted_at.ge(period.start) & converted_at.lt(period.end)]
+
+
 def count_flags(
     lead_frame: pd.DataFrame, period: Period, analysis_date: date, config: AppConfig
 ) -> pd.DataFrame:

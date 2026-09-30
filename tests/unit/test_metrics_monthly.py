@@ -727,3 +727,17 @@ def test_showroom_cohorts_sum_to_company(app_config: AppConfig) -> None:
     assert sum(cycle.contracts for cycle in result.cycle_by_showroom.values()) == 2
     assert result.cycle_by_showroom["Cluj"].median_days == pytest.approx(64)
     assert result.cohorts_by_showroom["Cluj"][-3].conversion == pytest.approx(1 / 2)
+
+
+def test_cohort_age_is_elapsed_time_across_dst_change(app_config: AppConfig) -> None:
+    # 31.12 19:00 EET → 31.03 19:00 EEST: 90 суток по часам, 90 суток без часа прошедшим временем.
+    december = date(2026, 12, 10)
+    leads = frame(app_config, cohort_client(1, at(december, 12), at(december, 13)))
+
+    cohorts = monthly_cohort_conversion(leads, date(2027, 3, 31), app_config).cohorts
+    december_cohort = cohorts[-4]
+
+    assert december_cohort.month == date(2026, 12, 1)
+    assert december_cohort.age_days == pytest.approx(90 - 1 / 24)
+    assert december_cohort.clients_within_days == {7: 1, 30: 1, 90: None}
+    assert december_cohort.in_progress

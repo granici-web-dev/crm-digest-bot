@@ -19,6 +19,7 @@ from digest.metrics.kpi import (
     LeadCounts,
     Period,
     add_counts,
+    converted_in_period,
     kpis_from,
     lead_counts,
     ratio,
@@ -309,16 +310,14 @@ def loss_reasons_in_window(
 
 
 def converted_count(lead_frame: pd.DataFrame, window: Period) -> int:
-    converted_at = lead_frame["converted_at"]
-    return int((converted_at.ge(window.start) & converted_at.lt(window.end)).sum())
+    return len(converted_in_period(lead_frame, window))
 
 
 def converted_count_by_showroom(
     lead_frame: pd.DataFrame, window: Period, config: AppConfig
 ) -> dict[str | None, int]:
     # docs/kpi-definitions.md, «Режим вопросов», контракты по шоуруму.
-    converted_at = lead_frame["converted_at"]
-    converted = lead_frame[converted_at.ge(window.start) & converted_at.lt(window.end)]
+    converted = converted_in_period(lead_frame, window)
     totals = Counter(map(key_or_none, converted["showroom"]))
     return {showroom: totals[showroom] for showroom in showroom_keys(converted["showroom"], config)}
 

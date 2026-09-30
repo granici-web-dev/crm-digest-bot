@@ -28,7 +28,7 @@ from digest.reports.modules.monthly import (
 )
 from digest.reports.modules.weekly import showroom_label
 from digest.reports.modules.weekly_excel import LEAD_SHEET_COLUMNS, sheet_text, write_lead_sheet
-from digest.reports.render import render
+from digest.reports.render import count_noun, render
 
 COUNT_HEADERS = (
     ("leads", "Lead-uri"),
@@ -245,7 +245,7 @@ def write_cohort_sheet(
             "Utile",
             "Clienți",
             "%",
-            *(f"≤{bucket} zile" for bucket in buckets),
+            *(f"≤{count_noun(bucket, 'zi', 'zile')}" for bucket in buckets),
             "Mediană zile",
             sheet_text("column_in_progress"),
         ],
@@ -277,7 +277,13 @@ def write_cohort_sheet(
     worksheet.write_row(
         cycle_header_row + 1,
         0,
-        ["Showroom", "Contracte", "Mediană zile", "P75 zile", f"≤{params.fast_cycle_days} zile"],
+        [
+            "Showroom",
+            "Contracte",
+            "Mediană zile",
+            "P75 zile",
+            f"≤{count_noun(params.fast_cycle_days, 'zi', 'zile')}",
+        ],
     )
     cycle_rows = [
         (showroom_label(showroom), cycle)

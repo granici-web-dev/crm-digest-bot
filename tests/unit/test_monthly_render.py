@@ -1,4 +1,5 @@
 import re
+from dataclasses import replace
 from datetime import date, datetime
 from io import BytesIO
 from typing import Any
@@ -14,6 +15,7 @@ from digest.delivery.telegram import split_message
 from digest.metrics.frame import prepare_lead_frame
 from digest.reports.context import ReportContext
 from digest.reports.modules import IMPLEMENTED_MODULES
+from digest.reports.render import count_noun
 from factories import BUCHAREST, make_lead_links, make_snapshot_row
 
 MONTH_END = date(2026, 9, 30)
@@ -427,7 +429,7 @@ def test_repeat_clients_text_notes_clients_without_conversion_date(
 
     assert "Clienți care revin</b>: 0 din 1 (0,0%)" in text
     assert "(fără showroom): 0 din 1 (0,0%)" in text
-    assert "1 lead-uri Clienți fără dată de conversie nu sunt incluse." in text
+    assert "1 lead Clienți fără dată de conversie nu este inclus." in text
 
 
 def test_monthly_workbook_client_sheet_matches_repeat_clients(app_config: AppConfig) -> None:
@@ -566,7 +568,7 @@ def test_cohort_text_fits_phone_width_and_notes_clients_without_conversion_date(
     assert "Mai     1   1  100  100  100  100    2" in code_lines
     assert "Sep* 1001   1  0,1    —    —    —    —" in code_lines
     assert "Ciclu contract, septembrie: niciun contract." in text
-    assert "1 lead-uri Clienți fără dată de conversie nu sunt în coloanele de zile." in text
+    assert "1 lead Clienți fără dată de conversie nu este în coloanele de zile." in text
 
 
 def test_monthly_workbook_cohort_sheet(app_config: AppConfig) -> None:
@@ -581,8 +583,8 @@ def test_monthly_workbook_cohort_sheet(app_config: AppConfig) -> None:
         "Clienți",
         "%",
         "≤7 zile",
-        "≤30 zile",
-        "≤90 zile",
+        "≤30 de zile",
+        "≤90 de zile",
         "Mediană zile",
         "În curs",
     )
@@ -602,3 +604,93 @@ def test_monthly_workbook_cohort_sheet(app_config: AppConfig) -> None:
     )
     assert rows[cycle_header + 1][:5] == ("Total", 1, 9.9, 9.9, 0.0)
     assert rows[cycle_header + 2][:5] == ("Brașov", 1, 9.9, 9.9, 0.0)
+    without_showroom = [row for row in rows if row[:2] == ("Sep 2026", "(fără showroom)")]
+    assert [row[2:5] for row in without_showroom] == [(1, 0, 0)]
+
+
+def test_cohort_sheet_has_no_lead_ids_or_client_contacts(app_config: AppConfig) -> None:
+    _, book = workbook(app_config)
+    cells = [str(cell) for row in sheet_rows(book, "Cohorte") for cell in row if cell is not None]
+
+    assert [cell for cell in cells if "id" in cell.lower().split()] == []
+    for value in CLIENT_DATA.values():
+        assert value not in cells
+    assert book["Cohorte"].max_column == 11
+
+
+def test_cohort_sheet_cycle_without_contracts_shows_dash(app_config: AppConfig) -> None:
+    leads = prepare_lead_frame(
+        [lead(lead_id, at(date(2026, 9, 3), 12), showroom="Cluj") for lead_id in range(1, 4)],
+        app_config,
+    )
+    result = IMPLEMENTED_MODULES["m19"](leads, context(app_config))
+    assert result.document is not None
+    rows = sheet_rows(load_workbook(BytesIO(result.document.content)), "Cohorte")
+
+    cycle_header = next(index for index, row in enumerate(rows) if row[0] == "Showroom")
+    assert rows[cycle_header + 1][:5] == ("Total", 0, "—", "—", "—")
+    assert len([row for row in rows[cycle_header + 1 :] if row[0] is not None]) == 1
+
+
+def test_cohort_older_than_longest_bucket_by_calendar_but_not_elapsed_is_in_progress(
+    app_config: AppConfig,
+) -> None:
+    leads = prepare_lead_frame(
+        [
+            lead(
+                1,
+                at(date(2026, 12, 10), 12),
+                category="WON",
+                status_name="Clienți",
+                converted_at=at(date(2026, 12, 11), 12),
+            )
+        ],
+        app_config,
+    )
+    march = replace(context(app_config), report_date=date(2027, 3, 31))
+
+    text = IMPLEMENTED_MODULES["m9"](leads, march).text
+
+    assert "Dec*    1   1  100  100  100    —    1" in re.findall("<code>(.*?)</code>", text)
+
+
+@pytest.mark.parametrize(
+    ("count", "expected"),
+    [
+        (0, "0 de zile"),
+        (1, "1 zi"),
+        (7, "7 zile"),
+        (19, "19 zile"),
+        (20, "20 de zile"),
+        (90, "90 de zile"),
+        (101, "101 zile"),
+        (120, "120 de zile"),
+    ],
+)
+def test_romanian_count_takes_de_from_twenty_and_at_zero(count: int, expected: str) -> None:
+    assert count_noun(count, "zi", "zile") == expected
+
+
+def test_cohort_cycle_line_uses_romanian_numerals(app_config: AppConfig) -> None:
+    september = date(2026, 9, 1)
+    leads = prepare_lead_frame(
+        [
+            lead(
+                lead_id,
+                at(september, 12),
+                category="WON",
+                status_name="Clienți",
+                converted_at=at(date(2026, 9, 25), 12),
+            )
+            for lead_id in range(1, 22)
+        ],
+        app_config,
+    )
+
+    text = IMPLEMENTED_MODULES["m9"](leads, context(app_config)).text
+
+    assert (
+        "Ciclu contract, septembrie: 21 de contracte, median 24 de zile, 75% până la 24 de zile, "
+        "0% în ≤7 zile." in text
+    )
+    assert "cohortă mai tânără de 90 de zile" in text

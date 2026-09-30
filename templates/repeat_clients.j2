@@ -8,5 +8,5 @@ Motiv: {{ repeat_by_contact }} {{ repeat_clients.company.by_contact }}, {{ repea
 {% endif %}
 <i>Revine: {{ repeat_by_contact }} al unui client anterior din mefi sau sursa {{ repeat_sources }}. Clienții dinainte de mefi (înainte de 2026) fără această sursă nu sunt vizibili, procentul e subestimat în primele luni.</i>
 {% if repeat_clients.won_without_converted_at %}
-<i>{{ repeat_clients.won_without_converted_at }} lead-uri Clienți fără dată de conversie nu sunt incluse.</i>
+<i>{{ repeat_clients.won_without_converted_at | count_noun("lead", "lead-uri") }} Clienți fără dată de conversie {{ "nu este inclus" if repeat_clients.won_without_converted_at == 1 else "nu sunt incluse" }}.</i>
 {% endif %}

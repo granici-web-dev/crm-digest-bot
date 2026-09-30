@@ -50,6 +50,17 @@ def dash_if_unknown(value: int | None) -> str:
     return "—" if value is None else str(value)
 
 
+def count_noun(count: int, singular: str, plural: str) -> str:
+    # Румынское числительное: 1 zi, 2–19 zile, «de» при нуле и от 20 по двум последним цифрам
+    # (20 de zile, 100 de zile, но 101 zile, 119 zile).
+    if count == 1:
+        return f"1 {singular}"
+    last_two_digits = count % 100
+    if last_two_digits == 0 or last_two_digits >= 20:
+        return f"{count} de {plural}"
+    return f"{count} {plural}"
+
+
 def percent(value: float | None) -> str:
     return "—" if value is None else f"{round(value * 100)}%"
 
@@ -136,6 +147,7 @@ def template_environment() -> Environment:
     environment.filters["percent"] = percent
     environment.filters["percent1"] = percent_one_decimal
     environment.filters["change"] = change_label
+    environment.filters["count_noun"] = count_noun
     return environment
 
 

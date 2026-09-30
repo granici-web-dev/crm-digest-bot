@@ -25,6 +25,7 @@ from digest.reports.modules.weekly import WITHOUT_SHOWROOM
 from digest.reports.render import (
     RO_MONTHS,
     campaign_label,
+    dash_if_unknown,
     percent,
     percent_one_decimal,
     render,
@@ -267,8 +268,12 @@ def share_cell(value: float | None) -> str:
     return percent_one_decimal(value).removesuffix("%")
 
 
+def rounded_days(days: float | None) -> int | None:
+    return None if days is None else round(days)
+
+
 def days_cell(days: float | None) -> str:
-    return "—" if days is None else str(round(days))
+    return dash_if_unknown(rounded_days(days))
 
 
 def cohort_line(label: str, cells: tuple[str, ...]) -> str:
@@ -306,8 +311,8 @@ def cohort_conversion_report(lead_frame: pd.DataFrame, context: ReportContext) -
             lines=[header, *(cohort_row_line(row, buckets) for row in conversion.cohorts)],
             month_name=RO_MONTHS[conversion.report_month.month - 1],
             cycle=cycle,
-            cycle_median=days_cell(cycle.median_days),
-            cycle_p75=days_cell(cycle.p75_days),
+            cycle_median=rounded_days(cycle.median_days),
+            cycle_p75=rounded_days(cycle.p75_days),
             fast_cycle_days=params.fast_cycle_days,
             in_progress_mark=IN_PROGRESS_MARK,
             longest_bucket=buckets[-1],
