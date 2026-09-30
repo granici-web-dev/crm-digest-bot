@@ -14,6 +14,7 @@ from digest.metrics.daily import (
     shifted_days,
     transition_flags,
 )
+from digest.metrics.frame import status_set_at
 from digest.metrics.kpi import (
     Kpis,
     LeadCounts,
@@ -290,15 +291,11 @@ def weekly_loss_reasons(
 def loss_reasons_in_window(
     lead_frame: pd.DataFrame, window: Period, config: AppConfig
 ) -> LossReasons:
-    # Потеря окна: статус сменился в окне; лид, созданный сразу со статусом потери, имеет
-    # status_changed_at = null (CLAUDE.md, ловушки mefi) и считается по created_at.
-    changed_at, created_at = lead_frame["status_changed_at"], lead_frame["created_at"]
-    changed_in_window = changed_at.ge(window.start) & changed_at.lt(window.end)
-    created_lost_in_window = (
-        changed_at.isna() & created_at.ge(window.start) & created_at.lt(window.end)
-    )
+    # Потеря окна: статус сменился в окне; лид, созданный сразу со статусом потери, считается
+    # по created_at.
+    lost_at = status_set_at(lead_frame)
     lost = lead_frame[
-        lead_frame["category"].eq("LOST") & (changed_in_window | created_lost_in_window)
+        lead_frame["category"].eq("LOST") & lost_at.ge(window.start) & lost_at.lt(window.end)
     ]
     reasons = tuple(config.status_mapping.categories.LOST.reasons)
     pairs = Counter(zip(map(key_or_none, lost["showroom"]), lost["loss_reason"], strict=True))

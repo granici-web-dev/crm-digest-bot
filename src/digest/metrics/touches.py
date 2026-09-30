@@ -8,6 +8,7 @@ import pandas as pd
 from digest.config import AppConfig
 from digest.metrics.daily import PreviousSnapshot, daily_window, daily_window_days
 from digest.metrics.daily_checks import manager_names, name_or_not_taken, not_taken_first
+from digest.metrics.frame import status_set_at
 
 logger = logging.getLogger(__name__)
 
@@ -88,12 +89,9 @@ def touch_rows(
         (in_previous & status_changed) | (~in_previous & created_after_previous)
     )
     touches = frame[touched]
-    # status_changed_at = null, если статус задан при создании (CLAUDE.md): новый лид сразу в
-    # Revenire датируется created_at. День вне пары (правка до previous, поздний снапшот)
-    # прижимается к дню current: касание не теряется.
-    touch_day = daily_window_days(
-        touches["status_changed_at"].fillna(touches["created_at"]), time_settings
-    )
+    # День вне пары (правка до previous, поздний снапшот) прижимается к дню current: касание не
+    # теряется.
+    touch_day = daily_window_days(status_set_at(touches), time_settings)
     inside_pair = touch_day.gt(previous.snapshot_date) & touch_day.le(current.snapshot_date)
     clamped_count = int((~inside_pair).sum())
     if clamped_count:

@@ -14,6 +14,7 @@ from digest.metrics.daily import (
     lead_row_flags,
 )
 from digest.metrics.extra import overdue_revenire, value_difference
+from digest.metrics.frame import status_set_at
 from digest.metrics.kpi import (
     Period,
     converted_in_period,
@@ -287,11 +288,10 @@ def missing_followup_date(
     created_from = datetime.combine(
         status_mapping.leads_created_from, time(), tzinfo=ZoneInfo(status_mapping.time.timezone)
     )
-    # Возраст от конца окна, как в d2. status_changed_at = null, если статус задан при создании
-    # (CLAUDE.md): тогда статус стоит с created_at.
+    # Возраст от конца окна, как в d2.
     window_end = daily_window(report_date, status_mapping.time).end
-    status_set_at = lead_frame["status_changed_at"].fillna(lead_frame["created_at"])
-    status_age_hours = (window_end - status_set_at).dt.total_seconds() / 3600
+    status_since = status_set_at(lead_frame)
+    status_age_hours = (window_end - status_since).dt.total_seconds() / 3600
     min_age_hours = config.modules.overdue_revenire_params.missing_followup_min_age_hours
     in_scope = (
         lead_frame["is_followup_status"]
@@ -303,7 +303,7 @@ def missing_followup_date(
     # Поле пропало или переименовано в mefi у всех: «nu» в блоке было бы неверной цифрой.
     field_unavailable = unreadable_count > 0 and unreadable_count == int(in_scope.sum())
     reported = in_scope & ~unreadable & lead_frame["data_revenire"].isna()
-    leads = oldest_first(lead_frame[reported], status_set_at[reported])
+    leads = oldest_first(lead_frame[reported], status_since[reported])
     groups = tuple(
         MissingFollowupGroup(manager_name, lead_count, lead_ids)
         for manager_name, lead_count, _, lead_ids in count_and_max_by_manager(
@@ -401,9 +401,7 @@ def anomalies(lead_frame: pd.DataFrame, report_date: date, config: AppConfig) ->
     )
 
     window = daily_window(report_date, time_settings)
-    # status_changed_at = null, если статус задан при создании (CLAUDE.md): тогда момент
-    # отметки IRELEVANT это created_at.
-    marked_at = lead_frame["status_changed_at"].fillna(lead_frame["created_at"])
+    marked_at = status_set_at(lead_frame)
     marked_in_window = (
         lead_frame["is_irelevant"] & marked_at.ge(window.start) & marked_at.lt(window.end)
     )

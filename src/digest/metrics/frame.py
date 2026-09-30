@@ -82,6 +82,12 @@ def prepare_lead_frame(rows: list[dict[str, Any]], config: AppConfig) -> pd.Data
     return lead_frame.join(showroom_visit_flags(lead_frame, config))
 
 
+def status_set_at(lead_frame: pd.DataFrame) -> pd.Series:
+    # status_changed_at = null, если статус задан при создании (CLAUDE.md, «Ловушки mefi API»):
+    # тогда статус стоит с created_at.
+    return lead_frame["status_changed_at"].fillna(lead_frame["created_at"])
+
+
 def unknown_manager_ids(lead_frame: pd.DataFrame, config: AppConfig) -> set[int]:
     known_ids = {manager.id for manager in config.managers.managers}
     # created_by тоже: лид, заведённый продавцом вне managers.yaml, d2 молча показал бы
