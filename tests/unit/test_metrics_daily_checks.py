@@ -622,7 +622,7 @@ def test_rolling_contract_rate_counts_contracts_by_converted_at_and_useful_by_cr
 
     assert (result.contracts, result.useful, result.rate) == (2, 3, 2 / 3)
     assert (result.previous_contracts, result.previous_useful, result.previous_rate) == (1, 2, 0.5)
-    assert (result.difference_pp, result.direction) == (16.666666667, "up")
+    assert (result.difference_pp, result.direction) == (16.7, "up")
 
 
 def test_rolling_window_starts_at_1900_of_day_before_first_day(app_config: AppConfig) -> None:
@@ -678,18 +678,17 @@ def test_partnership_contract_counts_useful_does_not(app_config: AppConfig) -> N
 
 
 def test_rolling_window_across_dst_has_thirty_daily_windows(app_config: AppConfig) -> None:
-    # 25.10.2026 переход на зимнее время: окно дня 25.10 длится 25 часов, начало 30 окон
-    # отчёта 10.11 это 11.10 19:00 по летнему времени.
+    # 25.10.2026 переход на зимнее время, окно дня 25.10 длится 25 часов. 25-часовые сутки держит
+    # лид 2: начало 30 окон отчёта 10.11 это 11.10 19:00 по летнему времени, а не 18:00 или 20:00.
     rows = [
         new_lead(1, datetime(2026, 10, 11, 18, 59, tzinfo=BUCHAREST)),
         new_lead(2, datetime(2026, 10, 11, 19, 0, tzinfo=BUCHAREST)),
-        new_lead(3, datetime(2026, 10, 25, 18, 30, tzinfo=BUCHAREST)),
-        new_lead(4, datetime(2026, 11, 10, 18, 59, tzinfo=BUCHAREST)),
+        new_lead(3, datetime(2026, 11, 10, 18, 59, tzinfo=BUCHAREST)),
     ]
 
     result = rolling_contract_rate(frame(rows, app_config), date(2026, 11, 10), app_config)
 
-    assert (result.useful, result.previous_useful) == (3, 1)
+    assert (result.useful, result.previous_useful) == (2, 1)
 
 
 @pytest.mark.parametrize(
@@ -702,29 +701,46 @@ def test_direction_flat_below_threshold_and_arrow_at_threshold(
     assert trend_direction(difference_pp, 2.0) == direction
 
 
-@pytest.mark.parametrize(("previous_useful", "direction"), [(50, "up"), (49, "flat")])
+@pytest.mark.parametrize(("previous_useful", "direction"), [(130, "down"), (134, "flat")])
 def test_rate_difference_at_threshold_is_not_lost_to_float_error(
     app_config: AppConfig, previous_useful: int, direction: str
 ) -> None:
-    # 3/50 − 2/50 это ровно 2,0 п.п.; 3/50 − 2/49 это 1,92 п.п.
-    this_window = datetime(2026, 9, 10, 12, 0, tzinfo=BUCHAREST)
-    previous_window = datetime(2026, 8, 10, 12, 0, tzinfo=BUCHAREST)
-    current = [
-        contract(lead_id, this_window, created_at=this_window)
-        if lead_id < 3
-        else new_lead(lead_id, this_window)
-        for lead_id in range(50)
-    ]
-    previous = [
-        contract(100 + lead_id, previous_window, created_at=previous_window)
-        if lead_id < 2
-        else new_lead(100 + lead_id, previous_window)
-        for lead_id in range(previous_useful)
+    # 1/333 это 0,3 %, 3/130 это 2,3 %: 0,3 − 2,3 в float это −1,9999999999999998. 3/134 это 2,2 %.
+    rows = [
+        *useful_leads_with_contracts(0, datetime(2026, 9, 10, 12, 0, tzinfo=BUCHAREST), 333, 1),
+        *useful_leads_with_contracts(
+            1000, datetime(2026, 8, 10, 12, 0, tzinfo=BUCHAREST), previous_useful, 3
+        ),
     ]
 
-    result = rolling_contract_rate(frame(current + previous, app_config), REPORT_DATE, app_config)
+    result = rolling_contract_rate(frame(rows, app_config), REPORT_DATE, app_config)
 
     assert result.direction == direction
+
+
+def useful_leads_with_contracts(
+    first_id: int, created_at: datetime, useful: int, contracts: int
+) -> list[dict[str, Any]]:
+    return [
+        contract(first_id + offset, created_at, created_at=created_at)
+        if offset < contracts
+        else new_lead(first_id + offset, created_at)
+        for offset in range(useful)
+    ]
+
+
+def test_direction_follows_shown_percents_not_exact_rates(app_config: AppConfig) -> None:
+    # 25/251 = 9,96 % показывается как 10,0 %; с 8,0 % в строке это 2,0 п.п. и стрелка, хотя
+    # точная разница 1,96 п.п.
+    rows = [
+        *useful_leads_with_contracts(0, datetime(2026, 9, 10, 12, 0, tzinfo=BUCHAREST), 251, 25),
+        *useful_leads_with_contracts(1000, datetime(2026, 8, 10, 12, 0, tzinfo=BUCHAREST), 250, 20),
+    ]
+
+    result = rolling_contract_rate(frame(rows, app_config), REPORT_DATE, app_config)
+
+    assert (result.rate, result.previous_rate) == (25 / 251, 0.08)
+    assert (result.difference_pp, result.direction) == (2.0, "up")
 
 
 def test_zero_useful_gives_no_rate_and_no_direction(app_config: AppConfig) -> None:
@@ -931,7 +947,7 @@ def test_every_check_is_empty_on_empty_frame(app_config: AppConfig) -> None:
         date(2026, 9, 18), 0, 0, 0, 0
     )
     assert rolling_contract_rate(lead_frame, REPORT_DATE, app_config) == RollingContractRate(
-        30, 0, 0, None, 0, 0, None, None, None
+        30, 0, 0, None, 0, 0, None, None, None, 2.0
     )
 
 

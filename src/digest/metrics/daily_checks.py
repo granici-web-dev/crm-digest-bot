@@ -149,6 +149,7 @@ class RollingContractRate:
     previous_rate: float | None
     difference_pp: float | None
     direction: TrendDirection | None
+    trend_threshold_pp: float
 
 
 def manager_names(leads: pd.DataFrame, config: AppConfig) -> pd.Series:
@@ -447,6 +448,11 @@ def trend_direction(difference_pp: float | None, threshold_pp: float) -> TrendDi
     return "up" if difference_pp > 0 else "down"
 
 
+def shown_percent(share: float | None) -> float | None:
+    # Как percent1 в шаблоне: f"{:.1f}" и round(, 1) округляют одно и то же двоичное значение.
+    return None if share is None else round(share * 100, 1)
+
+
 def rolling_contract_rate(
     lead_frame: pd.DataFrame, report_date: date, config: AppConfig
 ) -> RollingContractRate:
@@ -461,7 +467,7 @@ def rolling_contract_rate(
             daily_window(last_day - timedelta(days=window_days - 1), time_settings).start,
             daily_window(last_day, time_settings).end,
         )
-        useful = lead_counts(lead_frame, window, last_day, config).useful
+        useful = lead_counts(lead_frame, window, report_date, config).useful
         return len(converted_in_period(lead_frame, window)), useful
 
     contracts, useful = contracts_and_useful(report_date)
@@ -470,10 +476,11 @@ def rolling_contract_rate(
     )
     rate = ratio(contracts, useful)
     previous_rate = ratio(previous_contracts, previous_useful)
-    difference = value_difference(rate, previous_rate)
-    # Округление до 1e-9 п.п.: 6 % − 4 % в float это 1,9999999999999996 п.п., и порог 2,0
-    # на границе давал бы «=».
-    difference_pp = None if difference is None else round(difference * 100, 9)
+    # Разница из показанных процентов: 9,96 % и 8,0 % в строке это 10,0 % и 8,0 %, и «=» при
+    # пороге 2,0 противоречил бы цифрам. Внешнее округление до 1e-9: 0,3 − 2,3 в float это
+    # −1,9999999999999998.
+    difference = value_difference(shown_percent(rate), shown_percent(previous_rate))
+    difference_pp = None if difference is None else round(difference, 9)
     return RollingContractRate(
         window_days,
         contracts,
@@ -484,4 +491,5 @@ def rolling_contract_rate(
         previous_rate,
         difference_pp,
         trend_direction(difference_pp, params.trend_threshold_pp),
+        params.trend_threshold_pp,
     )

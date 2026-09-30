@@ -240,9 +240,9 @@ def test_same_weekday_compare_render(week_ago_date: date, snapshot: SnapshotAsse
 @pytest.mark.parametrize(
     "result",
     [
-        RollingContractRate(30, 28, 367, 28 / 367, 36, 298, 36 / 298, -4.5, "down"),
-        RollingContractRate(30, 1, 50, 0.02, 1, 40, 0.025, -0.5, "flat"),
-        RollingContractRate(30, 0, 0, None, 3, 60, 0.05, None, None),
+        RollingContractRate(30, 28, 367, 28 / 367, 36, 298, 36 / 298, -4.5, "down", 2.0),
+        RollingContractRate(30, 1, 50, 0.02, 1, 40, 0.025, -0.5, "flat", 1.5),
+        RollingContractRate(30, 0, 0, None, 3, 60, 0.05, None, None, 2.0),
     ],
     ids=["down", "flat", "no_useful"],
 )

@@ -137,7 +137,7 @@ Lead-uri azi: 11 (joia trecută: 8) · Contracte: 1 (0)
 ```
 📈 Rata contractelor, 30 de zile: 7,6% (28 de contracte / 367 de lead-uri utile)
 30 de zile anterioare: 12,1% (36 / 298) ↓
-Contracte după data semnării, lead-uri utile create în aceleași zile. Nu este SCR-ul lunii.
+Contracte după data semnării, lead-uri utile create în aceleași zile. = diferență sub 2 p.p. Nu este SCR-ul lunii.
 ```
 
 Пример RU:

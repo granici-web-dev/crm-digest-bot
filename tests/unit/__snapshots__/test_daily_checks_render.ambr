@@ -49,21 +49,21 @@
   '''
   📈 Rata contractelor, 30 de zile: 7,6% (28 de contracte / 367 de lead-uri utile)
   30 de zile anterioare: 12,1% (36 / 298) ↓
-  <i>Contracte după data semnării, lead-uri utile create în aceleași zile. Nu este SCR-ul lunii.</i>
+  <i>Contracte după data semnării, lead-uri utile create în aceleași zile. = diferență sub 2 p.p. Nu este SCR-ul lunii.</i>
   '''
 # ---
 # name: test_rolling_contract_rate_render[flat]
   '''
   📈 Rata contractelor, 30 de zile: 2,0% (1 contract / 50 de lead-uri utile)
   30 de zile anterioare: 2,5% (1 / 40) =
-  <i>Contracte după data semnării, lead-uri utile create în aceleași zile. Nu este SCR-ul lunii.</i>
+  <i>Contracte după data semnării, lead-uri utile create în aceleași zile. = diferență sub 1,5 p.p. Nu este SCR-ul lunii.</i>
   '''
 # ---
 # name: test_rolling_contract_rate_render[no_useful]
   '''
   📈 Rata contractelor, 30 de zile: — (0 de contracte / 0 de lead-uri utile)
   30 de zile anterioare: 5,0% (3 / 60)
-  <i>Contracte după data semnării, lead-uri utile create în aceleași zile. Nu este SCR-ul lunii.</i>
+  <i>Contracte după data semnării, lead-uri utile create în aceleași zile. = diferență sub 2 p.p. Nu este SCR-ul lunii.</i>
   '''
 # ---
 # name: test_same_weekday_compare_render[sunday]
