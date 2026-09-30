@@ -9,8 +9,11 @@ from digest.metrics.kpi import kpis_from
 from digest.metrics.monthly import (
     REPEAT_BY_CONTACT,
     REPEAT_BY_SOURCE,
+    CohortRow,
+    DealCycle,
     month_window,
     monthly_client_rows,
+    monthly_cohort_conversion,
     monthly_funnel,
     monthly_lead_rows,
     monthly_loss_reasons,
@@ -184,6 +187,111 @@ def write_loss_sheet(
     worksheet.set_column(1, 4, VALUE_COLUMN_WIDTH)
 
 
+def write_days(worksheet: Any, row: int, column: int, days: float | None) -> None:
+    if days is None:
+        worksheet.write_string(row, column, MISSING_VALUE)
+    else:
+        worksheet.write_number(row, column, round(days, 1))
+
+
+def write_cohort_row(
+    worksheet: Any,
+    row_index: int,
+    label: str,
+    showroom: str,
+    row: CohortRow,
+    buckets: list[int],
+    formats: dict[str, Any],
+) -> None:
+    counts = row.counts
+    worksheet.write_row(
+        row_index, 0, [label, showroom, counts.leads, counts.useful, counts.clienti]
+    )
+    write_share(worksheet, row_index, 5, row.conversion, formats["percent"])
+    for offset, bucket in enumerate(buckets):
+        write_share(worksheet, row_index, 6 + offset, row.share_within(bucket), formats["percent"])
+    write_days(worksheet, row_index, 6 + len(buckets), row.median_days)
+    worksheet.write(
+        row_index,
+        7 + len(buckets),
+        sheet_text("in_progress_yes" if row.in_progress else "in_progress_no"),
+    )
+
+
+def write_cycle_row(
+    worksheet: Any, row_index: int, showroom: str, cycle: DealCycle, formats: dict[str, Any]
+) -> None:
+    worksheet.write_row(row_index, 0, [showroom, cycle.contracts])
+    write_days(worksheet, row_index, 2, cycle.median_days)
+    write_days(worksheet, row_index, 3, cycle.p75_days)
+    write_share(worksheet, row_index, 4, cycle.share_within_fast, formats["percent"])
+
+
+def write_cohort_sheet(
+    workbook: Any, lead_frame: pd.DataFrame, context: ReportContext, formats: dict[str, Any]
+) -> None:
+    worksheet = workbook.add_worksheet(sheet_text("sheet_cohorts"))
+    conversion = monthly_cohort_conversion(lead_frame, context.report_date, context.config)
+    params = context.config.modules.cohort_conversion_params
+    buckets = params.age_buckets_days
+    month_labels = chart_labels()
+    worksheet.write_row(
+        0,
+        0,
+        [
+            "Luna",
+            "Showroom",
+            "Lead-uri",
+            "Utile",
+            "Clienți",
+            "%",
+            *(f"≤{bucket} zile" for bucket in buckets),
+            "Mediană zile",
+            sheet_text("column_in_progress"),
+        ],
+    )
+    row_index = 1
+    for index, company in enumerate(conversion.cohorts):
+        label = month_labels.month_label(company.month)
+        write_cohort_row(worksheet, row_index, label, "Total", company, buckets, formats)
+        row_index += 1
+        for showroom, cohorts in conversion.cohorts_by_showroom.items():
+            if cohorts[index].counts.leads:
+                write_cohort_row(
+                    worksheet,
+                    row_index,
+                    label,
+                    showroom_label(showroom),
+                    cohorts[index],
+                    buckets,
+                    formats,
+                )
+                row_index += 1
+    worksheet.write(row_index + 1, 0, sheet_text("cohort_note", longest_bucket=buckets[-1]))
+    cycle_header_row = row_index + 3
+    worksheet.write(
+        cycle_header_row,
+        0,
+        sheet_text("cycle_title", month=month_labels.month_label(conversion.report_month)),
+    )
+    worksheet.write_row(
+        cycle_header_row + 1,
+        0,
+        ["Showroom", "Contracte", "Mediană zile", "P75 zile", f"≤{params.fast_cycle_days} zile"],
+    )
+    cycle_rows = [
+        (showroom_label(showroom), cycle)
+        for showroom, cycle in conversion.cycle_by_showroom.items()
+        if cycle.contracts
+    ]
+    for offset, (showroom, cycle) in enumerate(
+        [("Total", conversion.cycle), *cycle_rows], start=cycle_header_row + 2
+    ):
+        write_cycle_row(worksheet, offset, showroom, cycle, formats)
+    worksheet.set_column(0, 1, NAME_COLUMN_WIDTH)
+    worksheet.set_column(2, 7 + len(buckets), VALUE_COLUMN_WIDTH)
+
+
 def monthly_workbook(lead_frame: pd.DataFrame, context: ReportContext) -> bytes:
     output = BytesIO()
     workbook = xlsxwriter.Workbook(output, {"in_memory": True})
@@ -195,6 +303,7 @@ def monthly_workbook(lead_frame: pd.DataFrame, context: ReportContext) -> bytes:
     write_manager_sheet(workbook, lead_frame, context, formats)
     write_funnel_sheet(workbook, lead_frame, context, formats)
     write_loss_sheet(workbook, lead_frame, context, formats)
+    write_cohort_sheet(workbook, lead_frame, context, formats)
     write_lead_sheet(
         workbook,
         "Lead-uri luna",

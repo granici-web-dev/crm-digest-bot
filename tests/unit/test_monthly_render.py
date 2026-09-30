@@ -17,7 +17,7 @@ from digest.reports.modules import IMPLEMENTED_MODULES
 from factories import BUCHAREST, make_lead_links, make_snapshot_row
 
 MONTH_END = date(2026, 9, 30)
-MONTHLY_MODULES = ("m2", "m3", "m4", "m5", "m7", "m8", "m11", "m19")
+MONTHLY_MODULES = ("m2", "m3", "m4", "m5", "m7", "m8", "m9", "m11", "m19")
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 # Синтетические данные клиента: кадр их не несёт, тест подкладывает их, чтобы проверить, что
 # ни текст, ни вложение не берут лишних колонок.
@@ -279,6 +279,7 @@ def test_monthly_workbook_sheets_and_filename(app_config: AppConfig) -> None:
         "KPI consilieri",
         "Funnel showroom",
         "Motive pierdere",
+        "Cohorte",
         "Lead-uri luna",
         "Clienți luna",
     ]
@@ -537,3 +538,67 @@ def test_source_conversion_hides_phone_like_campaign(app_config: AppConfig) -> N
 
     assert "0712345678" not in text
     assert "campanie ascunsă" in text
+
+
+def test_cohort_text_fits_phone_width_and_notes_clients_without_conversion_date(
+    app_config: AppConfig,
+) -> None:
+    leads = prepare_lead_frame(
+        [
+            lead(
+                1,
+                at(date(2026, 5, 2), 12),
+                category="WON",
+                status_name="Clienți",
+                converted_at=at(date(2026, 5, 4), 12),
+            ),
+            lead(2, at(date(2026, 9, 2), 12), category="WON", status_name="Clienți"),
+            *(lead(lead_id, at(date(2026, 9, 3), 12)) for lead_id in range(3, 1003)),
+        ],
+        app_config,
+    )
+
+    text = IMPLEMENTED_MODULES["m9"](leads, context(app_config)).text
+    code_lines = re.findall("<code>(.*?)</code>", text)
+
+    assert len(code_lines) == 7
+    assert max(len(line) for line in code_lines) <= 38
+    assert "Mai     1   1  100  100  100  100    2" in code_lines
+    assert "Sep* 1001   1  0,1    —    —    —    —" in code_lines
+    assert "Ciclu contract, septembrie: niciun contract." in text
+    assert "1 lead-uri Clienți fără dată de conversie nu sunt în coloanele de zile." in text
+
+
+def test_monthly_workbook_cohort_sheet(app_config: AppConfig) -> None:
+    _, book = workbook(app_config)
+    rows = sheet_rows(book, "Cohorte")
+
+    assert rows[0] == (
+        "Luna",
+        "Showroom",
+        "Lead-uri",
+        "Utile",
+        "Clienți",
+        "%",
+        "≤7 zile",
+        "≤30 zile",
+        "≤90 zile",
+        "Mediană zile",
+        "În curs",
+    )
+    may = [row for row in rows if row[0] == "Mai 2026"]
+    assert [row[1] for row in may] == ["Total", "București"]
+    assert may[0] == ("Mai 2026", "Total", 1, 1, 1, 1.0, 0.0, 0.0, 1.0, 63.0, "NU")
+    september = row_labelled(rows, "Sep 2026")
+    assert september[1:6] == ("Total", 13, 12, 1, pytest.approx(1 / 12))
+    assert september[6:] == ("—", "—", "—", 9.9, "DA")
+    cycle_header = next(index for index, row in enumerate(rows) if row[0] == "Showroom")
+    assert rows[cycle_header][:5] == (
+        "Showroom",
+        "Contracte",
+        "Mediană zile",
+        "P75 zile",
+        "≤7 zile",
+    )
+    assert rows[cycle_header + 1][:5] == ("Total", 1, 9.9, 9.9, 0.0)
+    assert rows[cycle_header + 2][:5] == ("Brașov", 1, 9.9, 9.9, 0.0)

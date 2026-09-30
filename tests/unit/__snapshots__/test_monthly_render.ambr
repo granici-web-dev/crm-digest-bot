@@ -8,7 +8,7 @@
   '''
 # ---
 # name: test_monthly_module_text[m19]
-  '📎 sofabelle_2026-09.xlsx: KPI consilieri, pâlnia pe showroom, motive de pierdere, lista lead-urilor lunii, clienții lunii'
+  '📎 sofabelle_2026-09.xlsx: KPI consilieri, pâlnia pe showroom, motive de pierdere, cohorte, lista lead-urilor lunii, clienții lunii'
 # ---
 # name: test_monthly_module_text[m2]
   '''
@@ -94,6 +94,20 @@
   Buget 1 · 50% (Aug 1) (=)
   Irelevant 1 · 50% (Aug 0) (—)
   Nu a răspuns 0 · 0% (Aug 1) (−100%)
+  '''
+# ---
+# name: test_monthly_module_text[m9]
+  '''
+  <b>Conversie de cohortă</b> (% din lead-uri utile)
+  <code>Luna Lead Cl.    %   ≤7  ≤30  ≤90 Zile</code>
+  <code>Apr     0   0    —    —    —    —    —</code>
+  <code>Mai     1   1  100  0,0  0,0  100   63</code>
+  <code>Iun     0   0    —    —    —    —    —</code>
+  <code>Iul*    0   0    —    —    —    —    —</code>
+  <code>Aug*    2   0  0,0  0,0  0,0    —    —</code>
+  <code>Sep*   13   1  8,3    —    —    —   10</code>
+  Ciclu contract, septembrie: 1 contract, median 10 zile, 75% până la 10 zile, 0% în ≤7 zile.
+  <i>* cohortă mai tânără de 90 de zile: clienții și mediana încă cresc; «—» = prea devreme pentru coloană. Zile = mediana de la creare la contract.</i>
   '''
 # ---
 # name: test_source_conversion_text_with_other_without_source_and_campaigns

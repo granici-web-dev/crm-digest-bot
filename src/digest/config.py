@@ -399,6 +399,18 @@ class ScrLevelsParams(StrictConfigModel):
     below_label: str
 
 
+class CohortConversionParams(StrictConfigModel):
+    age_buckets_days: list[PositiveInt] = Field(min_length=1)
+    fast_cycle_days: PositiveInt
+
+    @model_validator(mode="after")
+    def age_buckets_are_ascending(self) -> Self:
+        buckets = self.age_buckets_days
+        if any(later <= earlier for earlier, later in pairwise(buckets)):
+            raise ValueError("age_buckets_days: дни корзин должны строго возрастать")
+        return self
+
+
 ChatToolName = Literal[
     "funnel",
     "manager_kpi",
@@ -455,6 +467,7 @@ class ModuleRegistry(StrictConfigModel):
     _scr_levels_params: ScrLevelsParams = PrivateAttr()
     _scr_by_source_campaign_params: ScrBySourceCampaignParams = PrivateAttr()
     _irr_by_campaign_params: IrrByCampaignParams = PrivateAttr()
+    _cohort_conversion_params: CohortConversionParams = PrivateAttr()
 
     @property
     def untouched_leads_params(self) -> UntouchedLeadsParams:
@@ -479,6 +492,10 @@ class ModuleRegistry(StrictConfigModel):
     @property
     def irr_by_campaign_params(self) -> IrrByCampaignParams:
         return self._irr_by_campaign_params
+
+    @property
+    def cohort_conversion_params(self) -> CohortConversionParams:
+        return self._cohort_conversion_params
 
     def module_named(self, name: str) -> tuple[str, ReportModule]:
         for module_id, module in self.all_modules.items():
@@ -543,6 +560,9 @@ class ModuleRegistry(StrictConfigModel):
             "scr_by_source_campaign", ScrBySourceCampaignParams
         )
         self._irr_by_campaign_params = self.parsed_params("irr_by_campaign", IrrByCampaignParams)
+        self._cohort_conversion_params = self.parsed_params(
+            "cohort_conversion", CohortConversionParams
+        )
         return self
 
 

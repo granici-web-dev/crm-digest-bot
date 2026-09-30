@@ -73,7 +73,9 @@ monthly:          # календарный месяц, отправка 1-го �
   # единичные источники (снапшот 28.09.2026).
   m7:  { name: scr_by_source_campaign, label: "Conversie pe sursă", sources: [A],   enabled: true, params: { min_source_leads: 10, min_campaign_leads: 5, campaign_label_max_length: 40 } }
   m8:  { name: loss_reasons_trend, label: "Motive de pierdere, evoluție",    sources: [A],    enabled: true }
-  m9:  { name: cohort_conversion, label: "Conversie de cohortă",     sources: [A],    enabled: false }
+  # Корзины «клиент за ≤N дней от создания лида», по возрастанию; ≤N видна, когда когорте ≥ N суток.
+  # fast_cycle_days: порог «быстрого» договора в строке цикла (docs/kpi-definitions.md, m9).
+  m9:  { name: cohort_conversion, label: "Conversie de cohortă",     sources: [A],    enabled: true, params: { age_buckets_days: [7, 30, 90], fast_cycle_days: 7 } }
   m10: { name: contracts_avg_value, label: "Contracte și valoare medie",   sources: [B],    enabled: false }
   m11: { name: repeat_clients, label: "Clienți care revin",        sources: [A],    enabled: true }
   m12: { name: cpo_cac_by_channel, label: "CPO și CAC pe canal",    sources: [A, D], enabled: false }

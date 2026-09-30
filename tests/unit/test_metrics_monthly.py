@@ -7,6 +7,7 @@ import pytest
 
 from digest.config import AppConfig
 from digest.metrics.daily import daily_window
+from digest.metrics.extra import cohort_conversion
 from digest.metrics.frame import prepare_lead_frame
 from digest.metrics.kpi import Period
 from digest.metrics.monthly import (
@@ -15,8 +16,10 @@ from digest.metrics.monthly import (
     REPEAT_BY_SOURCE,
     RepeatClientCounts,
     ScrRow,
+    deal_cycle,
     month_window,
     monthly_client_rows,
+    monthly_cohort_conversion,
     monthly_funnel,
     monthly_lead_rows,
     monthly_loss_reasons,
@@ -488,3 +491,239 @@ def test_month_without_campaigns_has_zero_share(app_config: AppConfig) -> None:
     assert conversion.campaign_share == 0
     assert conversion.by_campaign.rows == ()
     assert conversion.by_campaign.other is None
+
+
+def cohort_client(
+    lead_id: int, created_at: datetime, converted_at: datetime | None, **overrides: Any
+) -> dict[str, Any]:
+    return lead(
+        lead_id,
+        created_at,
+        **{"category": "WON", "status_name": "Clienți", "converted_at": converted_at, **overrides},
+    )
+
+
+def irelevant(lead_id: int, created_at: datetime, **overrides: Any) -> dict[str, Any]:
+    return lost(lead_id, created_at, "IRELEVANT", status_name="IRELEVANT", **overrides)
+
+
+SEPTEMBER, AUGUST, JULY, JUNE = (date(2026, month, 10) for month in (9, 8, 7, 6))
+
+
+def test_cohort_rate_equals_scr_of_monthly_funnel(app_config: AppConfig) -> None:
+    leads = frame(
+        app_config,
+        lead(1, at(SEPTEMBER, 12)),
+        lead(2, at(SEPTEMBER, 12)),
+        irelevant(3, at(SEPTEMBER, 12)),
+        cohort_client(4, at(SEPTEMBER, 12), at(date(2026, 9, 12), 12)),
+        cohort_client(5, at(SEPTEMBER, 13), None),
+    )
+
+    cohorts = monthly_cohort_conversion(leads, SEPTEMBER_END, app_config).cohorts
+    september = cohorts[-1]
+
+    assert [row.month for row in cohorts] == list(trend_months(SEPTEMBER_END))
+    assert september.conversion == pytest.approx(2 / 4)
+    assert september.conversion == (
+        monthly_scr(monthly_funnel(leads, SEPTEMBER_END, app_config), app_config).company.scr
+    )
+    assert september.conversion == cohort_conversion(
+        leads, month_window(SEPTEMBER_END, app_config.status_mapping.time), app_config
+    )
+
+
+def test_cohort_excludes_partnership_and_test_accounts(app_config: AppConfig) -> None:
+    converted_at = at(date(2026, 6, 12), 12)
+    leads = frame(
+        app_config,
+        cohort_client(1, at(JUNE, 12), converted_at),
+        cohort_client(
+            2, at(JUNE, 12), converted_at, category="PARTNERSHIP", status_name="DESIGNER"
+        ),
+        cohort_client(3, at(JUNE, 12), converted_at, assigned_to_id=4),
+    )
+
+    june = monthly_cohort_conversion(leads, SEPTEMBER_END, app_config).cohorts[2]
+
+    assert (june.counts.leads, june.counts.clienti, june.clients_with_date) == (1, 1, 1)
+
+
+def test_lead_created_after_19_on_last_day_belongs_to_next_cohort(app_config: AppConfig) -> None:
+    converted_at = at(date(2026, 9, 5), 12)
+    leads = frame(
+        app_config,
+        cohort_client(1, at(date(2026, 8, 31), 18, 59, 59), converted_at),
+        cohort_client(2, at(date(2026, 8, 31), 19), converted_at),
+    )
+
+    cohorts = monthly_cohort_conversion(leads, SEPTEMBER_END, app_config).cohorts
+
+    assert (cohorts[-2].counts.clienti, cohorts[-1].counts.clienti) == (1, 1)
+    assert cohorts[-2].median_days == pytest.approx(4 + 17 / 24 + 1 / 86_400)
+    assert cohorts[-1].median_days == pytest.approx(4 + 17 / 24)
+
+
+def test_conversion_after_exactly_30_days_is_in_30_day_bucket(app_config: AppConfig) -> None:
+    created_at = at(JUNE, 12)
+    leads = frame(app_config, cohort_client(1, created_at, at(date(2026, 7, 10), 12)))
+
+    june = monthly_cohort_conversion(leads, SEPTEMBER_END, app_config).cohorts[2]
+
+    assert june.clients_within_days == {7: 0, 30: 1, 90: 1}
+    assert june.median_days == 30
+
+
+def test_conversion_after_30_days_and_one_second_is_in_90_day_bucket(
+    app_config: AppConfig,
+) -> None:
+    leads = frame(app_config, cohort_client(1, at(JUNE, 12), at(date(2026, 7, 10), 12, 0, 1)))
+
+    june = monthly_cohort_conversion(leads, SEPTEMBER_END, app_config).cohorts[2]
+
+    assert june.clients_within_days == {7: 0, 30: 0, 90: 1}
+
+
+def test_bucket_is_unknown_until_cohort_is_old_enough(app_config: AppConfig) -> None:
+    leads = frame(
+        app_config,
+        *(
+            cohort_client(month.month, at(month, 12), at(month, 13))
+            for month in (JUNE, JULY, AUGUST)
+        ),
+        cohort_client(9, at(SEPTEMBER, 12), at(SEPTEMBER, 13)),
+    )
+
+    june, july, august, september = monthly_cohort_conversion(
+        leads, SEPTEMBER_END, app_config
+    ).cohorts[2:]
+
+    assert (june.age_days, july.age_days, august.age_days, september.age_days) == (92, 61, 30, 0)
+    assert september.clients_within_days == {7: None, 30: None, 90: None}
+    assert august.clients_within_days == {7: 1, 30: 1, 90: None}
+    assert july.clients_within_days == {7: 1, 30: 1, 90: None}
+    assert june.clients_within_days == {7: 1, 30: 1, 90: 1}
+    assert (june.in_progress, july.in_progress, august.in_progress) == (False, True, True)
+    assert september.in_progress
+    assert august.share_within(30) == pytest.approx(1.0)
+    assert august.share_within(90) is None
+    assert september.median_days == pytest.approx(1 / 24)
+
+
+def test_client_without_converted_at_counts_in_rate_not_in_days(app_config: AppConfig) -> None:
+    leads = frame(
+        app_config,
+        cohort_client(1, at(JUNE, 12), at(date(2026, 6, 13), 12)),
+        cohort_client(2, at(JUNE, 12), None),
+        lead(3, at(JUNE, 12)),
+        lead(4, at(JUNE, 12)),
+    )
+
+    result = monthly_cohort_conversion(leads, SEPTEMBER_END, app_config)
+    june = result.cohorts[2]
+
+    assert june.conversion == pytest.approx(2 / 4)
+    assert (june.counts.clienti, june.clients_with_date) == (2, 1)
+    assert june.clients_within_days == {7: 1, 30: 1, 90: 1}
+    assert june.share_within(90) == pytest.approx(1 / 4)
+    assert june.median_days == 3
+    assert result.clients_without_converted_at == 1
+
+
+def test_converted_lead_no_longer_clienti_is_in_cycle_not_in_cohort(app_config: AppConfig) -> None:
+    leads = frame(
+        app_config,
+        cohort_client(1, at(SEPTEMBER, 12), at(date(2026, 9, 11), 12)),
+        lost(
+            2,
+            at(SEPTEMBER, 12),
+            "BUGET",
+            status_name="BUGET",
+            converted_at=at(date(2026, 9, 13), 12),
+        ),
+        cohort_client(3, at(JULY, 12), at(date(2026, 9, 20), 12)),
+        cohort_client(4, at(JULY, 12), at(date(2026, 8, 20), 12)),
+    )
+
+    result = monthly_cohort_conversion(leads, SEPTEMBER_END, app_config)
+
+    assert (result.cohorts[-1].counts.clienti, result.cohorts[-1].clients_with_date) == (1, 1)
+    assert result.cycle.contracts == 3
+    assert result.cycle.contracts == monthly_trend(leads, SEPTEMBER_END, app_config).contracts[-1]
+
+
+def test_deal_cycle_median_p75_and_fast_share(app_config: AppConfig) -> None:
+    created_at = at(date(2026, 9, 1), 12)
+    converted = frame(
+        app_config,
+        *(
+            cohort_client(days, created_at, at(date(2026, 9, 1 + days), 12))
+            for days in (1, 2, 3, 10)
+        ),
+    )
+
+    cycle = deal_cycle(converted, fast_cycle_days=7)
+
+    assert cycle.contracts == 4
+    assert cycle.median_days == pytest.approx(2.5)
+    assert cycle.p75_days == pytest.approx(4.75)
+    assert cycle.within_fast_days == 3
+    assert cycle.share_within_fast == pytest.approx(3 / 4)
+
+
+def test_converted_before_created_counts_as_zero_days(app_config: AppConfig) -> None:
+    leads = frame(app_config, cohort_client(1, at(SEPTEMBER, 12), at(date(2026, 9, 8), 12)))
+
+    result = monthly_cohort_conversion(leads, SEPTEMBER_END, app_config)
+
+    assert result.cohorts[-1].median_days == 0
+    assert result.cycle.median_days == 0
+    assert result.cycle.within_fast_days == 1
+
+
+def test_empty_cohort_and_month_without_contracts_give_none(app_config: AppConfig) -> None:
+    leads = frame(app_config, lead(1, at(SEPTEMBER, 12)))
+
+    result = monthly_cohort_conversion(leads, SEPTEMBER_END, app_config)
+    june = result.cohorts[2]
+
+    assert june.counts.leads == 0
+    assert june.conversion is None
+    assert june.share_within(30) is None
+    assert june.median_days is None
+    assert result.cohorts[-1].median_days is None
+    assert result.cycle == type(result.cycle)(0, None, None, 0)
+    assert result.cycle.share_within_fast is None
+
+
+def test_days_across_dst_change_are_elapsed_time(app_config: AppConfig) -> None:
+    leads = frame(
+        app_config, cohort_client(1, at(date(2026, 10, 24), 12), at(date(2026, 10, 26), 12))
+    )
+
+    october = monthly_cohort_conversion(leads, date(2026, 10, 31), app_config).cohorts[-1]
+
+    assert october.median_days == pytest.approx(2 + 1 / 24)
+
+
+def test_showroom_cohorts_sum_to_company(app_config: AppConfig) -> None:
+    leads = frame(
+        app_config,
+        cohort_client(1, at(JULY, 12), at(date(2026, 7, 12), 12), showroom="Brașov"),
+        cohort_client(2, at(JULY, 12), at(date(2026, 9, 12), 12), showroom="Cluj"),
+        lead(3, at(JULY, 12), showroom="Cluj"),
+        irelevant(4, at(JULY, 12), showroom=None),
+        cohort_client(5, at(SEPTEMBER, 12), at(date(2026, 9, 11), 12), showroom="Iași"),
+    )
+
+    result = monthly_cohort_conversion(leads, SEPTEMBER_END, app_config)
+
+    assert list(result.cohorts_by_showroom) == ["Brașov", "București", "Cluj", "Iași", None]
+    for index, company in enumerate(result.cohorts):
+        rows = [cohorts[index] for cohorts in result.cohorts_by_showroom.values()]
+        assert sum(row.counts.leads for row in rows) == company.counts.leads
+        assert sum(row.counts.clienti for row in rows) == company.counts.clienti
+        assert sum(row.clients_with_date for row in rows) == company.clients_with_date
+    assert sum(cycle.contracts for cycle in result.cycle_by_showroom.values()) == 2
+    assert result.cycle_by_showroom["Cluj"].median_days == pytest.approx(64)
+    assert result.cohorts_by_showroom["Cluj"][-3].conversion == pytest.approx(1 / 2)

@@ -11,6 +11,7 @@ from digest.reports.modules.daily_checks import (
     untouched_leads_report,
 )
 from digest.reports.modules.monthly import (
+    cohort_conversion_report,
     funnel_by_showroom_report,
     loss_reasons_trend_report,
     manager_cockpit_report,
@@ -55,6 +56,7 @@ IMPLEMENTED_MODULES: dict[str, ReportModuleFunction] = {
     "m5": manager_cockpit_report,
     "m7": scr_by_source_campaign_report,
     "m8": loss_reasons_trend_report,
+    "m9": cohort_conversion_report,
     "m11": repeat_clients_report,
     "m19": monthly_excel_attachment_report,
 }

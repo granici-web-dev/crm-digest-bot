@@ -32,6 +32,7 @@ BELOW_ALL_LEVELS = "below_levels"
 # Причина повторного клиента m11, значение столбца repeat_reason.
 REPEAT_BY_CONTACT = "contact"
 REPEAT_BY_SOURCE = "source"
+SECONDS_PER_DAY = 86_400
 
 
 @dataclass(frozen=True)
@@ -162,6 +163,52 @@ class MonthlyRepeatClients:
     # Лид Clienți без converted_at нельзя отнести к месяцу: в расчёт не входит, считается по
     # всему снапшоту для сноски.
     won_without_converted_at: int
+
+
+@dataclass(frozen=True)
+class CohortRow:
+    month: date
+    counts: LeadCounts
+    clients_with_date: int
+    # Корзина ≤N дней → клиентов когорты; None, пока когорте меньше N суток.
+    clients_within_days: dict[int, int | None]
+    median_days: float | None
+    age_days: float
+    in_progress: bool
+
+    @property
+    def conversion(self) -> float | None:
+        return kpis_from(self.counts).scr
+
+    def share_within(self, days: int) -> float | None:
+        # docs/kpi-definitions.md, «Когорты и цикл сделки (m9)»: знаменатель USEFUL, как у SCR.
+        clients = self.clients_within_days[days]
+        return None if clients is None else ratio(clients, self.counts.useful)
+
+
+@dataclass(frozen=True)
+class DealCycle:
+    contracts: int
+    median_days: float | None
+    p75_days: float | None
+    within_fast_days: int
+
+    @property
+    def share_within_fast(self) -> float | None:
+        return ratio(self.within_fast_days, self.contracts)
+
+
+@dataclass(frozen=True)
+class MonthlyCohortConversion:
+    report_month: date
+    cohorts: tuple[CohortRow, ...]
+    cohorts_by_showroom: dict[str | None, tuple[CohortRow, ...]]
+    cycle: DealCycle
+    cycle_by_showroom: dict[str | None, DealCycle]
+
+    @property
+    def clients_without_converted_at(self) -> int:
+        return sum(row.counts.clienti - row.clients_with_date for row in self.cohorts)
 
 
 def first_day_of_month(day: date) -> date:
@@ -363,3 +410,90 @@ def monthly_client_rows(
     return rows.sort_values(["day", "converted_at"])[
         [*LEAD_ROW_COLUMNS, "is_repeat", "repeat_reason"]
     ].reset_index(drop=True)
+
+
+def days_to_contract(leads: pd.DataFrame) -> pd.Series:
+    # docs/kpi-definitions.md, «Когорты и цикл сделки (m9)»: прошедшее время aware-datetime,
+    # переход на летнее время не сдвигает дни. converted_at раньше created_at (лид заведён
+    # задним числом) считается договором в день обращения, 0 дней.
+    elapsed = (leads["converted_at"] - leads["created_at"]).dt.total_seconds() / SECONDS_PER_DAY
+    return elapsed.clip(lower=0)
+
+
+def median_or_none(days: pd.Series) -> float | None:
+    return None if days.empty else float(days.median())
+
+
+def cohort_row(
+    lead_frame: pd.DataFrame, month: date, report_date: date, config: AppConfig
+) -> CohortRow:
+    # docs/kpi-definitions.md, «Когорты и цикл сделки (m9)». Возраст когорты между концами окон:
+    # при возрасте ≥ N суток каждый лид когорты прожил не меньше N суток, корзина ≤N полная.
+    time_settings = config.status_mapping.time
+    window = month_window(month, time_settings)
+    age_days = (
+        month_window(report_date, time_settings).end - window.end
+    ).total_seconds() / SECONDS_PER_DAY
+    leads = leads_in_period(lead_frame, window)
+    clients = leads[leads["is_clienti"] & leads["converted_at"].notna()]
+    days = days_to_contract(clients)
+    buckets = config.modules.cohort_conversion_params.age_buckets_days
+    return CohortRow(
+        month,
+        lead_counts(lead_frame, window, report_date, config),
+        len(clients),
+        {bucket: int(days.le(bucket).sum()) if age_days >= bucket else None for bucket in buckets},
+        median_or_none(days),
+        age_days,
+        age_days < buckets[-1],
+    )
+
+
+def deal_cycle(converted: pd.DataFrame, fast_cycle_days: int) -> DealCycle:
+    days = days_to_contract(converted)
+    return DealCycle(
+        len(days),
+        median_or_none(days),
+        # Квантиль с линейной интерполяцией pandas (docs/kpi-definitions.md, m9).
+        None if days.empty else float(days.quantile(0.75)),
+        int(days.le(fast_cycle_days).sum()),
+    )
+
+
+def leads_of_showroom(lead_frame: pd.DataFrame, showroom: str | None) -> pd.DataFrame:
+    showrooms = lead_frame["showroom"]
+    return lead_frame[showrooms.isna() if showroom is None else showrooms.eq(showroom)]
+
+
+def monthly_cohort_conversion(
+    lead_frame: pd.DataFrame, report_date: date, config: AppConfig
+) -> MonthlyCohortConversion:
+    # Все когорты из одного снапшота: created_at и converted_at не меняются. Клиент когорты по
+    # статусу Clienți, как CLIENTI в m2 и m4; converted_at только для дней. Цикл месяца по тем же
+    # договорам, что «Contracte» m3 (docs/kpi-definitions.md, «Когорты и цикл сделки (m9)»).
+    time_settings = config.status_mapping.time
+    months = trend_months(report_date)
+    report_window = month_window(report_date, time_settings)
+    converted_at = lead_frame["converted_at"]
+    converted = lead_frame[
+        converted_at.ge(report_window.start) & converted_at.lt(report_window.end)
+    ]
+    six_months = leads_in_period(
+        lead_frame, Period(month_window(months[0], time_settings).start, report_window.end)
+    )
+    showrooms = showroom_keys(pd.concat([six_months["showroom"], converted["showroom"]]), config)
+    fast_cycle_days = config.modules.cohort_conversion_params.fast_cycle_days
+
+    def cohorts_of(leads: pd.DataFrame) -> tuple[CohortRow, ...]:
+        return tuple(cohort_row(leads, month, report_date, config) for month in months)
+
+    return MonthlyCohortConversion(
+        first_day_of_month(report_date),
+        cohorts_of(lead_frame),
+        {showroom: cohorts_of(leads_of_showroom(lead_frame, showroom)) for showroom in showrooms},
+        deal_cycle(converted, fast_cycle_days),
+        {
+            showroom: deal_cycle(leads_of_showroom(converted, showroom), fast_cycle_days)
+            for showroom in showrooms
+        },
+    )

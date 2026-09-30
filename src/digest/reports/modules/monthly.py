@@ -9,7 +9,9 @@ from digest.metrics.breakdown import BreakdownRow, LeadBreakdown, UnkeyedBreakdo
 from digest.metrics.cockpit import manager_cockpit_table
 from digest.metrics.monthly import (
     BELOW_ALL_LEVELS,
+    CohortRow,
     month_window,
+    monthly_cohort_conversion,
     monthly_funnel,
     monthly_loss_reasons,
     monthly_repeat_clients,
@@ -36,6 +38,11 @@ COCKPIT_KPI_LINES = (KPI_NAMES[:5], KPI_NAMES[5:])
 # таблица не помещается в ширину телефона.
 BREAKDOWN_LABEL_WIDTH = 14
 BREAKDOWN_NUMBER_WIDTHS = (4, 5, 4, 3, 4, 5)
+# m9: Luna, затем Lead, Cl., %, корзины и Zile; строка <code> не шире 38 символов.
+COHORT_LABEL_WIDTH = 4
+COHORT_COUNT_WIDTHS = (4, 3)
+COHORT_SHARE_WIDTH = 4
+IN_PROGRESS_MARK = "*"
 
 
 def month_file_suffix(report_date: date) -> str:
@@ -248,5 +255,62 @@ def scr_by_source_campaign_report(lead_frame: pd.DataFrame, context: ReportConte
                 ),
             ),
             clienti_note=labels.clienti_note,
+        )
+    )
+
+
+def share_cell(value: float | None) -> str:
+    # Знак «%» в заголовке m9, в ячейке только число: иначе таблица шире телефона. «100,0» не
+    # влезает в колонку, у маленькой когорты это «100».
+    if value is not None and round(value * 100, 1) >= 100:
+        return "100"
+    return percent_one_decimal(value).removesuffix("%")
+
+
+def days_cell(days: float | None) -> str:
+    return "—" if days is None else str(round(days))
+
+
+def cohort_line(label: str, cells: tuple[str, ...]) -> str:
+    widths = (*COHORT_COUNT_WIDTHS, *(COHORT_SHARE_WIDTH,) * (len(cells) - 2))
+    numbers = " ".join(cell.rjust(width) for cell, width in zip(cells, widths, strict=True))
+    return f"{label:{COHORT_LABEL_WIDTH}} {numbers}"
+
+
+def cohort_row_line(row: CohortRow, buckets: list[int]) -> str:
+    month_name = chart_labels().month_name(row.month)
+    return cohort_line(
+        f"{month_name}{IN_PROGRESS_MARK if row.in_progress else ''}",
+        (
+            str(row.counts.leads),
+            str(row.counts.clienti),
+            share_cell(row.conversion),
+            *(share_cell(row.share_within(bucket)) for bucket in buckets),
+            days_cell(row.median_days),
+        ),
+    )
+
+
+def cohort_conversion_report(lead_frame: pd.DataFrame, context: ReportContext) -> ModuleResult:
+    config = context.config
+    conversion = monthly_cohort_conversion(lead_frame, context.report_date, config)
+    params = config.modules.cohort_conversion_params
+    buckets = params.age_buckets_days
+    header = cohort_line(
+        "Luna", ("Lead", "Cl.", "%", *(f"≤{bucket}" for bucket in buckets), "Zile")
+    )
+    cycle = conversion.cycle
+    return ModuleResult(
+        render(
+            "cohort_conversion",
+            lines=[header, *(cohort_row_line(row, buckets) for row in conversion.cohorts)],
+            month_name=RO_MONTHS[conversion.report_month.month - 1],
+            cycle=cycle,
+            cycle_median=days_cell(cycle.median_days),
+            cycle_p75=days_cell(cycle.p75_days),
+            fast_cycle_days=params.fast_cycle_days,
+            in_progress_mark=IN_PROGRESS_MARK,
+            longest_bucket=buckets[-1],
+            clients_without_converted_at=conversion.clients_without_converted_at,
         )
     )

@@ -577,21 +577,38 @@ Buget 31% (iul 27%) ↑ · Nu a răspuns 24% (28%) ↓ · Termen producție 8% (
 
 Тег: now
 
-**RO:** Câte din lead-urile lunii trecute au devenit contracte până azi — contractele se semnează în 30–60 zile.
+**RO:** Pentru fiecare din ultimele 6 luni: câte din lead-urile utile ale lunii au devenit clienți până azi și în câte zile, plus durata ciclului pentru contractele lunii.
 
-**RU:** Сколько лидов прошлого месяца стали контрактами к сегодня — контракты подписываются через 30–60 дней.
+**RU:** По каждому из последних 6 месяцев: сколько полезных лидов месяца стали клиентами к сегодня и за сколько дней, плюс длина цикла у договоров месяца.
 
-Пример RO:
+Пример RO (цифры условные):
 
 ```
-Lead-urile din iulie: 8,9% la 31.07 → 12,4% la 31.08
+Conversie de cohortă (% din lead-uri utile)
+Luna Lead Cl.    %   ≤7  ≤30  ≤90 Zile
+Apr   375  34  9,1  6,1  7,5  8,8   13
+Mai   303  20  6,6  4,3  5,9  6,6    8
+Iun   390  23  5,9  4,6  5,6  5,9    4
+Iul*  389  33  8,5  6,4  8,0    —    4
+Aug*  457  35  7,7  5,9  7,4    —    3
+Sep*  450  14  3,1    —    —    —    2
+Ciclu contract, septembrie: 35 contracte, median 3 zile, 75% până la 9 zile, 71% în ≤7 zile.
+* cohortă mai tânără de 90 de zile: clienții și mediana încă cresc; «—» = prea devreme pentru coloană. Zile = mediana de la creare la contract.
 ```
 
 Пример RU:
 
 ```
-Лиды июля: 8,9% на 31.07 → 12,4% на 31.08
+Когортная конверсия (% от полезных лидов)
+Месяц Лиды Кл.   %   ≤7  ≤30  ≤90 Дней
+Апр   375  34  9,1  6,1  7,5  8,8   13
+…
+Сен*  450  14  3,1    —    —    —    2
+Цикл договора, сентябрь: 35 договоров, медиана 3 дня, 75% до 9 дней, 71% за ≤7 дней.
+* когорта моложе 90 дней: клиенты и медиана ещё растут; «—» = рано для колонки. Дней = медиана от создания до договора.
 ```
+
+Полная разбивка по шоурумам: лист «Cohorte» в Excel m19.
 
 ### m10 · Număr contracte și valoare medie / Число контрактов и средняя сумма
 

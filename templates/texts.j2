@@ -49,6 +49,12 @@
 {% macro repeat_yes() %}DA{% endmacro %}
 {% macro repeat_no() %}NU{% endmacro %}
 {% macro column_repeat_reason() %}Motiv{% endmacro %}
+{% macro sheet_cohorts() %}Cohorte{% endmacro %}
+{% macro column_in_progress() %}În curs{% endmacro %}
+{% macro in_progress_yes() %}DA{% endmacro %}
+{% macro in_progress_no() %}NU{% endmacro %}
+{% macro cohort_note(longest_bucket) %}Cohortă = lead-urile create în lună; % din lead-uri utile, clienți după statusul Clienți azi. Zile de la creare la contract (converted_at). «—» = cohorta e prea tânără pentru coloană; În curs = cohortă mai tânără de {{ longest_bucket }} de zile.{% endmacro %}
+{% macro cycle_title(month) %}Ciclu contract {{ month }}: contracte după data conversiei, zile de la crearea lead-ului{% endmacro %}
 {% macro repeat_by_contact() %}telefon/e-mail{% endmacro %}
 {% macro day_showroom_title(week_range, sources) %}Sumar {{ week_range }} (fără Sursa={{ sources }}): lead-uri pe zile lucrătoare × showroom{% endmacro %}
 {% macro working_hours_rule(hours) %}Regulă: ore de lucru {{ hours }}. Lead-urile din acest interval se numără în ziua curentă; cele din afara lui trec în următoarea zi calendaristică (consilierii le preiau doar în orele de lucru).{% endmacro %}
