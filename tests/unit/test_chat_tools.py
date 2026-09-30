@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from typing import Any, cast, get_args
 
@@ -22,7 +23,11 @@ from digest.db.lead_frame import SnapshotMissingError
 from digest.metrics.breakdown import lead_breakdown
 from digest.metrics.chat_periods import CHAT_PERIODS, ChatPeriod, chat_period_window
 from digest.metrics.daily import PreviousSnapshot, daily_window
-from digest.metrics.daily_checks import overdue_revenire_by_manager, untouched_leads
+from digest.metrics.daily_checks import (
+    overdue_revenire_by_manager,
+    rolling_contract_rate,
+    untouched_leads,
+)
 from digest.metrics.frame import prepare_lead_frame
 from digest.metrics.kpi import (
     COUNT_NAMES,
@@ -888,11 +893,78 @@ async def test_untouched_leads_match_metrics(
     assert content["oldest_age_days"] == untouched.oldest_age_hours // 24
 
 
+async def test_rolling_contract_rate_matches_d7_on_latest_snapshot(
+    etalon_config: AppConfig, lead_frame: pd.DataFrame
+) -> None:
+    outcome = await run_tool("rolling_contract_rate", {}, tool_data(etalon_config, lead_frame))
+
+    result = rolling_contract_rate(lead_frame, TODAY, etalon_config)
+    assert result.contracts > 0
+    assert result.direction == "up"
+    assert outcome.snapshot_dates == (TODAY,)
+    assert outcome.content == {
+        "snapshot_date": "03.06.2026",
+        "window_days": 30,
+        "period": "05.05–03.06.2026",
+        "rate": percent_one_decimal(result.rate),
+        "contracts": result.contracts,
+        "useful": result.useful,
+        "previous_period": "05.04–04.05.2026",
+        "previous_rate": percent_one_decimal(result.previous_rate),
+        "previous_contracts": result.previous_contracts,
+        "previous_useful": result.previous_useful,
+        "difference": f"+{result.difference_pp:.1f} pp".replace(".", ","),
+        "direction": "creștere",
+        "trend_threshold": "2,0 pp",
+    }
+
+
+@pytest.mark.parametrize(
+    ("threshold", "direction"),
+    [(2.0, "creștere"), (40.0, "stabilă, diferența este sub 40,0 pp")],
+)
+async def test_rolling_contract_rate_direction_uses_d7_threshold(
+    threshold: float, direction: str
+) -> None:
+    raw_config = raw_repository_config()
+    raw_config["modules"]["daily"]["d7"]["params"]["trend_threshold_pp"] = threshold
+    config = AppConfig.model_validate(raw_config)
+    # 3 из 10 полезных против 1 из 10: 30,0 % против 10,0 %, разница +20,0 pp.
+    rows = [
+        make_snapshot_row(
+            lead_id=lead_id,
+            created_at=created_at,
+            **(
+                {"category": "WON", "status_name": "Clienți", "converted_at": created_at}
+                if lead_id % 10 < contracts
+                else {}
+            ),
+        )
+        for first_id, created_at, contracts in [
+            (0, datetime(2026, 9, 10, 12, 0, tzinfo=BUCHAREST), 3),
+            (10, datetime(2026, 8, 10, 12, 0, tzinfo=BUCHAREST), 1),
+        ]
+        for lead_id in range(first_id, first_id + 10)
+    ]
+    snapshot_date = date(2026, 9, 25)
+    data = replace(
+        tool_data(config, prepare_lead_frame(rows, config), (snapshot_date,)), today=snapshot_date
+    )
+
+    outcome = await run_tool("rolling_contract_rate", {}, data)
+
+    assert (outcome.content["rate"], outcome.content["previous_rate"]) == ("30,0%", "10,0%")
+    assert (outcome.content["difference"], outcome.content["direction"]) == ("+20,0 pp", direction)
+
+
 def tool_calls(config: AppConfig, period: ChatPeriod | None) -> list[tuple[str, dict[str, Any]]]:
     # По периоду на параметр: весь перебор одним тестом не укладывался в 100 мс unit-теста.
     managers = [manager.name for manager in config.managers.managers]
     if period is None:
-        calls: list[tuple[str, dict[str, Any]]] = [("untouched_leads", {})]
+        calls: list[tuple[str, dict[str, Any]]] = [
+            ("untouched_leads", {}),
+            ("rolling_contract_rate", {}),
+        ]
         calls += [("overdue_followups", {"manager": name}) for name in (ALL_MANAGERS, *managers)]
         calls += [
             ("repeat_clients", {"period": month}) for month in ("luna_curenta", "luna_trecuta")

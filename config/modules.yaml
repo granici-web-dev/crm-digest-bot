@@ -125,6 +125,7 @@ chat:             # режим вопросов; включается целик
       oferte, clienți, nu a răspuns, buget, produs nepotrivit, contracte semnate și KPI (SCR, L2O,
       O2C, CDR, PLR, SC, PFR, ACR, IRR). Lead-urile sunt cele create în perioadă, cu statusul din
       snapshot. day_count și days_with_data dau numărul de zile ale perioadei și câte au date.
+      SCR este conversia lead-urilor create în perioadă; rata contractelor pe ultimele 30 de zile este instrumentul separat rolling_contract_rate.
       Opțional pentru un singur showroom.
     manager_kpi: >-
       KPI-urile unui consultant pentru o perioadă: numărătorile pâlniei, cei 9 KPI și dacă ținta
@@ -138,8 +139,9 @@ chat:             # режим вопросов; включается целик
       întâi („138 față de 135: +3 (+2,2%)”; la KPI valorile în procente și diferența în puncte
       procentuale, „14,2% față de 16,0%: −1,8 pp”); o citezi exact. difference este
       diferența fără semn, direction este creștere, scădere sau fără schimbare. day_count și
-      days_with_data dau numărul de zile ale fiecărei perioade și câte au date. Opțional pentru
-      un singur showroom.
+      days_with_data dau numărul de zile ale fiecărei perioade și câte au date.
+      SCR este conversia lead-urilor create în perioadă; rata contractelor pe ultimele 30 de zile este instrumentul separat rolling_contract_rate.
+      Opțional pentru un singur showroom.
     loss_reasons: >-
       Lead-uri pierdute într-o perioadă, pe motive (Nu a răspuns, Buget, Produs nepotrivit etc.)
       și pe showroom. La fiecare motiv, share este ponderea lui în total (în showroom, din totalul
@@ -177,6 +179,13 @@ chat:             # режим вопросов; включается целик
       managers_without_touches dau câți consultanți au, respectiv nu au atingeri. covered_from,
       covered_until și days_without_snapshot spun pentru ce zile există date; dacă lipsesc zile,
       o spui. Doar zile și săptămâni, nu luni. Opțional pentru un singur consultant.
+    rolling_contract_rate: >-
+      Rata contractelor pe ultimele window_days zile (30) la data ultimului snapshot: contracte
+      după data semnării (contracts) împărțite la lead-urile utile create în aceleași zile
+      (useful), față de cele window_days zile anterioare (previous_*). period și previous_period
+      dau zilele. difference este diferența în puncte procentuale, cu semn; direction este
+      creștere, scădere sau stabilă, când diferența este sub trend_threshold. Nu este SCR-ul
+      lunii; pentru SCR pe lună folosești funnel. Fără parametri.
   # Описания параметров по имени, для каждого инструмента с таким параметром.
   parameters:
     period_a: Perioada evaluată, de obicei cea mai recentă (de ex. august în „august față de iulie”).

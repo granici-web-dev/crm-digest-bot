@@ -79,6 +79,21 @@ def test_wrong_tool_or_showroom_fails(
     assert grade.reason.startswith(reason_start)
 
 
+def test_forbidden_tool_fails_even_with_expected_call_and_numbers() -> None:
+    case = funnel_case(["kpis.scr"]).model_copy(
+        update={"forbidden_tools": ["rolling_contract_rate"]}
+    )
+    calls: tuple[tuple[str, dict[str, Any]], ...] = (
+        ("funnel", FUNNEL_ARGUMENTS),
+        ("rolling_contract_rate", {}),
+    )
+
+    grade = grade_case(case, answer("SCR 9,6%.", calls), [outcome(FUNNEL_CONTENT)])
+
+    assert not grade.passed
+    assert grade.reason == "вызван запрещённый инструмент rolling_contract_rate"
+
+
 def test_missing_number_fails() -> None:
     grade = grade_case(
         funnel_case(["counts.leads"]),

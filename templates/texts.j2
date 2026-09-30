@@ -37,6 +37,7 @@
 {% macro direction_up() %}creștere{% endmacro %}
 {% macro direction_down() %}scădere{% endmacro %}
 {% macro direction_same() %}fără schimbare{% endmacro %}
+{% macro trend_flat(threshold) %}stabilă, diferența este sub {{ threshold }}{% endmacro %}
 {% macro guard_retry(number) %}Numărul „{{ number }}” nu apare în rezultatele instrumentelor. Rescrie răspunsul fără el.{% endmacro %}
 {% macro sheet_day_showroom() %}Zi × showroom{% endmacro %}
 {% macro sheet_day_showroom_source() %}Zi × showroom × sursă{% endmacro %}

@@ -363,6 +363,25 @@
       arguments: {period: luna_curenta}
       numbers: ["by_reason[reason=Client Fidel].client_count"]
 
+- id: contract-rate-30-days
+  tags: [i4, contract_rate]
+  question: "Care este rata contractelor pe ultimele 30 de zile?"
+  expect: answer
+  calls:
+    - tool: rolling_contract_rate
+      arguments: {}
+      numbers: [rate]
+
+- id: scr-this-month-not-rolling
+  tags: [i4, contract_rate, named_period]
+  question: "Care este SCR-ul lunii acesteia?"
+  expect: answer
+  forbidden_tools: [rolling_contract_rate]
+  calls:
+    - tool: funnel
+      arguments: {period: luna_curenta, showroom: toate}
+      numbers: [kpis.scr]
+
 - id: touches-last-month-refused
   tags: [i4, touches, refusal_period]
   question: "Câte atingeri au făcut consultanții luna trecută?"

@@ -426,6 +426,7 @@ ChatToolName = Literal[
     "source_breakdown",
     "repeat_clients",
     "manager_touches",
+    "rolling_contract_rate",
 ]
 
 

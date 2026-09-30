@@ -42,6 +42,7 @@ from digest.metrics.daily_checks import (
     MissingFollowupDate,
     missing_followup_date,
     overdue_revenire_by_manager,
+    rolling_contract_rate,
     untouched_leads,
 )
 from digest.metrics.extra import period_delta, value_difference
@@ -314,6 +315,10 @@ class UntouchedLeadsArguments(ToolArguments):
     pass
 
 
+class RollingContractRateArguments(ToolArguments):
+    pass
+
+
 ARGUMENT_MODELS: dict[ChatToolName, type[ToolArguments]] = {
     "funnel": FunnelArguments,
     "manager_kpi": ManagerKpiArguments,
@@ -324,6 +329,7 @@ ARGUMENT_MODELS: dict[ChatToolName, type[ToolArguments]] = {
     "source_breakdown": SourceBreakdownArguments,
     "repeat_clients": RepeatClientsArguments,
     "manager_touches": ManagerTouchesArguments,
+    "rolling_contract_rate": RollingContractRateArguments,
 }
 
 
@@ -394,6 +400,7 @@ def tool_definitions(config: AppConfig) -> list[ToolParam]:
             "period": TOUCH_PERIOD_PROPERTY,
             "manager": enum_property((ALL_MANAGERS, *consultants)),
         },
+        "rolling_contract_rate": {},
     }
     parameter_descriptions = config.modules.chat.parameters
     return [
@@ -1129,6 +1136,46 @@ async def untouched_leads_tool(data: ToolData, arguments: UntouchedLeadsArgument
     )
 
 
+async def rolling_contract_rate_tool(
+    data: ToolData, arguments: RollingContractRateArguments
+) -> ToolOutcome:
+    snapshot_date = latest_snapshot_date(data)
+    frame = await load_snapshot(data, snapshot_date)
+    result = rolling_contract_rate(frame, snapshot_date, data.config)
+    window = timedelta(days=result.window_days)
+    first_day = snapshot_date - window + timedelta(days=1)
+    threshold = points_one_decimal(result.trend_threshold_pp / 100)
+    # Направление и разница из метрики d7, а не из direction_text: иначе «=» дайджеста при −1,5 pp
+    # в чате стало бы «scădere».
+    directions = {
+        "up": text("direction_up"),
+        "down": text("direction_down"),
+        "flat": text("trend_flat", threshold=threshold),
+    }
+    return snapshot_outcome(
+        {
+            "window_days": result.window_days,
+            "period": days_label(first_day, snapshot_date),
+            "rate": percent_one_decimal(result.rate),
+            "contracts": result.contracts,
+            "useful": result.useful,
+            "previous_period": days_label(first_day - window, first_day - timedelta(days=1)),
+            "previous_rate": percent_one_decimal(result.previous_rate),
+            "previous_contracts": result.previous_contracts,
+            "previous_useful": result.previous_useful,
+            "difference": (
+                None
+                if result.difference_pp is None
+                else signed_points_one_decimal(result.difference_pp / 100)
+            ),
+            "direction": None if result.direction is None else directions[result.direction],
+            "trend_threshold": threshold,
+        },
+        snapshot_date,
+        (),
+    )
+
+
 ToolFunction = Callable[[ToolData, Any], Awaitable[ToolOutcome]]
 TOOL_FUNCTIONS: Mapping[ChatToolName, ToolFunction] = {
     "funnel": funnel,
@@ -1140,6 +1187,7 @@ TOOL_FUNCTIONS: Mapping[ChatToolName, ToolFunction] = {
     "source_breakdown": source_breakdown,
     "repeat_clients": repeat_clients,
     "manager_touches": manager_touches_tool,
+    "rolling_contract_rate": rolling_contract_rate_tool,
 }
 
 

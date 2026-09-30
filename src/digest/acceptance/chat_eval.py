@@ -97,6 +97,9 @@ class GoldenCase(BaseModel):
     expect: Expectation
     after: str | None = None
     calls: list[ExpectedCall] = []
+    # Инструменты, вызов которых провалит вопрос: SCR месяца не должен уйти в
+    # rolling_contract_rate.
+    forbidden_tools: list[ChatToolName] = []
 
     @model_validator(mode="after")
     def calls_match_expectation(self) -> Self:
@@ -222,6 +225,9 @@ def grade_case(
             return Grade(False, f"эталонный вызов {expected.tool} с ошибкой: {reference.content}")
     if answer.status != "answered":
         return Grade(False, status_reason(answer))
+    forbidden = [call.name for call in answer.tool_calls if call.name in case.forbidden_tools]
+    if forbidden:
+        return Grade(False, f"вызван запрещённый инструмент {', '.join(forbidden)}")
     answer_numbers = {unsigned(normalized_number(token)) for token in number_tokens(text)}
     for expected, reference in zip(case.calls, references, strict=True):
         if matching_call(expected, answer.tool_calls) is None or reference is None:

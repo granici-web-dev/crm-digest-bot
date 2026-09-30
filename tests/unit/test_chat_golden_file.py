@@ -44,9 +44,18 @@ def test_i4_cases_cover_every_new_tool() -> None:
     cases = [case for case in load_golden_cases(GOLDEN_FILE) if I4_TAG in case.tags]
     tools = Counter(call.tool for case in cases for call in case.calls)
 
-    assert len(cases) == 12
-    assert set(tools) == set(ARGUMENT_MODELS) - M6_TOOLS
-    assert min(tools.values()) >= 3
+    assert len(cases) == 14
+    assert set(tools) - M6_TOOLS == set(ARGUMENT_MODELS) - M6_TOOLS
+    assert (
+        min(tools[name] for name in ("source_breakdown", "manager_touches", "repeat_clients")) >= 3
+    )
+    # rolling_contract_rate: вопрос про 30 дней идёт в него, SCR месяца в funnel и не в него.
+    contract_rate = [case for case in cases if "contract_rate" in case.tags]
+    assert [call.tool for case in contract_rate for call in case.calls] == [
+        "rolling_contract_rate",
+        "funnel",
+    ]
+    assert [case.forbidden_tools for case in contract_rate] == [[], ["rolling_contract_rate"]]
     # Отказ по неподходящему периоду у каждого инструмента со своим набором периодов.
     refusals = [case for case in cases if "refusal_period" in case.tags]
     assert [case.expect for case in refusals] == ["refusal", "refusal"]
