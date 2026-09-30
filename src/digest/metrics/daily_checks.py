@@ -21,10 +21,13 @@ from digest.metrics.kpi import (
     count_flags,
     lead_counts,
     lead_counts_by_showroom,
+    leads_in_period,
     ratio,
 )
 
 EARLIEST_TIMESTAMP = pd.Timestamp.min.tz_localize("UTC")
+# «Лид в работе» ACTIVE_OFFERS_14 (docs/kpi-definitions.md, «Базовые множества»).
+OPEN_WORK_CATEGORIES = ("ACTIVE", "ACTIVE_FOLLOWUP")
 
 
 @dataclass(frozen=True)
@@ -108,9 +111,38 @@ class MissingFollowupDate:
 class StaleOffers:
     by_showroom: dict[str | None, int]
     total: int
+    # Все оферты у лидов в работе, висящие и нет: «застряло total из offers_in_work».
+    offers_in_work: int
     change_since_yesterday: int | None
     lead_ids_by_showroom: dict[str | None, tuple[int, ...]]
     lead_ids: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class FollowupBacklogGroup:
+    # None: лид не взят (консультант с not_taken или без консультанта).
+    manager_name: str | None
+    lead_count: int
+
+
+@dataclass(frozen=True)
+class FollowupBacklog:
+    lead_count: int
+    with_offer: int
+    # Data revenire раньше даты отчёта, касание не проверяется: это не просроченные revenire d3.
+    revenire_due: int
+    # Порог из backlog_age_days → лидов в статусе строго дольше порога.
+    older_than_days: dict[int, int]
+    groups: tuple[FollowupBacklogGroup, ...]
+
+    def lead_count_of(self, manager_name: str) -> int:
+        return sum(group.lead_count for group in self.groups if group.manager_name == manager_name)
+
+
+@dataclass(frozen=True)
+class NotTakenLeads:
+    lead_count: int
+    older_than_day: int
 
 
 @dataclass(frozen=True)
@@ -319,6 +351,46 @@ def missing_followup_date(
     )
 
 
+def followup_backlog(
+    lead_frame: pd.DataFrame, period: Period, report_date: date, config: AppConfig
+) -> FollowupBacklog:
+    # docs/kpi-definitions.md, «Базовая линия», A1: причины LOST с followup_field (Stand BY).
+    leads = leads_in_period(lead_frame, period)
+    backlog = leads[leads["category"].eq("LOST") & leads["is_followup_status"]]
+    window_end = daily_window(report_date, config.status_mapping.time).end
+    status_age = window_end - status_set_at(backlog)
+    groups = tuple(
+        FollowupBacklogGroup(manager_name, lead_count)
+        for manager_name, lead_count, _, _ in count_and_max_by_manager(
+            backlog, status_age.dt.days, config
+        )
+    )
+    return FollowupBacklog(
+        len(backlog),
+        int(backlog["is_ofertat"].sum()),
+        int(backlog["data_revenire"].lt(pd.Timestamp(report_date)).sum()),
+        {
+            days: int(status_age.gt(pd.Timedelta(days=days)).sum())
+            for days in config.kpi.backlog_age_days
+        },
+        groups,
+    )
+
+
+def not_taken_leads(
+    lead_frame: pd.DataFrame, period: Period, report_date: date, config: AppConfig
+) -> NotTakenLeads:
+    # docs/kpi-definitions.md, «Базовая линия», A7: открытые лиды, которые никто не взял.
+    leads = leads_in_period(lead_frame, period)
+    open_leads = leads[leads["category"].isin((*OPEN_WORK_CATEGORIES, "UNMAPPED"))]
+    not_taken = open_leads[manager_names(open_leads, config).isna()]
+    window_end = daily_window(report_date, config.status_mapping.time).end
+    return NotTakenLeads(
+        len(not_taken),
+        int(not_taken["created_at"].lt(window_end - timedelta(days=1)).sum()),
+    )
+
+
 def snapshot_period(analysis_date: date, config: AppConfig) -> Period:
     # Все лиды снапшота, а не лиды периода. Начало не от created_at.min(): у пустого кадра это NaT.
     return Period(EARLIEST_TIMESTAMP, daily_window(analysis_date, config.status_mapping.time).end)
@@ -356,6 +428,8 @@ def stale_offers(
         )
     )
     flags = count_flags(lead_frame, snapshot_period(report_date, config), report_date, config)
+    in_work = lead_frame.loc[flags.index, "category"].isin(OPEN_WORK_CATEGORIES)
+    offers_in_work = int((flags["offers"] & in_work).sum())
     stale = lead_frame.loc[flags.index[flags["active_offers_14"]]]
     stale = oldest_first(stale, stale["last_contact_at"])
     showroom = stale["showroom"]
@@ -368,6 +442,7 @@ def stale_offers(
     return StaleOffers(
         by_showroom,
         total,
+        offers_in_work,
         change_since_yesterday,
         lead_ids_by_showroom,
         lead_id_tuple(stale["lead_id"]),

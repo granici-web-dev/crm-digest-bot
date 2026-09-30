@@ -653,12 +653,19 @@ class KpiSettings(StrictConfigModel):
     status: KpiStatus
     thresholds: dict[str, Share]
     active_offer_stale_days: PositiveInt
+    backlog_age_days: list[PositiveInt]
     levels: list[SpiLevel]
     scores: dict[KpiName, ScoreSteps]
     irr_penalty: ScoreSteps
     recommendations: list[RecommendationRule]
     recommendation_otherwise: str
     targets: dict[KpiName, KpiTarget]
+
+    @model_validator(mode="after")
+    def backlog_age_days_ascending(self) -> Self:
+        if not self.backlog_age_days or self.backlog_age_days != sorted(set(self.backlog_age_days)):
+            raise ValueError("backlog_age_days: нужен непустой список без повторов по возрастанию")
+        return self
 
     @model_validator(mode="after")
     def referenced_thresholds_exist(self) -> Self:

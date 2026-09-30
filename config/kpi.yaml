@@ -38,6 +38,10 @@ thresholds:
 # Оферта «висит», если с последнего контакта прошло строго больше N дней (01_Input_Leads!AC).
 active_offer_stale_days: 14
 
+# Базовая линия, A1: сколько лидов Stand BY стоят в статусе строго дольше N дней
+# (docs/kpi-definitions.md, «Базовая линия»). По возрастанию.
+backlog_age_days: [30, 90]
+
 # Уровень по SPI, первый подходящий сверху (03_KPI_Agenti!AD).
 levels:
   - { name: Elite, min_spi: 90 }

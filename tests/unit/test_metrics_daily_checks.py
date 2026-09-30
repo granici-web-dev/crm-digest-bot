@@ -8,9 +8,12 @@ from digest.config import AppConfig
 from digest.metrics.daily import LEAD_ROWS, PreviousSnapshot, seller_format_counts
 from digest.metrics.daily_checks import (
     Anomalies,
+    FollowupBacklog,
+    FollowupBacklogGroup,
     IrelevantSpike,
     MissingFollowupDate,
     MissingFollowupGroup,
+    NotTakenLeads,
     OverdueGroup,
     OverdueRevenire,
     RollingContractRate,
@@ -19,10 +22,13 @@ from digest.metrics.daily_checks import (
     UntouchedGroup,
     UntouchedLeads,
     anomalies,
+    followup_backlog,
     missing_followup_date,
+    not_taken_leads,
     overdue_revenire_by_manager,
     rolling_contract_rate,
     same_weekday_comparison,
+    snapshot_period,
     stale_offers,
     trend_direction,
     untouched_leads,
@@ -940,7 +946,7 @@ def test_every_check_is_empty_on_empty_frame(app_config: AppConfig) -> None:
     )
     no_offers = {"Brașov": 0, "București": 0, "Cluj": 0, None: 0}
     assert stale_offers(lead_frame, yesterday, REPORT_DATE, app_config) == StaleOffers(
-        no_offers, 0, 0, dict.fromkeys(no_offers, ()), ()
+        no_offers, 0, 0, 0, dict.fromkeys(no_offers, ()), ()
     )
     assert anomalies(lead_frame, REPORT_DATE, app_config) == Anomalies(7, None, ())
     assert same_weekday_comparison(lead_frame, REPORT_DATE, app_config) == SameWeekdayComparison(
@@ -964,3 +970,138 @@ def test_overdue_of_one_manager_keeps_only_that_group(app_config: AppConfig) -> 
         2, 6, (OverdueGroup("Godja Adina Maria", 2, 6, (1, 2)),), (1, 2)
     )
     assert overdue.of_manager("Moaca Andreea") == OverdueRevenire(0, None, (), ())
+
+
+def test_offers_in_work_count_every_offer_of_open_lead(app_config: AppConfig) -> None:
+    rows = [
+        offer(1, 1),
+        offer(2, 20),
+        offer(3, 20, category="ACTIVE_FOLLOWUP", status_name="Revenire 1"),
+        # Контракт и Stand BY не в работе, хотя оферта была.
+        offer(4, 1, category="WON", status_name="Clienți"),
+        offer(5, 1, category="LOST", loss_reason="STAND_BY", status_name="Stand BY"),
+        offer(6, 1, category="PARTNERSHIP", status_name="DESIGNER"),
+    ]
+
+    result = stale_offers(frame(rows, app_config), None, REPORT_DATE, app_config)
+
+    assert (result.total, result.offers_in_work) == (1, 3)
+
+
+# Базовая линия, A1 и A7
+
+
+def stand_by(lead_id: int, **overrides: Any) -> dict[str, Any]:
+    fields: dict[str, Any] = {
+        "category": "LOST",
+        "loss_reason": "STAND_BY",
+        "status_name": "Stand BY",
+        "created_at": datetime(2026, 6, 1, 12, 0, tzinfo=BUCHAREST),
+    }
+    fields.update(overrides)
+    return make_snapshot_row(lead_id=lead_id, **fields)
+
+
+def test_followup_backlog_counts_offer_due_and_age_buckets(app_config: AppConfig) -> None:
+    marketing = {"assigned_to_id": 7, "assigned_to_name": "Marketing Sofa"}
+    rows = [
+        # Ровно 30 суток до конца окна 25.09 19:00: не «дольше 30».
+        stand_by(
+            1,
+            status_changed_at=datetime(2026, 8, 26, 19, 0, tzinfo=BUCHAREST),
+            data_revenire=REPORT_DATE,
+        ),
+        # Статус задан при создании: возраст от created_at, 116 суток.
+        stand_by(2),
+        stand_by(3, status_changed_at=datetime(2026, 8, 26, 18, 0, tzinfo=BUCHAREST)),
+        stand_by(
+            4,
+            status_changed_at=datetime(2026, 9, 20, 12, 0, tzinfo=BUCHAREST),
+            ofertat=True,
+            data_revenire=date(2026, 9, 24),
+            **marketing,
+        ),
+    ]
+    lead_frame = frame(rows, app_config)
+
+    result = followup_backlog(
+        lead_frame, snapshot_period(REPORT_DATE, app_config), REPORT_DATE, app_config
+    )
+
+    assert result == FollowupBacklog(
+        4,
+        1,
+        1,
+        {30: 2, 90: 1},
+        (FollowupBacklogGroup(None, 1), FollowupBacklogGroup("Dragoi Mihaela", 3)),
+    )
+    assert result.lead_count_of("Dragoi Mihaela") == 3
+    assert result.lead_count_of("Godja Adina Maria") == 0
+
+
+def test_followup_backlog_excludes_revenire_statuses_and_other_leads(
+    app_config: AppConfig,
+) -> None:
+    rows = [
+        stand_by(1),
+        stand_by(2, category="ACTIVE_FOLLOWUP", loss_reason=None, status_name="Revenire 1"),
+        stand_by(3, loss_reason="NU_RASPUNS", status_name="NU A RASPUNS"),
+        stand_by(4, category="PARTNERSHIP", loss_reason=None, status_name="DESIGNER"),
+        # Вне периода по created_at.
+        stand_by(5, created_at=datetime(2026, 5, 31, 12, 0, tzinfo=BUCHAREST)),
+    ]
+    since_june = Period(
+        pd.Timestamp(datetime(2026, 6, 1, tzinfo=BUCHAREST)),
+        pd.Timestamp(datetime(2026, 9, 25, 19, 0, tzinfo=BUCHAREST)),
+    )
+
+    result = followup_backlog(frame(rows, app_config), since_june, REPORT_DATE, app_config)
+
+    assert result.lead_count == 1
+
+
+def test_not_taken_leads_counts_open_leads_only(app_config: AppConfig) -> None:
+    marketing = {"assigned_to_id": 7, "assigned_to_name": "Marketing Sofa"}
+    nobody = {"assigned_to_id": None, "assigned_to_name": None}
+    rows = [
+        make_snapshot_row(lead_id=1, **marketing),
+        make_snapshot_row(lead_id=2, **nobody),
+        make_snapshot_row(
+            lead_id=3, category="ACTIVE_FOLLOWUP", status_name="Revenire 2", **marketing
+        ),
+        make_snapshot_row(lead_id=4, category="UNMAPPED", status_name=None, **nobody),
+        make_snapshot_row(
+            lead_id=5,
+            category="LOST",
+            loss_reason="NU_RASPUNS",
+            status_name="NU A RASPUNS",
+            **marketing,
+        ),
+        make_snapshot_row(lead_id=6, category="WON", status_name="Clienți", **nobody),
+        make_snapshot_row(lead_id=7),
+    ]
+
+    result = not_taken_leads(
+        frame(rows, app_config), snapshot_period(REPORT_DATE, app_config), REPORT_DATE, app_config
+    )
+
+    assert result.lead_count == 4
+
+
+def test_not_taken_older_than_day_boundary(app_config: AppConfig) -> None:
+    marketing = {"assigned_to_id": 7, "assigned_to_name": "Marketing Sofa"}
+    rows = [
+        # Ровно сутки до конца окна 25.09 19:00: не старше суток.
+        make_snapshot_row(
+            lead_id=1, created_at=datetime(2026, 9, 24, 19, 0, tzinfo=BUCHAREST), **marketing
+        ),
+        make_snapshot_row(
+            lead_id=2, created_at=datetime(2026, 9, 24, 18, 59, tzinfo=BUCHAREST), **marketing
+        ),
+    ]
+
+    result = not_taken_leads(
+        frame(rows, app_config), snapshot_period(REPORT_DATE, app_config), REPORT_DATE, app_config
+    )
+
+    assert result == NotTakenLeads(2, 1)

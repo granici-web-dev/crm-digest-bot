@@ -164,6 +164,15 @@ def test_non_positive_stale_days_fails_config_load(days: int) -> None:
         KpiSettings.model_validate(raw_kpi)
 
 
+@pytest.mark.parametrize("days", [[], [90, 30], [30, 30], [0, 30]])
+def test_backlog_age_days_must_be_positive_ascending(days: list[int]) -> None:
+    raw_kpi = repository_yaml("kpi.yaml")
+    raw_kpi["backlog_age_days"] = days
+
+    with pytest.raises(ValidationError, match="backlog_age_days"):
+        KpiSettings.model_validate(raw_kpi)
+
+
 def test_repository_scr_levels_reference_kpi_thresholds(app_config: AppConfig) -> None:
     levels = app_config.modules.scr_levels_params.levels
 

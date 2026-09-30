@@ -181,7 +181,9 @@ def stale(
 ) -> StaleOffers:
     by_showroom_ids = {showroom: ids.get(showroom, ()) for showroom in counts}
     ordered = tuple(sorted(lead_id for group in by_showroom_ids.values() for lead_id in group))
-    return StaleOffers(counts, sum(counts.values()), change, by_showroom_ids, ordered)
+    return StaleOffers(
+        counts, sum(counts.values()), sum(counts.values()), change, by_showroom_ids, ordered
+    )
 
 
 NO_OFFERS: dict[str | None, int] = {"Brașov": 0, "București": 0, "Cluj": 0, None: 0}
