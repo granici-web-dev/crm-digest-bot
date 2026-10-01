@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from digest.config import (
     AppConfig,
+    CohortConversionParams,
     KpiSettings,
     LeadCategory,
     ManagerRoster,
@@ -171,6 +172,13 @@ def test_backlog_age_days_must_be_positive_ascending(days: list[int]) -> None:
 
     with pytest.raises(ValidationError, match="backlog_age_days"):
         KpiSettings.model_validate(raw_kpi)
+
+
+def test_baseline_cohort_days_must_be_one_of_age_buckets() -> None:
+    with pytest.raises(ValidationError, match="baseline_cohort_days: 45 нет в age_buckets_days"):
+        CohortConversionParams.model_validate(
+            {"age_buckets_days": [7, 30, 90], "fast_cycle_days": 7, "baseline_cohort_days": 45}
+        )
 
 
 def test_repository_scr_levels_reference_kpi_thresholds(app_config: AppConfig) -> None:

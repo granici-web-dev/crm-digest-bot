@@ -19,6 +19,7 @@ from digest.metrics.daily_checks import (
     RollingContractRate,
     SameWeekdayComparison,
     StaleOffers,
+    UntouchedAverage,
     UntouchedGroup,
     UntouchedLeads,
     anomalies,
@@ -31,6 +32,7 @@ from digest.metrics.daily_checks import (
     snapshot_period,
     stale_offers,
     trend_direction,
+    untouched_average,
     untouched_leads,
 )
 from digest.metrics.frame import prepare_lead_frame
@@ -1088,7 +1090,7 @@ def test_not_taken_leads_counts_open_leads_only(app_config: AppConfig) -> None:
     assert result.lead_count == 4
 
 
-def test_not_taken_older_than_day_boundary(app_config: AppConfig) -> None:
+def test_not_taken_older_than_min_age_boundary(app_config: AppConfig) -> None:
     marketing = {"assigned_to_id": 7, "assigned_to_name": "Marketing Sofa"}
     rows = [
         # Ровно сутки до конца окна 25.09 19:00: не старше суток.
@@ -1105,3 +1107,54 @@ def test_not_taken_older_than_day_boundary(app_config: AppConfig) -> None:
     )
 
     assert result == NotTakenLeads(2, 1)
+
+
+def test_not_taken_age_across_dst_end_counts_real_hours(app_config: AppConfig) -> None:
+    # 25.10.2026 часы переводятся назад: от 24.10 19:30 до 25.10 19:00 по часам 23,5 ч, прошло
+    # 24,5 ч. Порог kpi.yaml 24 ч.
+    marketing = {"assigned_to_id": 7, "assigned_to_name": "Marketing Sofa"}
+    report_date = date(2026, 10, 25)
+    rows = [
+        make_snapshot_row(
+            lead_id=1, created_at=datetime(2026, 10, 24, 19, 30, tzinfo=BUCHAREST), **marketing
+        ),
+        make_snapshot_row(
+            lead_id=2, created_at=datetime(2026, 10, 24, 20, 30, tzinfo=BUCHAREST), **marketing
+        ),
+    ]
+
+    result = not_taken_leads(
+        frame(rows, app_config), snapshot_period(report_date, app_config), report_date, app_config
+    )
+
+    assert app_config.kpi.not_taken_min_age_hours == 24
+    assert result == NotTakenLeads(2, 1)
+
+
+def test_untouched_average_is_mean_over_days_with_snapshot(app_config: AppConfig) -> None:
+    def day_frame(day: int, **overrides: Any) -> pd.DataFrame:
+        return frame(
+            [new_lead(day, datetime(2026, 9, day, 10, 30, tzinfo=BUCHAREST), **overrides)],
+            app_config,
+        )
+
+    frames = {
+        date(2026, 9, 23): day_frame(23),
+        date(2026, 9, 24): day_frame(
+            24, status_changed_at=datetime(2026, 9, 24, 11, 0, tzinfo=BUCHAREST)
+        ),
+        date(2026, 9, 25): day_frame(25),
+    }
+
+    result = untouched_average(frames, app_config)
+
+    assert result.lead_count_by_day == {
+        date(2026, 9, 23): 1,
+        date(2026, 9, 24): 0,
+        date(2026, 9, 25): 1,
+    }
+    assert result.average == pytest.approx(2 / 3)
+
+
+def test_untouched_average_without_snapshots_is_none(app_config: AppConfig) -> None:
+    assert untouched_average({}, app_config) == UntouchedAverage({}, None)

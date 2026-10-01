@@ -1,19 +1,28 @@
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any
+
+import pytest
 
 from digest.acceptance.baseline import (
     METRICS_WITHOUT_SOURCE,
+    TABLE_HEADER,
+    BaselineFileError,
     BaselineRow,
     Value,
     baseline_rows,
     comparison_lines,
+    date_warning,
+    last_sunday,
     markdown_lines,
+    month_analysis_dates,
+    parse_baseline_file,
     parse_baseline_lines,
-    touch_week,
 )
 from digest.config import AppConfig
 from digest.metrics.daily import PreviousSnapshot
 from digest.metrics.frame import prepare_lead_frame
+from digest.metrics.weekly import week_days
 from factories import BUCHAREST, make_snapshot_row
 
 REPORT_DATE = date(2026, 9, 29)
@@ -204,9 +213,18 @@ def test_external_metrics_have_no_source(app_config: AppConfig) -> None:
         assert (rows[row_id].value, rows[row_id].unit) == (None, "нет источника")
 
 
-def test_touch_week_is_last_full_monday_to_sunday() -> None:
-    assert touch_week(date(2026, 9, 29)) == (date(2026, 9, 21), date(2026, 9, 27))
-    assert touch_week(date(2026, 9, 27)) == (date(2026, 9, 21), date(2026, 9, 27))
+@pytest.mark.parametrize(
+    ("report_date", "sunday"),
+    [
+        (date(2026, 9, 29), date(2026, 9, 27)),
+        # В воскресенье неделя кончается этой датой: снапшот 19:00 закрывает её.
+        (date(2026, 9, 27), date(2026, 9, 27)),
+        (date(2026, 9, 28), date(2026, 9, 27)),
+    ],
+)
+def test_touch_week_is_last_full_monday_to_sunday(report_date: date, sunday: date) -> None:
+    assert last_sunday(report_date) == sunday
+    assert week_days(last_sunday(report_date))[0] == date(2026, 9, 21)
 
 
 def test_touch_rows_report_partial_week(app_config: AppConfig) -> None:
@@ -219,18 +237,23 @@ def test_touch_rows_report_partial_week(app_config: AppConfig) -> None:
     }
     snapshots = (
         PreviousSnapshot(date(2026, 9, 25), prepare_lead_frame([before], app_config)),
-        PreviousSnapshot(date(2026, 9, 26), prepare_lead_frame([after], app_config)),
+        PreviousSnapshot(date(2026, 9, 27), prepare_lead_frame([after], app_config)),
     )
     lead_frame = prepare_lead_frame(LEADS, app_config)
 
     rows = {
-        row.id: row for row in baseline_rows(lead_frame, {}, snapshots, REPORT_DATE, app_config)
+        row.id: row
+        for row in baseline_rows(
+            lead_frame, {REPORT_DATE: lead_frame}, snapshots, REPORT_DATE, app_config
+        )
     }
 
     assert rows["C.touch.total"].value == 1
     assert rows[f"C.{DRAGOI}.touch"].value == 1
-    assert rows["C.touch.total"].period == "21.09–27.09.2026, снапшоты с 25.09, неделя неполная"
-    assert rows["A5.untouched.cur_average"].value is None
+    # Как сноски w14: первый покрытый день и покрытые дни без своего снапшота.
+    assert rows["C.touch.total"].period == (
+        "21.09–27.09.2026, посчитано с 26.09, без снапшота: 26.09, неделя неполная"
+    )
 
 
 def test_touch_rows_without_snapshot_pair_have_no_value(app_config: AppConfig) -> None:
@@ -249,7 +272,9 @@ def test_rows_contain_no_lead_ids_or_contacts(app_config: AppConfig) -> None:
 
     text = "\n".join(
         markdown_lines(
-            baseline_rows(lead_frame, {}, (), REPORT_DATE, app_config), REPORT_DATE, app_config
+            baseline_rows(lead_frame, {REPORT_DATE: lead_frame}, (), REPORT_DATE, app_config),
+            REPORT_DATE,
+            app_config,
         )
     )
 
@@ -316,3 +341,87 @@ def test_compare_reads_back_written_files(app_config: AppConfig) -> None:
 
     assert "| A1.stand_by | Stand BY | 1 | 1 | +0 |" in lines
     assert len(lines) == len(rows) + 2
+
+
+def test_source_lead_rows_add_up_to_all_leads(app_config: AppConfig) -> None:
+    rare_source = [lead(600 + index, (2026, 9, 1), source_name="BIFE 2026") for index in range(2)]
+    without_source = [lead(700, (2026, 9, 1), source_name=None)]
+    leads = [*LEADS, *rare_source, *without_source]
+
+    result = values(rows_of(app_config, leads))
+
+    source_rows = {row_id: value for row_id, value in result.items() if row_id.startswith("D.")}
+    assert source_rows["D.leads.none"] == 1
+    assert sum(value for value in source_rows.values() if isinstance(value, int)) == len(leads)
+
+
+@pytest.mark.parametrize(
+    ("report_date", "previous_month_end"),
+    [
+        (date(2026, 10, 31), date(2026, 9, 30)),
+        (date(2026, 12, 31), date(2026, 11, 30)),
+        (date(2027, 1, 31), date(2026, 12, 31)),
+        (date(2027, 1, 1), date(2026, 12, 31)),
+        # Понедельник: граница недели не двигает месяцы.
+        (date(2026, 10, 5), date(2026, 9, 30)),
+    ],
+)
+def test_current_and_previous_month_at_boundaries(
+    report_date: date, previous_month_end: date
+) -> None:
+    assert month_analysis_dates(report_date) == (
+        ("cur", report_date),
+        ("prev", previous_month_end),
+    )
+
+
+def test_warning_unless_last_day_of_month() -> None:
+    assert date_warning(date(2026, 9, 30)) is None
+    assert date_warning(date(2027, 2, 28)) is None
+    warning = date_warning(date(2026, 9, 29))
+    assert warning is not None
+    assert warning.startswith("Внимание: 29.09.2026 не последний день месяца.")
+
+
+def test_compare_negative_percent_delta_and_value_missing_on_one_side() -> None:
+    base = [
+        BaselineRow("B1.scr.prev", "SCR месяца (m4)", 12.4, "%", "август 2026"),
+        BaselineRow("B5.cycle_median.cur", "Цикл", 5.5, "дней", "сентябрь 2026"),
+        BaselineRow("B6.cohort_30d.cur", "Когорта", None, "%", "сентябрь 2026"),
+    ]
+    current = [
+        BaselineRow("B1.scr.prev", "SCR месяца (m4)", 10.9, "%", "сентябрь 2026"),
+        BaselineRow("B5.cycle_median.cur", "Цикл", None, "дней", "октябрь 2026"),
+        BaselineRow("B6.cohort_30d.cur", "Когорта", 8.0, "%", "октябрь 2026"),
+    ]
+
+    assert comparison_lines(base, current)[2:] == [
+        "| B1.scr.prev | SCR месяца (m4) | 12.4 | 10.9 | -1.5 п.п. |",
+        "| B5.cycle_median.cur | Цикл | 5.5 | — | — |",
+        "| B6.cohort_30d.cur | Когорта | — | 8.0 | — |",
+    ]
+
+
+def test_compare_does_not_subtract_across_unit_change() -> None:
+    base = [BaselineRow("A4.stale_offers", "Оферты", 2, "оферт", "на 29.09.2026")]
+    current = [BaselineRow("A4.stale_offers", "Оферты", 3, "лидов", "на 31.10.2026")]
+
+    assert comparison_lines(base, current)[2] == "| A4.stale_offers | Оферты | 2 | 3 | — |"
+
+
+@pytest.mark.parametrize(
+    ("lines", "message"),
+    [
+        (["# Чужой файл", "| a | b |"], "нет строки заголовка"),
+        ([*TABLE_HEADER, "| A1.stand_by | Stand BY | 150 | лидов |"], "строка 3: ячеек 4"),
+        ([*TABLE_HEADER, "| A1.stand_by | Stand BY | много | лидов | на 29.09 |"], "«много»"),
+    ],
+)
+def test_foreign_or_broken_file_is_rejected(lines: list[str], message: str) -> None:
+    with pytest.raises(BaselineFileError, match=message):
+        parse_baseline_lines(lines)
+
+
+def test_missing_file_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(BaselineFileError, match="файл не прочитан"):
+        parse_baseline_file(tmp_path / "нет.md")

@@ -111,7 +111,7 @@ class MissingFollowupDate:
 class StaleOffers:
     by_showroom: dict[str | None, int]
     total: int
-    # Все оферты у лидов в работе, висящие и нет: «застряло total из offers_in_work».
+    # docs/kpi-definitions.md, «Базовая линия», A4.
     offers_in_work: int
     change_since_yesterday: int | None
     lead_ids_by_showroom: dict[str | None, tuple[int, ...]]
@@ -142,7 +142,14 @@ class FollowupBacklog:
 @dataclass(frozen=True)
 class NotTakenLeads:
     lead_count: int
-    older_than_day: int
+    older_than_min_age: int
+
+
+@dataclass(frozen=True)
+class UntouchedAverage:
+    lead_count_by_day: dict[date, int]
+    # None: ни одного дня со снапшотом.
+    average: float | None
 
 
 @dataclass(frozen=True)
@@ -316,12 +323,9 @@ def missing_followup_date(
     lead_frame: pd.DataFrame, report_date: date, config: AppConfig
 ) -> MissingFollowupDate:
     # docs/kpi-definitions.md, «Ежедневные проверки», d3 без Data revenire.
-    status_mapping = config.status_mapping
-    created_from = datetime.combine(
-        status_mapping.leads_created_from, time(), tzinfo=ZoneInfo(status_mapping.time.timezone)
-    )
+    created_from = since_leads_created_from(report_date, config).start
     # Возраст от конца окна, как в d2.
-    window_end = daily_window(report_date, status_mapping.time).end
+    window_end = daily_window(report_date, config.status_mapping.time).end
     status_since = status_set_at(lead_frame)
     status_age_hours = (window_end - status_since).dt.total_seconds() / 3600
     min_age_hours = config.modules.overdue_revenire_params.missing_followup_min_age_hours
@@ -359,11 +363,17 @@ def followup_backlog(
     backlog = leads[leads["category"].eq("LOST") & leads["is_followup_status"]]
     window_end = daily_window(report_date, config.status_mapping.time).end
     status_age = window_end - status_set_at(backlog)
-    groups = tuple(
-        FollowupBacklogGroup(manager_name, lead_count)
-        for manager_name, lead_count, _, _ in count_and_max_by_manager(
-            backlog, status_age.dt.days, config
-        )
+    # Группа по id консультанта, как в d3: тёзки не сливаются.
+    manager_name = manager_names(backlog, config)
+    by_manager = manager_name.groupby(
+        backlog["assigned_to_id"].where(manager_name.notna()), dropna=False, sort=False
+    ).agg(["first", "size"])
+    groups = sorted(
+        (
+            FollowupBacklogGroup(name_or_not_taken(row["first"]), int(row["size"]))
+            for _, row in by_manager.iterrows()
+        ),
+        key=lambda group: not_taken_first(group.manager_name, group.lead_count),
     )
     return FollowupBacklog(
         len(backlog),
@@ -373,21 +383,45 @@ def followup_backlog(
             days: int(status_age.gt(pd.Timedelta(days=days)).sum())
             for days in config.kpi.backlog_age_days
         },
-        groups,
+        tuple(groups),
     )
 
 
 def not_taken_leads(
     lead_frame: pd.DataFrame, period: Period, report_date: date, config: AppConfig
 ) -> NotTakenLeads:
-    # docs/kpi-definitions.md, «Базовая линия», A7: открытые лиды, которые никто не взял.
+    # docs/kpi-definitions.md, «Базовая линия», A7.
     leads = leads_in_period(lead_frame, period)
     open_leads = leads[leads["category"].isin((*OPEN_WORK_CATEGORIES, "UNMAPPED"))]
     not_taken = open_leads[manager_names(open_leads, config).isna()]
     window_end = daily_window(report_date, config.status_mapping.time).end
+    # Разность pandas-меток считается по UTC: в ночь перевода часов сутки это 25 или 23 часа
+    # по часам, а не 24, как дало бы window_end − timedelta(days=1).
+    age_hours = (window_end - not_taken["created_at"]).dt.total_seconds() / 3600
     return NotTakenLeads(
-        len(not_taken),
-        int(not_taken["created_at"].lt(window_end - timedelta(days=1)).sum()),
+        len(not_taken), int(age_hours.gt(config.kpi.not_taken_min_age_hours).sum())
+    )
+
+
+def untouched_average(
+    frames_by_day: dict[date, pd.DataFrame], config: AppConfig
+) -> UntouchedAverage:
+    # docs/kpi-definitions.md, «Базовая линия», A5.
+    lead_count_by_day = {
+        day: untouched_leads(frame, day, config).lead_count for day, frame in frames_by_day.items()
+    }
+    counts = list(lead_count_by_day.values())
+    return UntouchedAverage(lead_count_by_day, sum(counts) / len(counts) if counts else None)
+
+
+def since_leads_created_from(report_date: date, config: AppConfig) -> Period:
+    # docs/kpi-definitions.md, «Базовая линия»: лиды с начала работы в mefi на дату, как охват d3.
+    status_mapping = config.status_mapping
+    return Period(
+        datetime.combine(
+            status_mapping.leads_created_from, time(), tzinfo=ZoneInfo(status_mapping.time.timezone)
+        ),
+        daily_window(report_date, status_mapping.time).end,
     )
 
 

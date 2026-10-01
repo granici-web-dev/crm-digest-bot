@@ -42,6 +42,10 @@ active_offer_stale_days: 14
 # (docs/kpi-definitions.md, «Базовая линия»). По возрастанию.
 backlog_age_days: [30, 90]
 
+# Базовая линия, A7: не взятый открытый лид «старше суток» = строго больше N часов прошедшего
+# времени от создания до конца окна даты (docs/kpi-definitions.md, «Базовая линия»).
+not_taken_min_age_hours: 24
+
 # Уровень по SPI, первый подходящий сверху (03_KPI_Agenti!AD).
 levels:
   - { name: Elite, min_spi: 90 }

@@ -10,12 +10,15 @@ import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from digest.acceptance.baseline import (
+    BaselineFileError,
     BaselineRow,
     baseline_rows,
     comparison_lines,
+    date_warning,
+    last_sunday,
     markdown_lines,
+    parse_baseline_file,
     parse_baseline_lines,
-    touch_week,
 )
 from digest.acceptance.chat_eval import (
     TIMED_TOOL_CALL,
@@ -42,6 +45,7 @@ from digest.mefi.client import MefiClient, create_mefi_http_client
 from digest.metrics.daily import PreviousSnapshot
 from digest.metrics.monthly import first_day_of_month
 from digest.metrics.touches import touch_snapshot_dates
+from digest.metrics.weekly import week_days
 from digest.reports.lead_links import LeadLinks
 from digest.reports.modules import IMPLEMENTED_MODULES
 from digest.reports.periods import REPORT_LEVELS, ReportLevel
@@ -249,6 +253,7 @@ async def run_baseline(
         return await load_lead_frame(engine, app_settings.tenant_id, snapshot_date, config)
 
     load = memoized_frame_loader(load_frame)
+    week = week_days(last_sunday(report_date))
     try:
         success_dates = await success_snapshot_dates(engine, app_settings.tenant_id)
         lead_frame = await load(report_date)
@@ -259,7 +264,7 @@ async def run_baseline(
         touch_snapshots = tuple(
             [
                 PreviousSnapshot(day, await load(day))
-                for day in touch_snapshot_dates(success_dates, *touch_week(report_date))
+                for day in touch_snapshot_dates(success_dates, week[0], week[-1])
             ]
         )
     except SnapshotMissingError:
@@ -272,6 +277,10 @@ async def run_baseline(
         report_date,
         config,
     )
+    warning = date_warning(report_date)
+    if warning is not None:
+        print(warning)
+        print()
     print_and_save(lines, out)
     if compare is not None:
         compare_path, base = compare
@@ -312,14 +321,16 @@ def main(argv: list[str] | None = None) -> int:
         )
     if arguments.command == "baseline":
         # Файл сравнения читается до базы: опечатка в пути не должна стоить загрузки снапшотов.
-        compare = (
-            None
-            if arguments.compare is None
-            else (
-                arguments.compare,
-                parse_baseline_lines(arguments.compare.read_text(encoding="utf-8").splitlines()),
-            )
-        )
+        compare = None
+        if arguments.compare is not None:
+            try:
+                compare = (arguments.compare, parse_baseline_file(arguments.compare))
+            except BaselineFileError as error:
+                print(
+                    f"--compare {arguments.compare}: {error}. "
+                    "Нужен файл, записанный baseline --out."
+                )
+                return 2
         return asyncio.run(run_baseline(app_settings, arguments.date, arguments.out, compare))
     return asyncio.run(run_service(app_settings))
 

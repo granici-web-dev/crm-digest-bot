@@ -407,12 +407,22 @@ class ScrLevelsParams(StrictConfigModel):
 class CohortConversionParams(StrictConfigModel):
     age_buckets_days: list[PositiveInt] = Field(min_length=1)
     fast_cycle_days: PositiveInt
+    # Корзина m9, которую печатает baseline (B6): доля считается только для дней корзины.
+    baseline_cohort_days: PositiveInt
 
     @model_validator(mode="after")
     def age_buckets_are_ascending(self) -> Self:
         buckets = self.age_buckets_days
         if any(later <= earlier for earlier, later in pairwise(buckets)):
             raise ValueError("age_buckets_days: дни корзин должны строго возрастать")
+        return self
+
+    @model_validator(mode="after")
+    def baseline_cohort_days_is_a_bucket(self) -> Self:
+        if self.baseline_cohort_days not in self.age_buckets_days:
+            raise ValueError(
+                f"baseline_cohort_days: {self.baseline_cohort_days} нет в age_buckets_days"
+            )
         return self
 
 
@@ -654,6 +664,7 @@ class KpiSettings(StrictConfigModel):
     thresholds: dict[str, Share]
     active_offer_stale_days: PositiveInt
     backlog_age_days: list[PositiveInt]
+    not_taken_min_age_hours: PositiveInt
     levels: list[SpiLevel]
     scores: dict[KpiName, ScoreSteps]
     irr_penalty: ScoreSteps

@@ -77,7 +77,7 @@ monthly:          # календарный месяц, отправка 1-го �
   m8:  { name: loss_reasons_trend, label: "Motive de pierdere, evoluție",    sources: [A],    enabled: true }
   # Корзины «клиент за ≤N дней от создания лида», по возрастанию; ≤N видна, когда когорте ≥ N суток.
   # fast_cycle_days: порог «быстрого» договора в строке цикла (docs/kpi-definitions.md, m9).
-  m9:  { name: cohort_conversion, label: "Conversie de cohortă",     sources: [A],    enabled: true, params: { age_buckets_days: [7, 30, 90], fast_cycle_days: 7 } }
+  m9:  { name: cohort_conversion, label: "Conversie de cohortă",     sources: [A],    enabled: true, params: { age_buckets_days: [7, 30, 90], fast_cycle_days: 7, baseline_cohort_days: 30 } }
   m10: { name: contracts_avg_value, label: "Contracte și valoare medie",   sources: [B],    enabled: false }
   m11: { name: repeat_clients, label: "Clienți care revin",        sources: [A],    enabled: true }
   m12: { name: cpo_cac_by_channel, label: "CPO și CAC pe canal",    sources: [A, D], enabled: false }
