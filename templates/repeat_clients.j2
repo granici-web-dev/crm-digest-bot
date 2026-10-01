@@ -6,6 +6,7 @@
 {% if repeat_clients.company.repeat %}
 Motiv: {{ repeat_by_contact }} {{ repeat_clients.company.by_contact }}, {{ repeat_sources }} {{ repeat_clients.company.by_source }}
 {% endif %}
+<i>din N = contracte semnate în lună (data conversiei), nu clienții cohortei din m2.</i>
 <i>Revine: {{ repeat_by_contact }} al unui client anterior din mefi sau sursa {{ repeat_sources }}. Clienții dinainte de mefi (înainte de 2026) fără această sursă nu sunt vizibili, procentul e subestimat în primele luni.</i>
 {% if repeat_clients.won_without_converted_at %}
 <i>{{ repeat_clients.won_without_converted_at | count_noun("lead", "lead-uri") }} Clienți fără dată de conversie {{ "nu este inclus" if repeat_clients.won_without_converted_at == 1 else "nu sunt incluse" }}.</i>

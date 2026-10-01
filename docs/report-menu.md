@@ -789,7 +789,7 @@ Cele mai cerute: Belle Extensibil 31 · Belle Soft 22 · Life 14 · Nocturne 9 �
 Самые востребованные: Belle Extensibil 31 · Belle Soft 22 · Life 14 · Nocturne 9 · Free Comfort 7
 ```
 
-### m19 · Fișier Excel + PDF atașat / Excel + PDF во вложении
+### m19 · Fișier Excel lunar / Excel за месяц
 
 Тег: now
 
@@ -800,7 +800,7 @@ Cele mai cerute: Belle Extensibil 31 · Belle Soft 22 · Life 14 · Nocturne 9 �
 Пример RO:
 
 ```
-📎 sofabelle_august_2026.xlsx · 📎 sofabelle_august_2026.pdf
+📎 sofabelle_august_2026.xlsx
 ```
 
 

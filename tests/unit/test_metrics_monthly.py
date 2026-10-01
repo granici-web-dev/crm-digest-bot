@@ -255,7 +255,7 @@ def test_monthly_loss_shares_are_unknown_without_losses(app_config: AppConfig) -
     assert losses.reason_change("BUGET") == pytest.approx(-1.0)
 
 
-def test_monthly_lead_rows_are_company_leads_with_local_created_day(
+def test_monthly_lead_rows_are_company_leads_with_window_day(
     app_config: AppConfig,
 ) -> None:
     leads = frame(
@@ -271,7 +271,8 @@ def test_monthly_lead_rows_are_company_leads_with_local_created_day(
 
     assert tuple(rows.columns) == LEAD_ROW_COLUMNS
     assert list(rows["lead_id"]) == [1, 2, 5]
-    assert list(rows["day"]) == [date(2026, 8, 31), date(2026, 9, 15), date(2026, 9, 20)]
+    # День ежедневного окна, как d1 и m3: после 19:00 это следующий день.
+    assert list(rows["day"]) == [date(2026, 9, 1), date(2026, 9, 15), date(2026, 9, 21)]
     assert len(rows) == monthly_funnel(leads, SEPTEMBER_END, app_config).company.leads
 
 
@@ -417,7 +418,8 @@ def test_monthly_client_rows_are_month_clients_with_repeat_mark(app_config: AppC
 
     assert tuple(rows.columns) == (*LEAD_ROW_COLUMNS, "is_repeat", "repeat_reason")
     assert list(rows["lead_id"]) == [3, 2]
-    assert list(rows["day"]) == [date(2026, 9, 2), date(2026, 9, 20)]
+    # Договор 02.09 22:00 это окно 03.09, как в d6 и m3.
+    assert list(rows["day"]) == [date(2026, 9, 3), date(2026, 9, 20)]
     assert list(rows["is_repeat"]) == [False, True]
     assert list(rows["repeat_reason"]) == [None, REPEAT_BY_CONTACT]
     assert len(rows) == monthly_repeat_clients(leads, SEPTEMBER_END, app_config).company.clients

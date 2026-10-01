@@ -87,7 +87,7 @@ monthly:          # календарный месяц, отправка 1-го �
   m16: { name: top_products, label: "Top produse",          sources: [B, G], enabled: false }
   m17: { name: competitors_from_notes, label: "Concurenți menționați", sources: [H],   enabled: false }
   m18: { name: models_in_demand, label: "Modele cerute",      sources: [H],    enabled: false }
-  m19: { name: excel_pdf_attachment, label: "Fișier Excel + PDF",  sources: [A],    enabled: true }
+  m19: { name: excel_monthly_attachment, label: "Fișier Excel lunar",  sources: [A],    enabled: true }
 
 yearly:           # 5 января 09:00
   y1: { name: seasonality, label: "Sezonalitate",            sources: [A],    enabled: false }

@@ -318,8 +318,6 @@ def monthly_workbook(lead_frame: pd.DataFrame, context: ReportContext) -> bytes:
         context.config,
         context.lead_links,
     )
-    # Лид последнего вечера прошлого месяца стоит в листе с датой прошлого месяца: окно
-    # месяца начинается в 19:00 (docs/kpi-definitions.md, «Месячное окно»).
     window = month_window(context.report_date, context.config.status_mapping.time)
     workbook.get_worksheet_by_name("Lead-uri luna").write(
         0,

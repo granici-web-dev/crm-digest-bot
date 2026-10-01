@@ -7,7 +7,7 @@ import pandas as pd
 from digest.config import AppConfig, TimeSettings
 from digest.metrics.breakdown import LeadBreakdown, lead_breakdown
 from digest.metrics.cockpit import meets_target
-from digest.metrics.daily import daily_window
+from digest.metrics.daily import daily_window, daily_window_days
 from digest.metrics.extra import cohort_conversion
 from digest.metrics.kpi import (
     LeadCounts,
@@ -323,8 +323,9 @@ def monthly_lead_rows(
 ) -> pd.DataFrame:
     # Те же лиды, что LEADS компании в m2: строки листа сходятся с воронкой
     # (docs/kpi-definitions.md, «Месячное окно», m19).
-    leads = leads_in_period(lead_frame, month_window(report_date, config.status_mapping.time))
-    return lead_rows(leads.assign(day=leads["created_at"].dt.tz_localize(None).dt.date))
+    time_settings = config.status_mapping.time
+    leads = leads_in_period(lead_frame, month_window(report_date, time_settings))
+    return lead_rows(leads.assign(day=daily_window_days(leads["created_at"], time_settings)))
 
 
 def repeat_client_reasons(lead_frame: pd.DataFrame, config: AppConfig) -> pd.Series:
@@ -403,9 +404,11 @@ def monthly_repeat_clients(
 def monthly_client_rows(
     lead_frame: pd.DataFrame, report_date: date, config: AppConfig
 ) -> pd.DataFrame:
-    # Те же клиенты, что «din N» в m11; день листа это день converted_at по Бухаресту.
+    # Те же клиенты, что «din N» в m11; день листа это ежедневное окно converted_at, как в d6 и m3.
     clients = month_clients(lead_frame, report_date, config)
-    rows = clients.assign(day=clients["converted_at"].dt.tz_localize(None).dt.date)
+    rows = clients.assign(
+        day=daily_window_days(clients["converted_at"], config.status_mapping.time)
+    )
     return rows.sort_values(["day", "converted_at"])[
         [*LEAD_ROW_COLUMNS, "is_repeat", "repeat_reason"]
     ].reset_index(drop=True)
