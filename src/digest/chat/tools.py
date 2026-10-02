@@ -1146,7 +1146,8 @@ async def rolling_contract_rate_tool(
     first_day = snapshot_date - window + timedelta(days=1)
     threshold = points_one_decimal(result.trend_threshold_pp / 100)
     # Направление и разница из метрики d7, а не из direction_text: иначе «=» дайджеста при −1,5 pp
-    # в чате стало бы «scădere».
+    # в чате стало бы «scădere». Разница без знака, как в compare_periods: со знаком модель писала
+    # «în scădere cu −4,5 pp».
     directions = {
         "up": text("direction_up"),
         "down": text("direction_down"),
@@ -1166,7 +1167,7 @@ async def rolling_contract_rate_tool(
             "difference": (
                 None
                 if result.difference_pp is None
-                else signed_points_one_decimal(result.difference_pp / 100)
+                else points_one_decimal(result.difference_pp / 100)
             ),
             "direction": None if result.direction is None else directions[result.direction],
             "trend_threshold": threshold,

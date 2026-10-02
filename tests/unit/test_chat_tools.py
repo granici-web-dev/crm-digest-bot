@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from digest.acceptance.chat_eval import timed_tool_call
+from digest.chat.loop import allowed_numbers, first_unverified_number
 from digest.chat.tools import (
     ALL_MANAGERS,
     ALL_SHOWROOMS,
@@ -913,7 +914,7 @@ async def test_rolling_contract_rate_matches_d7_on_latest_snapshot(
         "previous_rate": percent_one_decimal(result.previous_rate),
         "previous_contracts": result.previous_contracts,
         "previous_useful": result.previous_useful,
-        "difference": f"+{result.difference_pp:.1f} pp".replace(".", ","),
+        "difference": f"{result.difference_pp:.1f} pp".replace(".", ","),
         "direction": "creștere",
         "trend_threshold": "2,0 pp",
     }
@@ -954,7 +955,44 @@ async def test_rolling_contract_rate_direction_uses_d7_threshold(
     outcome = await run_tool("rolling_contract_rate", {}, data)
 
     assert (outcome.content["rate"], outcome.content["previous_rate"]) == ("30,0%", "10,0%")
-    assert (outcome.content["difference"], outcome.content["direction"]) == ("+20,0 pp", direction)
+    assert (outcome.content["difference"], outcome.content["direction"]) == ("20,0 pp", direction)
+
+
+async def test_rolling_contract_rate_falling_difference_is_unsigned(
+    etalon_config: AppConfig,
+) -> None:
+    # 1 из 10 полезных против 3 из 10: 10,0 % против 30,0 %, разница −20,0 pp.
+    rows = [
+        make_snapshot_row(
+            lead_id=lead_id,
+            created_at=created_at,
+            **(
+                {"category": "WON", "status_name": "Clienți", "converted_at": created_at}
+                if lead_id % 10 < contracts
+                else {}
+            ),
+        )
+        for first_id, created_at, contracts in [
+            (0, datetime(2026, 9, 10, 12, 0, tzinfo=BUCHAREST), 1),
+            (10, datetime(2026, 8, 10, 12, 0, tzinfo=BUCHAREST), 3),
+        ]
+        for lead_id in range(first_id, first_id + 10)
+    ]
+    snapshot_date = date(2026, 9, 25)
+    data = replace(
+        tool_data(etalon_config, prepare_lead_frame(rows, etalon_config), (snapshot_date,)),
+        today=snapshot_date,
+    )
+
+    outcome = await run_tool("rolling_contract_rate", {}, data)
+
+    difference = outcome.content["difference"]
+    assert (difference, outcome.content["direction"]) == ("20,0 pp", "scădere")
+    assert not set(difference) & {"+", "-", "−"}
+    signature = "<i>Perioada: 27.08–25.09.2026 · rolling_contract_rate()</i>"
+    allowed = allowed_numbers(signature, [json.dumps(outcome.content, ensure_ascii=False)])
+    assert first_unverified_number("În scădere cu 20,0 pp.", allowed) is None
+    assert first_unverified_number("În scădere cu −20,0 pp.", allowed) == "−20,0"
 
 
 def tool_calls(config: AppConfig, period: ChatPeriod | None) -> list[tuple[str, dict[str, Any]]]:

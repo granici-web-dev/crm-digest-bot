@@ -183,7 +183,7 @@ chat:             # режим вопросов; включается целик
       Rata contractelor pe ultimele window_days zile (30) la data ultimului snapshot: contracte
       după data semnării (contracts) împărțite la lead-urile utile create în aceleași zile
       (useful), față de cele window_days zile anterioare (previous_*). period și previous_period
-      dau zilele. difference este diferența în puncte procentuale, cu semn; direction este
+      dau zilele. difference este diferența în puncte procentuale, fără semn; direction este
       creștere, scădere sau stabilă, când diferența este sub trend_threshold. Nu este SCR-ul
       lunii; pentru SCR pe lună folosești funnel. Fără parametri.
   # Описания параметров по имени, для каждого инструмента с таким параметром.
