@@ -10,9 +10,11 @@ from aiogram.exceptions import TelegramNetworkError
 from aiogram.methods import SendDocument, SendMessage, SendPhoto
 from sqlalchemy import insert, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.pool import NullPool
 
 from digest.app import default_schedules, report_job, seed_defaults
 from digest.config import AppConfig
+from digest.db.engine import create_database_engine
 from digest.db.schema import (
     client_snapshots,
     lead_snapshots,
@@ -27,7 +29,7 @@ from digest.metrics.weekly import week_days
 from digest.reports.context import ModuleResult, ReportContext, ReportDocument, ReportPhoto
 from digest.reports.modules import IMPLEMENTED_MODULES, ReportModuleFunction
 from digest.reports.periods import report_period
-from digest.reports.runner import ReportDeps, report_snapshot_date, run_report, select_modules
+from digest.reports.runner import ReportDeps, run_report, select_modules
 from factories import BUCHAREST, lead_snapshots_row, make_lead_links, make_snapshot_row
 from fakes import recording_bot
 
@@ -37,6 +39,7 @@ TEST_CHAT_ID = -1002
 OPS_CHAT_ID = -1003
 REPORT_DATE = date(2026, 9, 25)
 NOW = datetime(2026, 9, 25, 19, 30, tzinfo=BUCHAREST)
+UNREACHABLE_DATABASE_URL = "postgresql+asyncpg://digest:digest@127.0.0.1:1/digest"
 
 
 class Harness:
@@ -982,7 +985,7 @@ async def test_week_chain_is_not_loaded_without_w14(harness: Harness) -> None:
 async def test_daily_report_job_alerts_when_backup_dir_has_no_dumps(
     harness: Harness, tmp_path: Path
 ) -> None:
-    await report_job(harness.deps, "daily", tmp_path)
+    await report_job(harness.deps, "daily", tmp_path, NOW)
 
     assert any("нет ни одного дампа" in text for text in harness.ops_texts)
 
@@ -990,7 +993,7 @@ async def test_daily_report_job_alerts_when_backup_dir_has_no_dumps(
 async def test_non_daily_report_job_does_not_check_backups(
     harness: Harness, tmp_path: Path
 ) -> None:
-    await report_job(harness.deps, "weekly", tmp_path)
+    await report_job(harness.deps, "weekly", tmp_path, WEEKLY_NOW)
 
     assert not any("Бэкап" in text for text in harness.ops_texts)
 
@@ -998,19 +1001,38 @@ async def test_non_daily_report_job_does_not_check_backups(
 async def test_failed_backup_check_is_reported_to_ops(harness: Harness, tmp_path: Path) -> None:
     (tmp_path / "digest-2026-09-25.dump").symlink_to(tmp_path / "missing-target")
 
-    await report_job(harness.deps, "daily", tmp_path)
+    await report_job(harness.deps, "daily", tmp_path, NOW)
 
     assert "Проверка бэкапа упала: FileNotFoundError." in harness.ops_texts
 
 
-def current_report_week(config: AppConfig) -> tuple[date, ...]:
-    # report_job берёт время из часов: неделя теста считается от того же «сейчас».
-    period = report_period("weekly", datetime.now(BUCHAREST), config.status_mapping.time)
-    return week_days(report_snapshot_date(period, BUCHAREST))
+WEEKLY_NOW = datetime(2026, 9, 28, 9, 0, tzinfo=BUCHAREST)
+REPORT_WEEK = week_days(WEEK_SUNDAY)
+SOURCE_CHANGES_PREFIX = "Смены источника"
+
+
+def source_changes_lines(harness: Harness) -> list[str]:
+    return [text for text in harness.ops_texts if text.startswith(SOURCE_CHANGES_PREFIX)]
+
+
+async def insert_weekly_run(engine: AsyncEngine, status: str, config: AppConfig) -> None:
+    period = report_period("weekly", WEEKLY_NOW, config.status_mapping.time)
+    async with engine.begin() as connection:
+        await connection.execute(
+            insert(report_runs).values(
+                tenant_id=TENANT_ID,
+                report_level="weekly",
+                period_start=period.start,
+                period_end=period.end,
+                chat_id=GROUP_CHAT_ID,
+                status=status,
+                started_at=text("now() - interval '5 minutes'"),
+            )
+        )
 
 
 async def test_weekly_job_sends_source_changes_line_to_ops_only(harness: Harness) -> None:
-    week = current_report_week(harness.deps.config)
+    week = REPORT_WEEK
     await store_snapshot(harness.deps.engine, week[-2], [make_snapshot_row(lead_id=4711)])
     await store_snapshot(
         harness.deps.engine,
@@ -1018,9 +1040,9 @@ async def test_weekly_job_sends_source_changes_line_to_ops_only(harness: Harness
         [make_snapshot_row(lead_id=4711, source_name="Showroom")],
     )
 
-    await report_job(harness.deps, "weekly", None)
+    await report_job(harness.deps, "weekly", None, WEEKLY_NOW)
 
-    [line] = [text for text in harness.ops_texts if text.startswith("Смены источника")]
+    [line] = source_changes_lines(harness)
     assert line == (
         f"Смены источника за неделю {week[0]:%d.%m}–{week[-1]:%d.%m}: 1 "
         "(из них → Showroom: 1); пар снапшотов: 1 из 7. Топ: Site → Showroom 1"
@@ -1031,7 +1053,7 @@ async def test_weekly_job_sends_source_changes_line_to_ops_only(harness: Harness
 
 
 async def test_source_changes_failure_does_not_affect_weekly_report(harness: Harness) -> None:
-    sunday = current_report_week(harness.deps.config)[-1]
+    sunday = WEEK_SUNDAY
     # Успешный прогон без строк: загрузка снапшота падает и в отчёте, и в проверке.
     async with harness.deps.engine.begin() as connection:
         await connection.execute(
@@ -1044,15 +1066,89 @@ async def test_source_changes_failure_does_not_affect_weekly_report(harness: Har
             )
         )
 
-    await report_job(harness.deps, "weekly", None)
+    await report_job(harness.deps, "weekly", None, WEEKLY_NOW)
 
     assert harness.group.sent
     assert "Проверка смен источника упала: SnapshotMissingError." in harness.ops_texts
-    assert not any(text.startswith("Смены источника") for text in harness.ops_texts)
+    assert source_changes_lines(harness) == []
+
+
+@pytest.mark.parametrize("status", ["success", "failed"])
+async def test_weekly_job_sends_source_changes_line_after_sent_or_failed_run(
+    harness: Harness, status: str
+) -> None:
+    await store_snapshot(harness.deps.engine, WEEK_SUNDAY, [make_snapshot_row(lead_id=1)])
+    await insert_weekly_run(harness.deps.engine, status, harness.deps.config)
+
+    await report_job(harness.deps, "weekly", None, WEEKLY_NOW)
+
+    assert len(source_changes_lines(harness)) == 1
+
+
+async def test_weekly_job_sends_no_source_changes_line_while_run_in_progress(
+    harness: Harness,
+) -> None:
+    await store_snapshot(harness.deps.engine, WEEK_SUNDAY, [make_snapshot_row(lead_id=1)])
+    await insert_weekly_run(harness.deps.engine, "running", harness.deps.config)
+
+    await report_job(harness.deps, "weekly", None, WEEKLY_NOW)
+
+    assert source_changes_lines(harness) == []
+    assert any("уже отправляется другим прогоном" in text for text in harness.ops_texts)
+
+
+async def test_weekly_job_with_failed_outcome_sends_source_changes_line(harness: Harness) -> None:
+    await store_snapshot(harness.deps.engine, WEEK_SUNDAY, [make_snapshot_row(lead_id=1)])
+    async with harness.deps.engine.begin() as connection:
+        await connection.execute(
+            insert(module_settings),
+            [
+                {"tenant_id": TENANT_ID, "module_id": module_id, "enabled": False}
+                for module_id in harness.deps.config.modules.weekly
+            ],
+        )
+
+    await report_job(harness.deps, "weekly", None, WEEKLY_NOW)
+
+    [run] = await report_run_rows(harness.deps.engine)
+    assert run["status"] == "failed"
+    assert len(source_changes_lines(harness)) == 1
+
+
+async def test_source_changes_line_is_sent_with_w14_switched_off(harness: Harness) -> None:
+    await store_snapshot(harness.deps.engine, REPORT_WEEK[-2], [make_snapshot_row(lead_id=7)])
+    await store_snapshot(
+        harness.deps.engine,
+        REPORT_WEEK[-1],
+        [make_snapshot_row(lead_id=7, source_name="Showroom")],
+    )
+    async with harness.deps.engine.begin() as connection:
+        await connection.execute(
+            insert(module_settings).values(tenant_id=TENANT_ID, module_id="w14", enabled=False)
+        )
+
+    await report_job(harness.deps, "weekly", None, WEEKLY_NOW)
+
+    [line] = source_changes_lines(harness)
+    assert "21.09–27.09: 1 (из них → Showroom: 1)" in line
+
+
+async def test_unreachable_database_gives_one_alert_and_no_source_changes_line(
+    harness: Harness,
+) -> None:
+    unreachable = create_database_engine(UNREACHABLE_DATABASE_URL, poolclass=NullPool)
+    deps = replace(harness.deps, engine=unreachable)
+    try:
+        await report_job(deps, "weekly", None, WEEKLY_NOW)
+    finally:
+        await unreachable.dispose()
+
+    [alert] = harness.ops_texts
+    assert alert.startswith("Прогон отчёта weekly упал")
 
 
 async def test_daily_job_does_not_send_source_changes_line(harness: Harness) -> None:
-    await report_job(harness.deps, "daily", None)
+    await report_job(harness.deps, "daily", None, NOW)
 
     assert not any("смен источника" in text.lower() for text in harness.ops_texts)
 

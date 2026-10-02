@@ -42,6 +42,7 @@ from digest.reports.modules import IMPLEMENTED_MODULES
 from digest.reports.periods import ReportLevel, report_period
 from digest.reports.runner import (
     ReportDeps,
+    ReportRunOutcome,
     load_snapshot_chain,
     report_snapshot_date,
     run_report,
@@ -366,15 +367,19 @@ async def weekly_source_changes_check(deps: ReportDeps, now: datetime) -> None:
     await notify_ops(deps.ops, line)
 
 
-async def report_job(deps: ReportDeps, level: ReportLevel, backup_dir: Path | None) -> None:
-    now = datetime.now(ZoneInfo(deps.config.status_mapping.time.timezone))
+async def report_job(
+    deps: ReportDeps, level: ReportLevel, backup_dir: Path | None, now: datetime
+) -> None:
+    outcome: ReportRunOutcome | None = None
     try:
-        await run_report(level, now, deps, late=False)
+        outcome = await run_report(level, now, deps, late=False)
     except Exception as error:
         await alert_failure(
             deps, "report job failed", f"Прогон отчёта {level} упал", error, level=level
         )
-    if level == "weekly":
+    # in_progress: строку пошлёт идущий прогон. Исключение раннера почти всегда значит, что
+    # недоступна база, и проверка упала бы с тем же алертом вторым.
+    if level == "weekly" and outcome not in (None, "in_progress"):
         await weekly_source_changes_check(deps, now)
     if level == "daily" and backup_dir is not None:
         try:
@@ -386,6 +391,13 @@ async def report_job(deps: ReportDeps, level: ReportLevel, backup_dir: Path | No
             await notify_ops(deps.ops, backup_alert)
 
 
+async def scheduled_report_job(
+    deps: ReportDeps, level: ReportLevel, backup_dir: Path | None
+) -> None:
+    now = datetime.now(ZoneInfo(deps.config.status_mapping.time.timezone))
+    await report_job(deps, level, backup_dir, now)
+
+
 def schedule_report_job(
     scheduler: AsyncIOScheduler,
     deps: ReportDeps,
@@ -394,7 +406,7 @@ def schedule_report_job(
     cron: str,
 ) -> None:
     scheduler.add_job(
-        report_job,
+        scheduled_report_job,
         CronTrigger.from_crontab(cron, timezone=ZoneInfo(deps.config.status_mapping.time.timezone)),
         args=[deps, level, backup_dir],
         id=f"report_{level}",

@@ -7,11 +7,12 @@ import httpx
 import pytest
 import respx
 from pydantic import SecretStr
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.pool import NullPool
 
 from digest.app import (
+    REPORT_MISFIRE_GRACE,
     catch_up_on_startup,
     missed_snapshot_job,
     report_missed_snapshots,
@@ -25,6 +26,7 @@ from digest.db.schema import lead_snapshots, module_settings, report_runs, snaps
 from digest.delivery.ops import OpsChannel
 from digest.mefi.client import MefiClient, RequestPacer, create_mefi_http_client
 from digest.reports.modules import IMPLEMENTED_MODULES
+from digest.reports.periods import report_period
 from digest.reports.runner import ReportDeps, run_report
 from digest.snapshot import SnapshotSources, SnapshotTrigger
 from factories import (
@@ -345,6 +347,71 @@ async def test_catch_up_weekly_sends_source_changes_line(
     assert (
         "Смены источника за неделю 21.09–27.09: 0 (из них → Showroom: 0); пар снапшотов: 0 из 7."
     ) in harness.ops_texts
+
+
+def source_changes_lines(harness: Harness) -> list[str]:
+    return [text for text in harness.ops_texts if text.startswith("Смены источника")]
+
+
+async def insert_weekly_run(harness: Harness, status: str) -> None:
+    period = report_period("weekly", MONDAY_MORNING, harness.deps.config.status_mapping.time)
+    async with harness.deps.engine.begin() as connection:
+        await connection.execute(
+            insert(report_runs).values(
+                tenant_id=TENANT_ID,
+                report_level="weekly",
+                period_start=period.start,
+                period_end=period.end,
+                chat_id=GROUP_CHAT_ID,
+                status=status,
+                started_at=text("now() - interval '5 minutes'"),
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    ("stored_status", "expected_lines"), [("success", 0), ("running", 0), ("failed", 1)]
+)
+async def test_catch_up_sends_source_changes_line_only_when_it_runs_the_report(
+    harness: Harness, snapshot_sources: SnapshotSources, stored_status: str, expected_lines: int
+) -> None:
+    await store_success_snapshot(harness.deps.engine, SUNDAY)
+    await insert_weekly_run(harness, stored_status)
+
+    await start_like_run_app(harness, snapshot_sources, MONDAY_MORNING)
+
+    assert len(source_changes_lines(harness)) == expected_lines
+
+
+async def test_restart_within_misfire_grace_sends_one_source_changes_line(
+    harness: Harness, snapshot_sources: SnapshotSources
+) -> None:
+    await store_success_snapshot(harness.deps.engine, SUNDAY)
+    # Джоба 09:00 пропущена (процесс лежал); APScheduler считает следующий запуск от start(),
+    # так что после рестарта отчёт и строку шлёт только догон.
+    restarted_at = (
+        datetime(2026, 9, 28, 9, 0, tzinfo=BUCHAREST) + REPORT_MISFIRE_GRACE - timedelta(minutes=1)
+    )
+
+    await start_like_run_app(harness, snapshot_sources, restarted_at)
+
+    assert len(source_changes_lines(harness)) == 1
+    assert len(harness.report_texts("Raport săptămânal")) == 1
+
+
+async def test_wednesday_catch_up_line_and_report_cover_the_same_week(
+    harness: Harness, snapshot_sources: SnapshotSources
+) -> None:
+    await store_success_snapshot(harness.deps.engine, SUNDAY)
+
+    await start_like_run_app(
+        harness, snapshot_sources, datetime(2026, 9, 30, 10, 0, tzinfo=BUCHAREST)
+    )
+
+    [line] = source_changes_lines(harness)
+    assert line.startswith("Смены источника за неделю 21.09–27.09:")
+    [report] = harness.report_texts("Raport săptămânal")
+    assert report.splitlines()[2] == "21.09.2026 – 27.09.2026"
 
 
 async def test_catch_up_skips_weekly_after_catch_up_days(
