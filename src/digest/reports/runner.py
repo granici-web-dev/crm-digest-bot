@@ -451,6 +451,19 @@ async def previous_week_snapshot(
     return await snapshot_if_successful(reader, substitute)
 
 
+async def load_snapshot_chain(
+    reader: ReportReader, dates: Sequence[date]
+) -> tuple[PreviousSnapshot, ...]:
+    return tuple(
+        [
+            PreviousSnapshot(
+                day, await load_lead_frame(reader.engine, reader.tenant_id, day, reader.config)
+            )
+            for day in dates
+        ]
+    )
+
+
 async def touch_snapshot_chain(
     reader: ReportReader, snapshot_date: date, lead_frame: pd.DataFrame
 ) -> tuple[PreviousSnapshot, ...]:
@@ -459,15 +472,9 @@ async def touch_snapshot_chain(
         week_days(snapshot_date)[0],
         snapshot_date,
     )
-    return tuple(
-        [
-            PreviousSnapshot(
-                day, await load_lead_frame(reader.engine, reader.tenant_id, day, reader.config)
-            )
-            for day in dates
-            if day != snapshot_date
-        ]
-        + [PreviousSnapshot(snapshot_date, lead_frame)]
+    return (
+        *await load_snapshot_chain(reader, [day for day in dates if day != snapshot_date]),
+        PreviousSnapshot(snapshot_date, lead_frame),
     )
 
 
