@@ -23,9 +23,11 @@ from digest.db.schema import (
     snapshot_runs,
 )
 from digest.delivery.ops import OpsChannel
+from digest.metrics.weekly import week_days
 from digest.reports.context import ModuleResult, ReportContext, ReportDocument, ReportPhoto
 from digest.reports.modules import IMPLEMENTED_MODULES, ReportModuleFunction
-from digest.reports.runner import ReportDeps, run_report, select_modules
+from digest.reports.periods import report_period
+from digest.reports.runner import ReportDeps, report_snapshot_date, run_report, select_modules
 from factories import BUCHAREST, lead_snapshots_row, make_lead_links, make_snapshot_row
 from fakes import recording_bot
 
@@ -999,6 +1001,60 @@ async def test_failed_backup_check_is_reported_to_ops(harness: Harness, tmp_path
     await report_job(harness.deps, "daily", tmp_path)
 
     assert "Проверка бэкапа упала: FileNotFoundError." in harness.ops_texts
+
+
+def current_report_week(config: AppConfig) -> tuple[date, ...]:
+    # report_job берёт время из часов: неделя теста считается от того же «сейчас».
+    period = report_period("weekly", datetime.now(BUCHAREST), config.status_mapping.time)
+    return week_days(report_snapshot_date(period, BUCHAREST))
+
+
+async def test_weekly_job_sends_source_changes_line_to_ops_only(harness: Harness) -> None:
+    week = current_report_week(harness.deps.config)
+    await store_snapshot(harness.deps.engine, week[-2], [make_snapshot_row(lead_id=4711)])
+    await store_snapshot(
+        harness.deps.engine,
+        week[-1],
+        [make_snapshot_row(lead_id=4711, source_name="Showroom")],
+    )
+
+    await report_job(harness.deps, "weekly", None)
+
+    [line] = [text for text in harness.ops_texts if text.startswith("Смены источника")]
+    assert line == (
+        f"Смены источника за неделю {week[0]:%d.%m}–{week[-1]:%d.%m}: 1 "
+        "(из них → Showroom: 1); пар снапшотов: 1 из 7. Топ: Site → Showroom 1"
+    )
+    assert "4711" not in line
+    assert harness.group.sent
+    assert "Смены источника" not in harness.group_text
+
+
+async def test_source_changes_failure_does_not_affect_weekly_report(harness: Harness) -> None:
+    sunday = current_report_week(harness.deps.config)[-1]
+    # Успешный прогон без строк: загрузка снапшота падает и в отчёте, и в проверке.
+    async with harness.deps.engine.begin() as connection:
+        await connection.execute(
+            insert(snapshot_runs).values(
+                tenant_id=TENANT_ID,
+                snapshot_date=sunday,
+                attempt=1,
+                status="success",
+                trigger="scheduled",
+            )
+        )
+
+    await report_job(harness.deps, "weekly", None)
+
+    assert harness.group.sent
+    assert "Проверка смен источника упала: SnapshotMissingError." in harness.ops_texts
+    assert not any(text.startswith("Смены источника") for text in harness.ops_texts)
+
+
+async def test_daily_job_does_not_send_source_changes_line(harness: Harness) -> None:
+    await report_job(harness.deps, "daily", None)
+
+    assert not any("смен источника" in text.lower() for text in harness.ops_texts)
 
 
 @pytest.mark.parametrize(

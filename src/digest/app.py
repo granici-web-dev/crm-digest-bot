@@ -29,15 +29,24 @@ from digest.config import (
     SettingsLevel,
     TimeSettings,
 )
-from digest.db.lead_frame import previous_success_snapshot_date
+from digest.db.lead_frame import previous_success_snapshot_date, success_snapshot_dates
 from digest.db.schema import schedules
 from digest.delivery.ops import OpsChannel, notify_ops
 from digest.delivery.telegram import create_bot
 from digest.mefi.client import MefiClient, MefiKeyRejected, create_mefi_http_client
+from digest.metrics.source_changes import SourceChanges, source_changes
+from digest.metrics.touches import touch_snapshot_dates
+from digest.metrics.weekly import week_days
 from digest.reports.lead_links import LeadLinks
 from digest.reports.modules import IMPLEMENTED_MODULES
 from digest.reports.periods import ReportLevel, report_period
-from digest.reports.runner import ReportDeps, run_report, select_modules
+from digest.reports.runner import (
+    ReportDeps,
+    load_snapshot_chain,
+    report_snapshot_date,
+    run_report,
+    select_modules,
+)
 from digest.settings import Settings
 from digest.snapshot import (
     SnapshotOutcome,
@@ -299,7 +308,10 @@ async def catch_up_level(
     ):
         logger.info("daily catch-up skipped, no snapshot", extra={"date": now.date().isoformat()})
         return
-    await run_report(level, now, deps, late=True)
+    outcome = await run_report(level, now, deps, late=True)
+    # already_sent: строку уже послала джоба, отправившая отчёт; in_progress: пошлёт идущий прогон.
+    if level == "weekly" and outcome not in ("already_sent", "in_progress"):
+        await weekly_source_changes_check(deps, now)
 
 
 async def catch_up_on_startup(
@@ -319,6 +331,41 @@ async def catch_up_on_startup(
             )
 
 
+def source_changes_line(changes: SourceChanges, days: tuple[date, ...], config: AppConfig) -> str:
+    showroom = ", ".join(config.status_mapping.sources.showroom_visit)
+    line = (
+        f"Смены источника за неделю {days[0]:%d.%m}–{days[-1]:%d.%m}: {changes.change_count} "
+        f"(из них → {showroom}: {changes.to_showroom_count}); "
+        f"пар снапшотов: {changes.pair_count} из {len(days)}."
+    )
+    if not changes.top:
+        return line
+    top = ", ".join(
+        f"{change.from_source} → {change.to_source} {change.count}" for change in changes.top
+    )
+    return f"{line} Топ: {top}"
+
+
+async def weekly_source_changes_check(deps: ReportDeps, now: datetime) -> None:
+    # Служебная проверка гипотезы Б (docs/shapes/2026-10-02-source-changes.md): та же неделя и
+    # цепочка снапшотов, что у w14; сбой не трогает отчёт.
+    time_settings = deps.config.status_mapping.time
+    try:
+        period = report_period("weekly", now, time_settings)
+        days = week_days(report_snapshot_date(period, ZoneInfo(time_settings.timezone)))
+        chain_dates = touch_snapshot_dates(
+            await success_snapshot_dates(deps.engine, deps.tenant_id), days[0], days[-1]
+        )
+        snapshots = await load_snapshot_chain(deps.reader, chain_dates)
+        line = source_changes_line(source_changes(snapshots, days, deps.config), days, deps.config)
+    except Exception as error:
+        await alert_failure(
+            deps, "source changes check failed", "Проверка смен источника упала", error
+        )
+        return
+    await notify_ops(deps.ops, line)
+
+
 async def report_job(deps: ReportDeps, level: ReportLevel, backup_dir: Path | None) -> None:
     now = datetime.now(ZoneInfo(deps.config.status_mapping.time.timezone))
     try:
@@ -327,6 +374,8 @@ async def report_job(deps: ReportDeps, level: ReportLevel, backup_dir: Path | No
         await alert_failure(
             deps, "report job failed", f"Прогон отчёта {level} упал", error, level=level
         )
+    if level == "weekly":
+        await weekly_source_changes_check(deps, now)
     if level == "daily" and backup_dir is not None:
         try:
             backup_alert = stale_backup_alert(backup_dir, now)

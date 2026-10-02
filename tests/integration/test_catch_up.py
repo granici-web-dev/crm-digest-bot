@@ -335,6 +335,18 @@ async def test_catch_up_sends_missed_weekly_with_late_line(
     assert (run["report_level"], run["status"]) == ("weekly", "success")
 
 
+async def test_catch_up_weekly_sends_source_changes_line(
+    harness: Harness, snapshot_sources: SnapshotSources
+) -> None:
+    await store_success_snapshot(harness.deps.engine, SUNDAY)
+
+    await start_like_run_app(harness, snapshot_sources, MONDAY_MORNING)
+
+    assert (
+        "Смены источника за неделю 21.09–27.09: 0 (из них → Showroom: 0); пар снапшотов: 0 из 7."
+    ) in harness.ops_texts
+
+
 async def test_catch_up_skips_weekly_after_catch_up_days(
     harness: Harness, snapshot_sources: SnapshotSources
 ) -> None:
