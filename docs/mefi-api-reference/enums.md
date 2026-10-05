@@ -107,7 +107,7 @@ Metrics we compute:
 | ID | Name | Role (assumed) |
 |---|---|---|
 | 2 | Palega Andrei | Salesperson |
-| 4 | Potinga Dima | Salesperson |
+| 4 | Ciornii Maxim | Владелец, не продаёт (исправлено 05.10.2026: раньше здесь ошибочно стоял Potinga Dima, бывший сотрудник; его id в mefi неизвестен) |
 | 6 | Iordache Razvan | Salesperson |
 | 7 | Marketing Sofa | **Marketing (not salesperson)** |
 | 8 | Roibu Valeria | Salesperson |

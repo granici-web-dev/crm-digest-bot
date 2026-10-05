@@ -34,7 +34,7 @@
 
 - Статусы: 1 Nu a început, 4 În lucru, 3 Verificare proprie, 2 Verificare suplimentară, 5 Completă, 6 Șablon.
 - Приоритеты: 0 none, 1 low, 2 medium, 3 high, 4 urgent.
-- Активный персонал: 11 человек; в списке документации id 4 = Ciornii Maxim (в `config/managers.yaml` id 4 записан как тестовый аккаунт Potinga Dima — сверить).
+- Активный персонал: 11 человек; id 4 = Ciornii Maxim, владелец (в `config/managers.yaml` исправлено 05.10.2026).
 - Кастомных полей у задач нет.
 
 ## Лимиты
