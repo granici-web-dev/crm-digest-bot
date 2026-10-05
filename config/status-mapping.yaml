@@ -84,9 +84,10 @@ raw_strip:
   - elimination.detailed_reason
 
 # Ключи верхнего уровня лида из /leads/search, замер 24.09.2026 (27 ключей), плюс company
-# из GET /leads/{id} и elimination (как у клиентов). В raw пишутся только они: новое
-# контактное поле mefi не должно попасть в базу ни на день. Незнакомый ключ → проблема
-# unknown_raw_key и алерт при первом появлении.
+# из GET /leads/{id}, elimination (как у клиентов) и followers, score, updated_at (появились
+# 04.10.2026, docs/mefi-api-notes.md). В raw пишутся только они: новое контактное поле mefi
+# не должно попасть в базу ни на день. Незнакомый ключ → проблема unknown_raw_key и алерт
+# при первом появлении.
 raw_known_keys:
   - assigned_to
   - business
@@ -100,6 +101,7 @@ raw_known_keys:
   - elimination
   - email
   - estimated_value
+  - followers
   - gclid
   - groups
   - id
@@ -112,15 +114,26 @@ raw_known_keys:
   - name
   - phone
   - priority
+  - score
   - source
   - status
   - status_changed_at
   - title
+  - updated_at
   - website
 
-# Ключи внутри объекта; незнакомый вложенный ключ → unknown_raw_key, не пишется.
+# Известны, но в raw не пишутся и не алертят, пока пусты. awareness появился 04.10.2026, у всех
+# лидов null: формат неизвестен, возможен свободный текст о клиенте. Непустое значение →
+# один алерт с типом значения.
+raw_known_unstored_keys:
+  - awareness
+
+# Ключи внутри объекта или списка объектов; незнакомый вложенный ключ → unknown_raw_key,
+# не пишется. followers это сотрудники, не клиенты.
 raw_known_nested_keys:
   elimination: [type, reason, detailed_reason, marked_at, marked_by]
+  followers: [id, name]
+  score: [band, calculated_at, disqualified, is_stale, rules_version, value]
 
 # Клиенты mefi (clients:read): строка Contract Cantitate в d1 (docs/mefi-clients-notes.md).
 clients:
@@ -152,6 +165,7 @@ clients:
     - source
     - state
     - status
+    - updated_at
     - website
   # Ключи внутри объекта или списка объектов; незнакомый вложенный ключ → алерт, не пишется.
   raw_known_nested_keys:

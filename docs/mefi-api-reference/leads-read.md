@@ -135,6 +135,12 @@ is_duplicate, is_public, last_contact_at, lifecycle, location, name, phone,
 priority, source, status, status_changed_at, title, website
 ```
 
+> **Появились 04.10.2026** (замер 05.10.2026, 100 последних лидов): `updated_at` (дата),
+> `score` (`band {key, label}`, `calculated_at`, `disqualified`, `is_stale`, `rules_version`,
+> `value`; у всех `value` 0, `band` `cold` / «Rece»), `followers` (список `{id, name}`
+> сотрудников, id 8–13), `awareness` (`null` у всех). Ранее, 24.09.2026, добавлен `groups`.
+> Подробности и решения о хранении: `docs/mefi-api-notes.md`.
+
 **`estimated_value` IS among them.** Search and the detail endpoint differ by
 exactly one key: `company`, present only on `GET /leads/{id}` (and only for
 `client_type: "company"`).

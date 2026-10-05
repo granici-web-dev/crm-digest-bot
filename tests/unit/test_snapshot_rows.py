@@ -13,10 +13,12 @@ from digest.snapshot import (
     clients_alert_text,
     clients_completeness_failure,
     completeness_failure,
+    lead_keys_alert_text,
     lead_to_snapshot_row,
     parse_clients,
     parse_leads,
     strip_contacts,
+    summarize_custom_field_problems,
 )
 from factories import make_client, make_custom_fields, make_lead, recorded_search_leads
 
@@ -281,6 +283,57 @@ def test_unknown_top_level_key_is_recorded_without_value(app_config: AppConfig) 
     assert problems == [CustomFieldProblem(None, "whatsapp_number", "unknown_raw_key", None)]
     assert row["lead_id"] == 1001
     assert "whatsapp_number" not in row["raw"]
+
+
+def test_keys_added_by_mefi_in_october_are_stored_with_staff_followers_only(
+    app_config: AppConfig,
+) -> None:
+    score = {
+        "band": {"key": "cold", "label": "Rece"},
+        "calculated_at": "2026-10-05T06:00:00Z",
+        "disqualified": False,
+        "is_stale": False,
+        "rules_version": 1,
+        "value": 0,
+    }
+    lead = make_lead(
+        updated_at="2026-10-04T10:00:00Z",
+        score=score,
+        followers=[{"id": 8, "name": "Roibu Valeria", "email": "staff@example.test"}],
+        awareness=None,
+    )
+    parsed, _ = parse_leads([lead])
+
+    row, problems = lead_to_snapshot_row(
+        parsed[0], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping, CONTACT_SECRET
+    )
+
+    assert problems == [CustomFieldProblem(None, "followers.email", "unknown_raw_key", None)]
+    assert row["raw"]["updated_at"] == "2026-10-04T10:00:00Z"
+    assert row["raw"]["score"] == score
+    assert row["raw"]["followers"] == [{"id": 8, "name": "Roibu Valeria"}]
+    assert "awareness" not in row["raw"]
+
+
+def test_unstored_key_with_value_is_recorded_by_type_and_not_stored(
+    app_config: AppConfig,
+) -> None:
+    parsed, _ = parse_leads([make_lead(awareness="NOTA_CLIENT_TEST")])
+
+    row, problems = lead_to_snapshot_row(
+        parsed[0], "sofabelle", SNAPSHOT_DATE, app_config.status_mapping, CONTACT_SECRET
+    )
+
+    assert problems == [CustomFieldProblem(None, "awareness", "unstored_key_has_value", "str")]
+    assert "awareness" not in row["raw"]
+    alert = lead_keys_alert_text(
+        summarize_custom_field_problems([(1001, problem) for problem in problems]), set()
+    )
+    assert alert == (
+        "Ключ лида «awareness» в ответе mefi больше не пуст: тип значения str, лидов: 1. "
+        "В raw он не пишется. Посмотрите формат в mefi и решите, переносить ли ключ "
+        "из raw_known_unstored_keys в raw_known_keys config/status-mapping.yaml."
+    )
 
 
 def test_elimination_is_kept_without_detailed_reason(app_config: AppConfig) -> None:

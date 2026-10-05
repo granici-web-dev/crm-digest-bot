@@ -47,7 +47,9 @@ SEARCH_URL = f"{BASE_URL}/leads/search"
 CLIENTS_SEARCH_URL = f"{BASE_URL}/clients/search"
 BUCHAREST = ZoneInfo("Europe/Bucharest")
 SEPTEMBER_23_EVENING = datetime(2026, 9, 23, 19, 0, tzinfo=BUCHAREST)
+SEPTEMBER_24_NOON = datetime(2026, 9, 24, 12, 0, tzinfo=BUCHAREST)
 SEPTEMBER_24_EVENING = datetime(2026, 9, 24, 19, 0, tzinfo=BUCHAREST)
+SEPTEMBER_25_EVENING = datetime(2026, 9, 25, 19, 0, tzinfo=BUCHAREST)
 
 
 async def no_wait(seconds: float) -> None:
@@ -264,6 +266,75 @@ async def test_new_unmapped_ids_only_on_first_appearance(
     second_run = await run_row(engine, second_run_id)
     assert second_run.new_unmapped_lead_ids == [2]
     assert second_run.unmapped_count == 2
+
+
+async def test_unknown_lead_key_is_alerted_once_until_a_new_key_appears(
+    engine: AsyncEngine,
+    mefi_client: MefiClient,
+    mefi_mock: respx.MockRouter,
+    app_config: AppConfig,
+) -> None:
+    with_one_key = make_search_page([make_lead(whatsapp_number="+40700000003")])
+    with_two_keys = make_search_page([make_lead(whatsapp_number="+40700000003", viber="x")])
+    mefi_mock.post(SEARCH_URL).mock(
+        side_effect=[
+            httpx.Response(200, json=with_one_key),
+            httpx.Response(200, json=with_one_key),
+            httpx.Response(200, json=with_two_keys),
+        ]
+    )
+
+    first = await snapshot_with_clients(engine, mefi_client, app_config, SEPTEMBER_23_EVENING)
+    second = await snapshot_with_clients(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
+    third = await snapshot_with_clients(engine, mefi_client, app_config, SEPTEMBER_25_EVENING)
+
+    assert first.leads_alert == (
+        "Незнакомый ключ лида «whatsapp_number» в ответе mefi, лидов: 1, в raw не записан. "
+        "Проверьте, не контакт ли это, и добавьте в raw_known_keys config/status-mapping.yaml "
+        "(свободный текст о клиенте или контакт также в raw_strip)."
+    )
+    assert second.leads_alert is None
+    assert third.leads_alert is not None
+    assert "«viber»" in third.leads_alert
+    assert "whatsapp_number" not in third.leads_alert
+
+
+async def test_unknown_lead_key_alerted_by_preview_is_silent_in_day_snapshot(
+    engine: AsyncEngine,
+    mefi_client: MefiClient,
+    mefi_mock: respx.MockRouter,
+    app_config: AppConfig,
+) -> None:
+    mefi_returns(mefi_mock, [make_lead(whatsapp_number="+40700000003")])
+
+    preview = await snapshot_with_clients(engine, mefi_client, app_config, SEPTEMBER_24_NOON)
+    day = await snapshot_with_clients(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
+
+    assert (preview.status, day.status) == ("preview", "success")
+    assert preview.leads_alert is not None
+    assert day.leads_alert is None
+
+
+async def test_unknown_lead_key_of_failed_run_is_alerted_by_the_retry(
+    engine: AsyncEngine,
+    mefi_client: MefiClient,
+    mefi_mock: respx.MockRouter,
+    app_config: AppConfig,
+) -> None:
+    lead = make_lead(whatsapp_number="+40700000003")
+    mefi_mock.post(SEARCH_URL).mock(
+        side_effect=[
+            httpx.Response(200, json=make_search_page([lead], total=500)),
+            httpx.Response(200, json=make_search_page([lead])),
+        ]
+    )
+
+    with pytest.raises(SnapshotIncomplete):
+        await snapshot_with_clients(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
+    retry = await snapshot_with_clients(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
+
+    assert retry.leads_alert is not None
+    assert "«whatsapp_number»" in retry.leads_alert
 
 
 async def test_missing_since_previous_counts_disappeared_leads(
@@ -635,6 +706,28 @@ async def test_unknown_client_key_is_not_stored_and_alerted(
     assert "1900101000000" not in outcome.clients_alert
     (row,) = await client_snapshot_rows(engine)
     assert "cnp" not in row.raw
+
+
+async def test_unknown_client_key_is_alerted_once_until_a_new_key_appears(
+    engine: AsyncEngine,
+    mefi_client: MefiClient,
+    mefi_mock: respx.MockRouter,
+    app_config: AppConfig,
+) -> None:
+    mefi_returns(mefi_mock, recorded_search_leads())
+    clients_route = mefi_returns_clients(mefi_mock, [make_client(cnp="1900101000000")])
+
+    first = await snapshot_with_clients(engine, mefi_client, app_config, SEPTEMBER_23_EVENING)
+    second = await snapshot_with_clients(engine, mefi_client, app_config, SEPTEMBER_24_EVENING)
+    clients_route.respond(json=make_search_page([make_client(cnp="1900101000000", passport="X1")]))
+    third = await snapshot_with_clients(engine, mefi_client, app_config, SEPTEMBER_25_EVENING)
+
+    assert first.clients_alert is not None
+    assert "незнакомые ключи cnp " in first.clients_alert
+    assert second.clients_alert is None
+    assert third.clients_alert is not None
+    assert "незнакомые ключи passport " in third.clients_alert
+    assert (await run_row(engine, third.run_id)).clients_unknown_keys == ["cnp", "passport"]
 
 
 async def test_clients_short_of_total_below_threshold_are_success_with_alert(
@@ -1027,6 +1120,7 @@ async def test_synthetic_personal_data_reaches_no_table_log_or_alert(
             await stored_text_of(engine, "lead_snapshots"),
             await stored_text_of(engine, "client_snapshots"),
             await stored_text_of(engine, "snapshot_runs"),
+            outcome.leads_alert or "",
             outcome.clients_alert or "",
             caplog.text,
         ]

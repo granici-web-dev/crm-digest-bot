@@ -262,13 +262,6 @@ async def select_modules(reader: ReportReader, level: ReportLevel) -> ModuleSele
     return ModuleSelection(runnable, alerts)
 
 
-UNKNOWN_KEY_PROBLEMS = ("unknown_raw_key", "unknown_custom_field")
-
-
-def unknown_key_identity(mismatch: dict[str, Any]) -> tuple[str, int | None, str]:
-    return mismatch["problem"], mismatch["field_id"], mismatch["expected_name"]
-
-
 async def alert_won_mismatches(deps: ReportDeps, rows: Sequence[Row[Any]]) -> None:
     # Два разных сбоя: Clienți без converted_at это ошибка ввода, а converted_at вне Clienți
     # значит, что контракт был и лид ушёл в другой статус, возможно расторжение договора.
@@ -306,7 +299,6 @@ async def alert_snapshot_findings(
                 select(
                     snapshot_runs.c.new_unmapped_lead_ids,
                     snapshot_runs.c.won_converted_mismatch_ids,
-                    snapshot_runs.c.custom_field_mismatches,
                 ).where(
                     snapshot_runs.c.tenant_id == deps.tenant_id,
                     snapshot_runs.c.snapshot_date == snapshot_date,
@@ -314,7 +306,7 @@ async def alert_snapshot_findings(
                 )
             )
         ).one()
-        new_unmapped_ids, won_mismatch_ids, custom_field_mismatches = findings
+        new_unmapped_ids, won_mismatch_ids = findings
         # Статус берётся из снапшота, а не из кадра: в кадре нет лидов тестового аккаунта.
         unmapped_status_rows = (
             await connection.execute(
@@ -325,27 +317,25 @@ async def alert_snapshot_findings(
                 )
             )
         ).all()
-        previous_findings = (
+        previous_won_mismatch_ids: Sequence[list[int] | None] = (
             (
                 await connection.execute(
-                    select(
-                        snapshot_runs.c.custom_field_mismatches,
-                        snapshot_runs.c.won_converted_mismatch_ids,
-                    ).where(
+                    select(snapshot_runs.c.won_converted_mismatch_ids).where(
                         snapshot_runs.c.tenant_id == deps.tenant_id,
                         snapshot_runs.c.snapshot_date == previous_date,
                         snapshot_runs.c.status == "success",
                     )
                 )
-            ).all()
+            )
+            .scalars()
+            .all()
             if previous_date is not None
             else []
         )
-        previous_mismatches = [mismatches for mismatches, _ in previous_findings]
         # Как у UNMAPPED: расхождение алертится один раз, в день появления, иначе те же id
         # приходили бы каждый вечер.
         previously_won_mismatch_ids = {
-            lead_id for _, lead_ids in previous_findings for lead_id in lead_ids or []
+            lead_id for lead_ids in previous_won_mismatch_ids for lead_id in lead_ids or []
         }
         new_won_mismatch_ids = sorted(set(won_mismatch_ids or []) - previously_won_mismatch_ids)
         won_mismatch_rows = (
@@ -380,38 +370,6 @@ async def alert_snapshot_findings(
             f"Новые лиды с неизвестным статусом «{status_name}», UNMAPPED ({len(lead_ids)}), "
             f"id: {lead_ids}. Добавьте статус в config/status-mapping.yaml.",
         )
-    # Как у UNMAPPED: алерт только при первом появлении ключа, иначе он повторялся бы
-    # каждый день до правки конфига.
-    previously_seen_keys = {
-        unknown_key_identity(mismatch)
-        for mismatches in previous_mismatches
-        for mismatch in mismatches or []
-        if mismatch["problem"] in UNKNOWN_KEY_PROBLEMS
-    }
-    new_unknown_keys = [
-        mismatch
-        for mismatch in custom_field_mismatches or []
-        if mismatch["problem"] in UNKNOWN_KEY_PROBLEMS
-        and unknown_key_identity(mismatch) not in previously_seen_keys
-    ]
-    for mismatch in new_unknown_keys:
-        if mismatch["problem"] == "unknown_raw_key":
-            await notify_ops(
-                deps.ops,
-                f"Незнакомый ключ лида «{mismatch['expected_name']}» в ответе mefi, "
-                f"лидов: {mismatch['lead_count']}, в raw не записан. Проверьте, не контакт ли это, "
-                "и добавьте в raw_known_keys config/status-mapping.yaml (свободный текст "
-                "о клиенте или контакт также в raw_strip).",
-            )
-        else:
-            await notify_ops(
-                deps.ops,
-                f"Незнакомое кастомное поле лида {mismatch['field_id']} "
-                f"«{mismatch['expected_name']}» в ответе mefi, лидов: {mismatch['lead_count']}, "
-                "в raw не записано. Добавьте field_id в raw_custom_fields "
-                "config/status-mapping.yaml: в drop, если это свободный текст о клиенте, "
-                "иначе в keep.",
-            )
     await alert_won_mismatches(deps, won_mismatch_rows)
     unknown_ids = unknown_manager_ids(lead_frame, deps.config)
     if unknown_ids:

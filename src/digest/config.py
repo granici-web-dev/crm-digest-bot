@@ -278,6 +278,7 @@ class StatusMapping(StrictConfigModel):
     time: TimeSettings
     raw_strip: list[str]
     raw_known_keys: frozenset[str]
+    raw_known_unstored_keys: frozenset[str]
     raw_known_nested_keys: dict[str, frozenset[str]]
     raw_custom_fields: RawCustomFields
     clients: ClientSettings
@@ -307,6 +308,13 @@ class StatusMapping(StrictConfigModel):
         unknown = sorted(self.raw_known_nested_keys.keys() - self.raw_known_keys)
         if unknown:
             raise ValueError(f"raw_known_nested_keys {unknown} нет в raw_known_keys")
+        return self
+
+    @model_validator(mode="after")
+    def unstored_keys_are_not_stored(self) -> Self:
+        both = sorted(self.raw_known_unstored_keys & self.raw_known_keys)
+        if both:
+            raise ValueError(f"raw_known_unstored_keys {both} есть и в raw_known_keys")
         return self
 
     @model_validator(mode="after")

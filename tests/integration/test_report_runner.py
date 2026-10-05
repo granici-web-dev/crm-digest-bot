@@ -340,7 +340,8 @@ async def test_unmapped_alert_separates_missing_and_unknown_status(harness: Harn
     assert any("«ALT STATUS»" in alert and "id: [4]" in alert for alert in harness.ops_texts)
 
 
-async def test_unknown_raw_key_is_alerted(harness: Harness) -> None:
+async def test_report_build_does_not_alert_unknown_keys(harness: Harness) -> None:
+    # Алерт о незнакомом ключе шлёт снапшот, один раз: отчётов за день несколько.
     await store_snapshot(
         harness.deps.engine,
         REPORT_DATE,
@@ -355,27 +356,19 @@ async def test_unknown_raw_key_is_alerted(harness: Harness) -> None:
                 "lead_ids": [1, 5],
             },
             {
-                "field_id": 20,
-                "expected_name": "Ofertat",
-                "problem": "unexpected_value",
-                "actual": "POATE",
-                "lead_count": 1,
-                "lead_ids": [1],
+                "field_id": 60,
+                "expected_name": "Buget estimat",
+                "problem": "unknown_custom_field",
+                "actual": None,
+                "lead_count": 3,
+                "lead_ids": [1, 2, 3],
             },
         ],
     )
 
     await run_report("daily", NOW, harness.deps, late=False)
 
-    raw_key_alerts = [alert for alert in harness.ops_texts if "Незнакомый ключ" in alert]
-    assert raw_key_alerts == [
-        "Незнакомый ключ лида «whatsapp_number» в ответе mefi, лидов: 2, в raw не записан. "
-        "Проверьте, не контакт ли это, и добавьте в raw_known_keys config/status-mapping.yaml "
-        "(свободный текст о клиенте или контакт также в raw_strip)."
-    ]
-    # Только имя ключа и число: значение поля и id лидов в алерт не попадают.
-    assert not any("POATE" in alert for alert in harness.ops_texts)
-    assert not any("[1, 5]" in alert for alert in harness.ops_texts)
+    assert not any("Незнаком" in alert for alert in harness.ops_texts)
 
 
 def won_mismatch_leads() -> list[dict[str, Any]]:
@@ -434,76 +427,6 @@ async def test_won_mismatch_already_alerted_yesterday_is_silent(harness: Harness
     await run_report("daily", NOW, harness.deps, late=False)
 
     assert not any("конверсии" in alert for alert in harness.ops_texts)
-
-
-def unknown_raw_key(name: str) -> dict[str, Any]:
-    return {
-        "field_id": None,
-        "expected_name": name,
-        "problem": "unknown_raw_key",
-        "actual": None,
-        "lead_count": 1,
-        "lead_ids": [1],
-    }
-
-
-async def test_unknown_raw_key_is_alerted_only_on_first_appearance(harness: Harness) -> None:
-    await store_snapshot(
-        harness.deps.engine,
-        REPORT_DATE - timedelta(days=2),
-        [todays_lead(1)],
-        custom_field_mismatches=[unknown_raw_key("whatsapp_number")],
-    )
-    await store_snapshot(
-        harness.deps.engine,
-        REPORT_DATE,
-        [todays_lead(1)],
-        custom_field_mismatches=[unknown_raw_key("whatsapp_number"), unknown_raw_key("viber")],
-    )
-
-    await run_report("daily", NOW, harness.deps, late=False)
-
-    raw_key_alerts = [alert for alert in harness.ops_texts if "Незнакомый ключ" in alert]
-    assert len(raw_key_alerts) == 1
-    assert "«viber»" in raw_key_alerts[0]
-
-
-def unknown_custom_field(field_id: int, name: str) -> dict[str, Any]:
-    return {
-        "field_id": field_id,
-        "expected_name": name,
-        "problem": "unknown_custom_field",
-        "actual": None,
-        "lead_count": 3,
-        "lead_ids": [1, 2, 3],
-    }
-
-
-async def test_unknown_custom_field_is_alerted_only_on_first_appearance(harness: Harness) -> None:
-    await store_snapshot(
-        harness.deps.engine,
-        REPORT_DATE - timedelta(days=1),
-        [todays_lead(1)],
-        custom_field_mismatches=[unknown_custom_field(60, "Buget estimat")],
-    )
-    await store_snapshot(
-        harness.deps.engine,
-        REPORT_DATE,
-        [todays_lead(1)],
-        custom_field_mismatches=[
-            unknown_custom_field(60, "Buget estimat"),
-            unknown_custom_field(61, "Observatii"),
-        ],
-    )
-
-    await run_report("daily", NOW, harness.deps, late=False)
-
-    custom_field_alerts = [alert for alert in harness.ops_texts if "кастомное поле" in alert]
-    assert custom_field_alerts == [
-        "Незнакомое кастомное поле лида 61 «Observatii» в ответе mefi, лидов: 3, "
-        "в raw не записано. Добавьте field_id в raw_custom_fields config/status-mapping.yaml: "
-        "в drop, если это свободный текст о клиенте, иначе в keep."
-    ]
 
 
 async def test_yesterdays_snapshot_gives_transitions(harness: Harness) -> None:

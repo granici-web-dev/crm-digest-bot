@@ -39,6 +39,10 @@ logger = logging.getLogger(__name__)
 
 BUCHAREST = ZoneInfo("Europe/Bucharest")
 ALERT_ID_LIMIT = 10
+UNKNOWN_KEY_PROBLEMS = ("unknown_raw_key", "unknown_custom_field", "unstored_key_has_value")
+# Прогоны, чьи находки уже ушли в служебный бот: упавший прогон алертов о ключах не шлёт.
+KEY_ALERTED_RUN_STATUSES = ("success", "preview", "superseded")
+EMPTY_VALUES: tuple[Any, ...] = (None, "", [], {})
 
 # preview: снапшот, снятый до конца ежедневного окна. Отчёты и чат читают только success.
 SnapshotRunStatus = Literal["success", "preview"]
@@ -127,6 +131,8 @@ class SnapshotOutcome:
     status: SnapshotRunStatus
     # False: success за дату уже был, этот вызов лиды не снимал.
     newly_taken: bool
+    # Текст для служебного бота: ключи лида, которых не было в предыдущем записанном прогоне.
+    leads_alert: str | None
     # False: клиентов за дату нет, Contract Cantitate в d1 будет «—».
     clients_taken: bool
     # Текст для служебного бота: сбой клиентов, незнакомые ключи, битый шоурум клиента.
@@ -335,7 +341,11 @@ def lead_to_snapshot_row(
         },
         status_mapping.raw_known_nested_keys,
     )
-    unknown_keys |= parsed_lead.raw.keys() - status_mapping.raw_known_keys
+    unknown_keys |= (
+        parsed_lead.raw.keys()
+        - status_mapping.raw_known_keys
+        - status_mapping.raw_known_unstored_keys
+    )
     row = {
         "tenant_id": tenant_id,
         "snapshot_date": snapshot_date,
@@ -377,6 +387,12 @@ def lead_to_snapshot_row(
     problems.extend(
         CustomFieldProblem(None, key, "unknown_raw_key", None) for key in sorted(unknown_keys)
     )
+    # Только тип: формат поля неизвестен, значение может оказаться свободным текстом о клиенте.
+    problems.extend(
+        CustomFieldProblem(None, key, "unstored_key_has_value", type(parsed_lead.raw[key]).__name__)
+        for key in sorted(status_mapping.raw_known_unstored_keys)
+        if parsed_lead.raw.get(key) not in EMPTY_VALUES
+    )
     known_field_ids = status_mapping.raw_custom_fields.known_field_ids
     problems.extend(
         CustomFieldProblem(field.field_id, field.name, "unknown_custom_field", None)
@@ -396,6 +412,84 @@ def summarize_custom_field_problems(
         {**asdict(problem), "lead_count": len(lead_ids), "lead_ids": lead_ids}
         for problem, lead_ids in lead_ids_by_problem.items()
     ]
+
+
+def unknown_key_identity(mismatch: dict[str, Any]) -> tuple[str, int | None, str]:
+    return mismatch["problem"], mismatch["field_id"], mismatch["expected_name"]
+
+
+async def previously_alerted_lead_keys(
+    connection: AsyncConnection, tenant_id: str, run_id: int
+) -> set[tuple[str, int | None, str]]:
+    # Сравнение с предыдущим записанным прогоном, включая превью того же дня: ключ алертится
+    # один раз, когда появился, а не при каждом снапшоте до правки конфига.
+    mismatches = await connection.scalar(
+        select(snapshot_runs.c.custom_field_mismatches)
+        .where(
+            snapshot_runs.c.tenant_id == tenant_id,
+            snapshot_runs.c.id < run_id,
+            snapshot_runs.c.status.in_(KEY_ALERTED_RUN_STATUSES),
+        )
+        .order_by(snapshot_runs.c.id.desc())
+        .limit(1)
+    )
+    return {
+        unknown_key_identity(mismatch)
+        for mismatch in mismatches or []
+        if mismatch["problem"] in UNKNOWN_KEY_PROBLEMS
+    }
+
+
+async def previously_alerted_client_keys(
+    connection: AsyncConnection, tenant_id: str, run_id: int
+) -> set[str]:
+    unknown_keys = await connection.scalar(
+        select(snapshot_runs.c.clients_unknown_keys)
+        .where(
+            snapshot_runs.c.tenant_id == tenant_id,
+            snapshot_runs.c.id < run_id,
+            snapshot_runs.c.clients_status == "success",
+        )
+        .order_by(snapshot_runs.c.id.desc())
+        .limit(1)
+    )
+    return set(unknown_keys or [])
+
+
+def lead_keys_alert_text(
+    custom_field_mismatches: list[dict[str, Any]],
+    previously_alerted: set[tuple[str, int | None, str]],
+) -> str | None:
+    lines = []
+    for mismatch in custom_field_mismatches:
+        if (
+            mismatch["problem"] not in UNKNOWN_KEY_PROBLEMS
+            or unknown_key_identity(mismatch) in previously_alerted
+        ):
+            continue
+        if mismatch["problem"] == "unknown_raw_key":
+            lines.append(
+                f"Незнакомый ключ лида «{mismatch['expected_name']}» в ответе mefi, "
+                f"лидов: {mismatch['lead_count']}, в raw не записан. Проверьте, не контакт ли это, "
+                "и добавьте в raw_known_keys config/status-mapping.yaml (свободный текст "
+                "о клиенте или контакт также в raw_strip)."
+            )
+        elif mismatch["problem"] == "unknown_custom_field":
+            lines.append(
+                f"Незнакомое кастомное поле лида {mismatch['field_id']} "
+                f"«{mismatch['expected_name']}» в ответе mefi, лидов: {mismatch['lead_count']}, "
+                "в raw не записано. Добавьте field_id в raw_custom_fields "
+                "config/status-mapping.yaml: в drop, если это свободный текст о клиенте, "
+                "иначе в keep."
+            )
+        else:
+            lines.append(
+                f"Ключ лида «{mismatch['expected_name']}» в ответе mefi больше не пуст: "
+                f"тип значения {mismatch['actual']}, лидов: {mismatch['lead_count']}. "
+                "В raw он не пишется. Посмотрите формат в mefi и решите, переносить ли ключ "
+                "из raw_known_unstored_keys в raw_known_keys config/status-mapping.yaml."
+            )
+    return "\n".join(lines) or None
 
 
 def won_disagrees_with_converted_at(category: str, converted_at: datetime | None) -> bool:
@@ -701,6 +795,10 @@ async def snapshot_clients(
             counters, findings = await write_client_snapshot(
                 connection, dump, tenant_id, snapshot_date, client_settings
             )
+            new_unknown_keys = sorted(
+                set(counters.clients_unknown_keys)
+                - await previously_alerted_client_keys(connection, tenant_id, run_id)
+            )
             failure = clients_completeness_failure(counters, thresholds)
             if failure is not None:
                 raise ClientsSnapshotIncomplete(failure, counters, findings)
@@ -750,7 +848,7 @@ async def snapshot_clients(
             "clients_skipped": counters.clients_skipped,
         },
     )
-    return True, clients_alert_text(snapshot_date, None, counters.clients_unknown_keys, findings)
+    return True, clients_alert_text(snapshot_date, None, new_unknown_keys, findings)
 
 
 @dataclass(frozen=True)
@@ -804,12 +902,13 @@ async def run_daily_snapshot(
             extra={"snapshot_date": snapshot_date.isoformat(), "run_id": success_run.id},
         )
         if success_run.clients_status == "success":
-            return SnapshotOutcome(success_run.id, "success", False, True, None)
+            return SnapshotOutcome(success_run.id, "success", False, None, True, None)
         # Лиды уже есть, клиенты в прошлой попытке упали: повтор догружает только клиентов.
         return SnapshotOutcome(
             success_run.id,
             "success",
             False,
+            None,
             *await snapshot_clients(
                 engine,
                 sources.clients_client,
@@ -821,7 +920,7 @@ async def run_daily_snapshot(
             ),
         )
 
-    await snapshot_leads(
+    leads_alert = await snapshot_leads(
         engine, sources, status_mapping, tenant_id, snapshot_date, run_id, run_status
     )
     # Сбой клиентов не валит снапшот лидов (инвариант 6): лиды уже закоммичены.
@@ -829,6 +928,7 @@ async def run_daily_snapshot(
         run_id,
         run_status,
         True,
+        leads_alert,
         *await snapshot_clients(
             engine,
             sources.clients_client,
@@ -1019,7 +1119,7 @@ async def snapshot_leads(
     snapshot_date: date,
     run_id: int,
     run_status: SnapshotRunStatus,
-) -> None:
+) -> str | None:
     started_at = time.monotonic()
     # Строку, которую уже погасил более поздний прогон, не трогаем ни успехом, ни сбоем.
     this_running_run = (snapshot_runs.c.id == run_id) & (snapshot_runs.c.status == "running")
@@ -1040,6 +1140,7 @@ async def snapshot_leads(
             failure = completeness_failure(counters, status_mapping.snapshot.completeness)
             if failure is not None:
                 raise SnapshotIncomplete(failure, counters)
+            previously_alerted = await previously_alerted_lead_keys(connection, tenant_id, run_id)
             await connection.execute(
                 update(snapshot_runs)
                 .where(this_running_run)
@@ -1079,3 +1180,4 @@ async def snapshot_leads(
             "skipped_count": counters.skipped_count,
         },
     )
+    return lead_keys_alert_text(counters.custom_field_mismatches, previously_alerted)

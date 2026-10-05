@@ -196,8 +196,9 @@ async def take_snapshot(
             deps, "snapshot failed", f"Снапшот за {now:%d.%m.%Y %H:%M} не удался", error
         )
         return None
-    if outcome.clients_alert is not None:
-        await notify_ops(deps.ops, outcome.clients_alert)
+    for alert in (outcome.leads_alert, outcome.clients_alert):
+        if alert is not None:
+            await notify_ops(deps.ops, alert)
     return outcome
 
 

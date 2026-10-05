@@ -172,8 +172,9 @@ async def run_manual_snapshot(app_settings: Settings) -> int:
             engine, sources, config.status_mapping, app_settings.tenant_id, now, "manual"
         )
         # Ручной прогон алертит как плановый: сбой клиентов не должен остаться только в консоли.
-        if outcome.clients_alert is not None:
-            await notify_ops(ops, outcome.clients_alert)
+        for alert in (outcome.leads_alert, outcome.clients_alert):
+            if alert is not None:
+                await notify_ops(ops, alert)
     except Exception as error:
         logger.error("manual snapshot failed", extra={"error": describe_error(error)})
         await notify_ops(
@@ -192,8 +193,9 @@ async def run_manual_snapshot(app_settings: Settings) -> int:
             f"До {window_end:%H:%M} снапшот пишется как preview: отчёты и чат его не читают, "
             f"снапшот дня снимет плановая джоба в {window_end:%H:%M}."
         )
-    if outcome.clients_alert is not None:
-        print(outcome.clients_alert)
+    for alert in (outcome.leads_alert, outcome.clients_alert):
+        if alert is not None:
+            print(alert)
     return 0
 
 
