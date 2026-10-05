@@ -39,10 +39,9 @@ logger = logging.getLogger(__name__)
 
 BUCHAREST = ZoneInfo("Europe/Bucharest")
 ALERT_ID_LIMIT = 10
-UNKNOWN_KEY_PROBLEMS = ("unknown_raw_key", "unknown_custom_field", "unstored_key_has_value")
+UNKNOWN_KEY_PROBLEMS = ("unknown_raw_key", "unknown_custom_field")
 # Прогоны, чьи находки уже ушли в служебный бот: упавший прогон алертов о ключах не шлёт.
 KEY_ALERTED_RUN_STATUSES = ("success", "preview", "superseded")
-EMPTY_VALUES: tuple[Any, ...] = (None, "", [], {})
 
 # preview: снапшот, снятый до конца ежедневного окна. Отчёты и чат читают только success.
 SnapshotRunStatus = Literal["success", "preview"]
@@ -341,11 +340,7 @@ def lead_to_snapshot_row(
         },
         status_mapping.raw_known_nested_keys,
     )
-    unknown_keys |= (
-        parsed_lead.raw.keys()
-        - status_mapping.raw_known_keys
-        - status_mapping.raw_known_unstored_keys
-    )
+    unknown_keys |= parsed_lead.raw.keys() - status_mapping.raw_known_keys
     row = {
         "tenant_id": tenant_id,
         "snapshot_date": snapshot_date,
@@ -386,12 +381,6 @@ def lead_to_snapshot_row(
     )
     problems.extend(
         CustomFieldProblem(None, key, "unknown_raw_key", None) for key in sorted(unknown_keys)
-    )
-    # Только тип: формат поля неизвестен, значение может оказаться свободным текстом о клиенте.
-    problems.extend(
-        CustomFieldProblem(None, key, "unstored_key_has_value", type(parsed_lead.raw[key]).__name__)
-        for key in sorted(status_mapping.raw_known_unstored_keys)
-        if parsed_lead.raw.get(key) not in EMPTY_VALUES
     )
     known_field_ids = status_mapping.raw_custom_fields.known_field_ids
     problems.extend(
@@ -474,20 +463,13 @@ def lead_keys_alert_text(
                 "и добавьте в raw_known_keys config/status-mapping.yaml (свободный текст "
                 "о клиенте или контакт также в raw_strip)."
             )
-        elif mismatch["problem"] == "unknown_custom_field":
+        else:
             lines.append(
                 f"Незнакомое кастомное поле лида {mismatch['field_id']} "
                 f"«{mismatch['expected_name']}» в ответе mefi, лидов: {mismatch['lead_count']}, "
                 "в raw не записано. Добавьте field_id в raw_custom_fields "
                 "config/status-mapping.yaml: в drop, если это свободный текст о клиенте, "
                 "иначе в keep."
-            )
-        else:
-            lines.append(
-                f"Ключ лида «{mismatch['expected_name']}» в ответе mefi больше не пуст: "
-                f"тип значения {mismatch['actual']}, лидов: {mismatch['lead_count']}. "
-                "В raw он не пишется. Посмотрите формат в mefi и решите, переносить ли ключ "
-                "из raw_known_unstored_keys в raw_known_keys config/status-mapping.yaml."
             )
     return "\n".join(lines) or None
 

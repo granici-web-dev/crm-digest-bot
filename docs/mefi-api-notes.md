@@ -33,7 +33,7 @@
 - Шоурум: `custom_fields[field_id=14]`, `name: "Showroom"`, `type: select`, значения `București` / `Brașov` / `Cluj`. `location.city` содержит город клиента (`Bacau`, `Pascani`) и к шоуруму отношения не имеет.
 - `Ofertat`: `field_id=20`, `type: select`, значения точно `"✅DA"` и `"❌NU"` (эмодзи без пробела), в выборке оба.
 - `Data revenire`: `field_id=5`, `type: date_picker`, строка `YYYY-MM-DD` без времени и зоны, иначе `null`.
-- Заметки недоступны: скоуп `leads:read:notes` у mefi «coming soon», endpoint'а нет.
+- Заметки на 24.09.2026 были недоступны. С 10.2026 скоуп `leads:read` включает `/notes` и `/contacts` (`docs/mefi-api-reference/leads-read.md`, «Обновление API 04–05.10.2026»); бот их не читает.
 
 ## Расхождения с `docs/mefi-api-reference/`
 
@@ -58,7 +58,7 @@ mefi без объявления добавил ключи в ответ `POST /
 | `updated_at` | дата | заполнен | хранить в raw (`raw_known_keys`) |
 | `score` | объект: `band {key, label}`, `calculated_at`, `disqualified`, `is_stale`, `rules_version`, `value` | у 100 из 100 `value` 0, `band` `cold` / «Rece» | хранить; смотреть, когда появятся ненулевые значения |
 | `followers` | список `{id, name}` сотрудников | id 8–13 | хранить только `id` и `name` (`raw_known_nested_keys`) |
-| `awareness` | неизвестно | `null` у всех | не хранить (`raw_known_unstored_keys`): возможен свободный текст; непустое значение даёт один алерт с типом значения |
+| `awareness` | `{level: 1–5, key, label}` \| null, закрытый словарь, ставится вручную (документация вендора 05.10.2026) | `null` у всех | хранить только `level`, `key`, `label` (`raw_known_nested_keys`); до 05.10.2026 не хранился |
 
 У клиента (`POST /clients/search`) появился `updated_at` (дата): хранится, `clients.raw_known_keys`.
 

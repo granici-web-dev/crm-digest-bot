@@ -84,12 +84,13 @@ raw_strip:
   - elimination.detailed_reason
 
 # Ключи верхнего уровня лида из /leads/search, замер 24.09.2026 (27 ключей), плюс company
-# из GET /leads/{id}, elimination (как у клиентов) и followers, score, updated_at (появились
-# 04.10.2026, docs/mefi-api-notes.md). В raw пишутся только они: новое контактное поле mefi
+# из GET /leads/{id}, elimination (как у клиентов) и awareness, followers, score, updated_at
+# (появились 04.10.2026, docs/mefi-api-notes.md). В raw пишутся только они: новое контактное поле mefi
 # не должно попасть в базу ни на день. Незнакомый ключ → проблема unknown_raw_key и алерт
 # при первом появлении.
 raw_known_keys:
   - assigned_to
+  - awareness
   - business
   - client_type
   - company
@@ -122,15 +123,11 @@ raw_known_keys:
   - updated_at
   - website
 
-# Известны, но в raw не пишутся и не алертят, пока пусты. awareness появился 04.10.2026, у всех
-# лидов null: формат неизвестен, возможен свободный текст о клиенте. Непустое значение →
-# один алерт с типом значения.
-raw_known_unstored_keys:
-  - awareness
-
 # Ключи внутри объекта или списка объектов; незнакомый вложенный ключ → unknown_raw_key,
-# не пишется. followers это сотрудники, не клиенты.
+# не пишется. followers это сотрудники, не клиенты. awareness это закрытый словарь mefi,
+# ставится вручную (docs/mefi-api-reference/leads-read.md, «Обновление API 04–05.10.2026»).
 raw_known_nested_keys:
+  awareness: [level, key, label]
   elimination: [type, reason, detailed_reason, marked_at, marked_by]
   followers: [id, name]
   score: [band, calculated_at, disqualified, is_stale, rules_version, value]

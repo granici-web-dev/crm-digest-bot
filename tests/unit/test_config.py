@@ -140,14 +140,6 @@ def test_lead_raw_strip_outside_known_keys_fails_config_load() -> None:
         StatusMapping.model_validate(raw_mapping)
 
 
-def test_unstored_lead_key_also_in_known_keys_fails_config_load() -> None:
-    raw_mapping = repository_yaml("status-mapping.yaml")
-    raw_mapping["raw_known_unstored_keys"].append("phone")
-
-    with pytest.raises(ValidationError, match=r"raw_known_unstored_keys \['phone'\]"):
-        StatusMapping.model_validate(raw_mapping)
-
-
 def test_lead_nested_keys_outside_known_keys_fail_config_load() -> None:
     raw_mapping = repository_yaml("status-mapping.yaml")
     raw_mapping["raw_known_nested_keys"]["passport"] = ["number"]
