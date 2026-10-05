@@ -31,7 +31,7 @@ from digest.metrics.monthly import (
     trend_months,
 )
 from digest.metrics.weekly import LEAD_ROW_COLUMNS
-from factories import BUCHAREST, make_snapshot_row
+from factories import BUCHAREST, TEST_ACCOUNT, config_with_test_account, make_snapshot_row
 
 SEPTEMBER_END = date(2026, 9, 30)
 UTC = ZoneInfo("UTC")
@@ -537,16 +537,17 @@ def test_cohort_rate_equals_scr_of_monthly_funnel(app_config: AppConfig) -> None
 
 def test_cohort_excludes_partnership_and_test_accounts(app_config: AppConfig) -> None:
     converted_at = at(date(2026, 6, 12), 12)
+    config = config_with_test_account(app_config)
     leads = frame(
-        app_config,
+        config,
         cohort_client(1, at(JUNE, 12), converted_at),
         cohort_client(
             2, at(JUNE, 12), converted_at, category="PARTNERSHIP", status_name="DESIGNER"
         ),
-        cohort_client(3, at(JUNE, 12), converted_at, assigned_to_id=4),
+        cohort_client(3, at(JUNE, 12), converted_at, assigned_to_id=TEST_ACCOUNT.id),
     )
 
-    june = monthly_cohort_conversion(leads, SEPTEMBER_END, app_config).cohorts[2]
+    june = monthly_cohort_conversion(leads, SEPTEMBER_END, config).cohorts[2]
 
     assert (june.counts.leads, june.counts.clienti, june.clients_with_date) == (1, 1, 1)
 

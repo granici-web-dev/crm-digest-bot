@@ -31,7 +31,7 @@
 
 | Обозначение | Определение |
 |---|---|
-| `LEADS` | лиды с `created_at` в периоде, **кроме** `is_excluded_from_leads` (PARTNERSHIP) и лидов тестовых аккаунтов (`test_account: true`) |
+| `LEADS` | лиды с `created_at` в периоде, **кроме** `is_excluded_from_leads` (PARTNERSHIP) и лидов тестовых аккаунтов (`test_account: true` в `config/managers.yaml`; сейчас в конфиге нет ни одного) |
 | `IRR_LEADS` | `LEADS` с `is_irelevant` |
 | `USEFUL` | `LEADS` без `is_excluded_from_useful`; при текущем конфиге `LEADS − IRR_LEADS` (= все − IRELEVANT − PARTNERSHIP, бриф §3) |
 | `CLIENTI` | `LEADS` с `is_clienti` |

@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 import httpx
 from pydantic import SecretStr
 
-from digest.config import StatusMapping, read_yaml
+from digest.config import AppConfig, Manager, ManagerRoster, StatusMapping, read_yaml
 from digest.reports.lead_links import LeadLinks
 from digest.snapshot import categorize
 
@@ -26,6 +26,14 @@ def raw_repository_config() -> dict[str, Any]:
         "managers": read_yaml(CONFIG_DIR / "managers.yaml"),
         "kpi": read_yaml(CONFIG_DIR / "kpi.yaml"),
     }
+
+
+TEST_ACCOUNT = Manager(id=990_004, name="Cont Test", showroom=None, active=False, test_account=True)
+
+
+def config_with_test_account(config: AppConfig) -> AppConfig:
+    roster = ManagerRoster(managers=[*config.managers.managers, TEST_ACCOUNT])
+    return config.model_copy(update={"managers": roster})
 
 
 def recorded_search_leads() -> list[dict[str, Any]]:

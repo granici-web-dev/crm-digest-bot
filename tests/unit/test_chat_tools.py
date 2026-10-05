@@ -54,6 +54,8 @@ from digest.metrics.weekly import (
 from digest.reports.render import percent_one_decimal
 from factories import (
     BUCHAREST,
+    TEST_ACCOUNT,
+    config_with_test_account,
     etalon_lead_rows,
     load_etalon,
     make_lead_links,
@@ -1153,7 +1155,8 @@ def test_every_tool_name_has_a_function() -> None:
 
 
 def test_tool_definitions_are_strict_with_config_enums(app_config: AppConfig) -> None:
-    definitions = {definition["name"]: definition for definition in tool_definitions(app_config)}
+    config = config_with_test_account(app_config)
+    definitions = {definition["name"]: definition for definition in tool_definitions(config)}
 
     assert set(definitions) == set(app_config.modules.chat.tools)
     for definition in definitions.values():
@@ -1165,7 +1168,8 @@ def test_tool_definitions_are_strict_with_config_enums(app_config: AppConfig) ->
     assert "Dragoi Mihaela" in manager_enum
     assert "Palega Andrei" not in manager_enum
     assert "Marketing Sofa" not in manager_enum
-    assert "Potinga Dima" not in manager_enum
+    assert "Ciornii Maxim" not in manager_enum
+    assert TEST_ACCOUNT.name not in manager_enum
     showroom_enum = definitions["funnel"]["input_schema"]["properties"]["showroom"]["enum"]  # type: ignore[index]
     assert showroom_enum == [ALL_SHOWROOMS, "Brașov", "București", "Cluj"]
 

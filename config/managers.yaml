@@ -1,12 +1,13 @@
 # Консультанты mefi, ключ — assigned_to.id. Имя как в mefi, не нормализовать (у id 13 два пробела).
 # Сверено со списком пользователей mefi 24.09.2026. Шесть консультантов = отдел Vanzari.
-# В mefi есть пользователь Ciornii Maxim (владелец), его id в API не встречался; добавить, когда появится в assigned_to.
+# id 4 = Ciornii Maxim (владелец): документация API задач mefi и подтверждение владельца, 05.10.2026.
+# Записей с test_account: true сейчас нет; лиды такой записи исключаются из всех метрик.
 
 managers:
   # Директор по производству.
   - { id: 2,  name: "Palega Andrei",     showroom: null,        active: false }
-  # Тестовый аккаунт: его лиды исключаются из всех метрик.
-  - { id: 4,  name: "Potinga Dima",      showroom: null,        active: false, test_account: true }
+  # Владелец, не продаёт.
+  - { id: 4,  name: "Ciornii Maxim",     showroom: null,        active: false }
   # Директор по продажам, не продаёт.
   - { id: 6,  name: "Iordache Razvan",   showroom: null,        active: false }
   # Маркетинг, не продавец. Desemnat по умолчанию в форме mefi: лид на нём никто не взял.

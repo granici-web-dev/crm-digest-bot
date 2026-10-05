@@ -5,20 +5,40 @@ import pytest
 from digest.config import AppConfig
 from digest.metrics.frame import prepare_client_frame, prepare_lead_frame, unknown_manager_ids
 from digest.snapshot import categorize
-from factories import make_snapshot_row, raw_repository_config
-
-TEST_ACCOUNT_ID = 4
+from factories import (
+    TEST_ACCOUNT,
+    config_with_test_account,
+    make_snapshot_row,
+    raw_repository_config,
+)
 
 
 def test_test_account_leads_are_excluded(app_config: AppConfig) -> None:
     rows = [
         make_snapshot_row(lead_id=1),
-        make_snapshot_row(lead_id=2, assigned_to_id=TEST_ACCOUNT_ID),
+        make_snapshot_row(lead_id=2, assigned_to_id=TEST_ACCOUNT.id),
     ]
 
-    lead_frame = prepare_lead_frame(rows, app_config)
+    lead_frame = prepare_lead_frame(rows, config_with_test_account(app_config))
 
     assert lead_frame["lead_id"].tolist() == [1]
+
+
+def test_roster_without_test_accounts_keeps_every_lead() -> None:
+    raw_config = raw_repository_config()
+    for manager in raw_config["managers"]["managers"]:
+        manager.pop("test_account", None)
+    config = AppConfig.model_validate(raw_config)
+    manager_ids = [manager.id for manager in config.managers.managers]
+    rows = [
+        make_snapshot_row(lead_id=manager_id, assigned_to_id=manager_id)
+        for manager_id in manager_ids
+    ]
+
+    lead_frame = prepare_lead_frame(rows, config)
+
+    assert lead_frame["lead_id"].tolist() == manager_ids
+    assert unknown_manager_ids(lead_frame, config) == set()
 
 
 def test_unassigned_lead_is_kept(app_config: AppConfig) -> None:

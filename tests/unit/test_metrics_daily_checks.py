@@ -36,8 +36,8 @@ from digest.metrics.daily_checks import (
     untouched_leads,
 )
 from digest.metrics.frame import prepare_lead_frame
-from digest.metrics.kpi import Period, lead_counts_by_showroom
-from factories import BUCHAREST, make_snapshot_row
+from digest.metrics.kpi import Period, lead_counts, lead_counts_by_manager, lead_counts_by_showroom
+from factories import BUCHAREST, TEST_ACCOUNT, config_with_test_account, make_snapshot_row
 
 REPORT_DATE = date(2026, 9, 25)
 WINDOW_END = datetime(2026, 9, 25, 19, 0, tzinfo=BUCHAREST)
@@ -204,6 +204,23 @@ def test_lead_without_assignee_is_not_taken(app_config: AppConfig) -> None:
     rows = [new_lead(1, created_at, assigned_to_id=None, assigned_to_name=None)]
 
     assert untouched(rows, app_config) == (UntouchedGroup(None, 1, 10, (1,)),)
+
+
+def test_owner_lead_is_counted_and_reported_under_owner_name(app_config: AppConfig) -> None:
+    # id 4 это владелец (active: false), а не тестовый аккаунт: лид остаётся во всех метриках.
+    created_at = datetime(2026, 9, 25, 9, 0, tzinfo=BUCHAREST)
+    rows = [new_lead(1, created_at, assigned_to_id=4, assigned_to_name="Ciornii Maxim")]
+    lead_frame = frame(rows, app_config)
+    period = snapshot_period(REPORT_DATE, app_config)
+
+    counts = lead_counts(lead_frame, period, REPORT_DATE, app_config)
+    assert (counts.leads, counts.useful) == (1, 1)
+    assert (
+        lead_counts_by_showroom(lead_frame, period, REPORT_DATE, app_config)["București"].leads == 1
+    )
+    assert 4 not in lead_counts_by_manager(lead_frame, period, REPORT_DATE, app_config)
+    assert untouched(rows, app_config) == (UntouchedGroup("Ciornii Maxim", 1, 10, (1,)),)
+    assert not_taken_leads(lead_frame, period, REPORT_DATE, app_config) == NotTakenLeads(0, 0)
 
 
 def test_showroom_visit_is_not_untouched(app_config: AppConfig) -> None:
@@ -857,9 +874,15 @@ def test_lead_created_before_leads_created_from_is_not_checked(app_config: AppCo
 
 
 def test_test_account_lead_is_not_checked(app_config: AppConfig) -> None:
-    rows = [followup_lead(1, timedelta(days=7), assigned_to_id=4, assigned_to_name="Potinga Dima")]
+    rows = [
+        followup_lead(
+            1, timedelta(days=7), assigned_to_id=TEST_ACCOUNT.id, assigned_to_name=TEST_ACCOUNT.name
+        )
+    ]
 
-    assert missing(rows, app_config) == MissingFollowupDate(0, (), (), 0, False)
+    assert missing(rows, config_with_test_account(app_config)) == MissingFollowupDate(
+        0, (), (), 0, False
+    )
 
 
 def test_groups_are_ordered_like_overdue_not_taken_first(app_config: AppConfig) -> None:
