@@ -69,6 +69,8 @@ id отличаются от лидов: Showroom у лидов 14, у клие�
 
 Textarea-поля и `identity`, `business`, `banking`, адреса это персональные данные клиента. `identity`, `business`, `banking` и адреса вырезает `clients.raw_strip`; `custom_fields` пишутся в `raw` только по белому списку `clients.raw_custom_fields.keep`, textarea не пишутся (как у лидов). Незнакомое кастомное поле и незнакомый ключ внутри `elimination` и `responsibles` дают алерт и не пишутся.
 
+С 04.10.2026 в ответе клиента появился ключ `updated_at` (дата): хранится в raw, `clients.raw_known_keys` (`docs/mefi-api-notes.md`, «Новые ключи, появились 04.10.2026»).
+
 ## Числа
 
 ### По state (всего 797)
